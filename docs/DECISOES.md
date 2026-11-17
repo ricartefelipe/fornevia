@@ -330,3 +330,23 @@ redefinição de senha e TOTP com confirmação. Perfis com permissões
 plataforma, só acessam o contexto com 2FA confirmado (`RequireTwoFactor`).
 Senhas: mínimo de 12 caracteres com letras e números e verificação de
 vazamento (desligável por configuração em testes).
+
+---
+
+## ADR-017 — Medição de cobertura
+
+**Status:** aceita
+
+**Decisão.**
+- **Linhas** (meta ≥ 90% em `app/Domain` + `app/Actions`): suíte completa
+  com PCOV na CI, relatório Cobertura e `scripts/coverage-gate.php --lines`.
+- **Branches** (meta ≥ 80% nos caminhos críticos): regras de domínio de
+  preços, catálogo, pedidos, crédito, estoque, aprovações e financeiro
+  (`app/Domain/...`), medidas com Xdebug `--path-coverage` sobre os testes
+  unitários puros, em job próprio, e `coverage-gate.php --branches`.
+- O gate falha se houver código no núcleo e o relatório não contiver linhas
+  dele; exclusões só por lista explícita e justificada no script.
+
+**Motivo.** Cobertura de caminhos com Xdebug sobre a suíte de integração
+multiplicava o tempo do job; as regras de decisão críticas ficam no
+domínio puro, onde a medição de branches é rápida e significativa.
