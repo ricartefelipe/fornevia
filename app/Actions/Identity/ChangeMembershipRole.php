@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Identity;
 
 use App\Domain\Identity\Exceptions\RoleKindMismatch;
+use App\Enums\Identity\MembershipKind;
 use App\Enums\Identity\SystemRole;
 use App\Models\Identity\Membership;
 use App\Models\Identity\Role;
@@ -24,6 +25,8 @@ final readonly class ChangeMembershipRole
         $this->authorization->authorize($membership->kind, $membership->buyer_company_id);
 
         return DB::transaction(function () use ($membership, $roleId): Membership {
+            // Ordem de locks: proprietários ativos (por id) e, depois, o alvo.
+            $owners = $membership->kind === MembershipKind::Staff ? $this->ownership->lockActiveOwners() : collect();
             $locked = Membership::query()->with('role')->lockForUpdate()->findOrFail($membership->id);
             $role = Role::query()->findOrFail($roleId);
 
@@ -39,7 +42,7 @@ final readonly class ChangeMembershipRole
 
             if ($locked->role->key === SystemRole::Owner->value) {
                 $this->authorization->authorizeRole($locked->role);
-                $this->ownership->assertAnotherActiveOwner($locked);
+                $this->ownership->assertAnotherActiveOwner($owners, $locked);
             }
 
             $previous = $locked->role->key;

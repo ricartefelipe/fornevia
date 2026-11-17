@@ -39,6 +39,8 @@ final readonly class RevokeMembership
         $this->authorization->authorize($membership->kind, $membership->buyer_company_id);
 
         return DB::transaction(function () use ($membership, $reason): Membership {
+            // Ordem de locks: proprietários ativos (por id) e, depois, o alvo.
+            $owners = $membership->kind === MembershipKind::Staff ? $this->ownership->lockActiveOwners() : collect();
             $locked = Membership::query()->with('role')->lockForUpdate()->findOrFail($membership->id);
 
             if (! $locked->isActive()) {
@@ -47,7 +49,7 @@ final readonly class RevokeMembership
 
             if ($locked->kind === MembershipKind::Staff && $locked->role->key === SystemRole::Owner->value) {
                 $this->authorization->authorizeRole($locked->role);
-                $this->ownership->assertAnotherActiveOwner($locked);
+                $this->ownership->assertAnotherActiveOwner($owners, $locked);
             }
 
             $locked->forceFill([

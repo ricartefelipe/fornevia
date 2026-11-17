@@ -10,19 +10,27 @@ use App\Enums\Identity\MembershipStatus;
 use App\Enums\Identity\SystemRole;
 use App\Models\Identity\Membership;
 use App\Models\Identity\Role;
+use Illuminate\Support\Collection;
 
 /**
- * Garante ao menos um proprietário ativo. Bloqueia todas as associações de
- * proprietário (em ordem de id) antes de contar, evitando que duas
- * revogações concorrentes removam os dois últimos proprietários.
+ * Garante ao menos um proprietário ativo.
+ *
+ * Ordem de locks (ADR-006): primeiro todas as associações de proprietário
+ * ativas, em ordem de id; depois a associação alvo. Com essa ordem única,
+ * duas revogações concorrentes não entram em deadlock e a segunda enxerga
+ * o efeito da primeira.
  */
 final class OwnershipGuard
 {
-    public function assertAnotherActiveOwner(Membership $leaving): void
+    /**
+     * @return Collection<int, string> ids das associações de proprietário ativas, bloqueadas
+     */
+    public function lockActiveOwners(): Collection
     {
         $ownerRoleId = Role::query()->where('key', SystemRole::Owner->value)->value('id');
 
-        $owners = Membership::query()
+        /** @var Collection<int, string> $ids */
+        $ids = Membership::query()
             ->where('kind', MembershipKind::Staff->value)
             ->where('role_id', $ownerRoleId)
             ->where('status', MembershipStatus::Active->value)
@@ -30,7 +38,15 @@ final class OwnershipGuard
             ->lockForUpdate()
             ->pluck('id');
 
-        if ($owners->reject(static fn (string $id): bool => $id === $leaving->id)->isEmpty()) {
+        return $ids;
+    }
+
+    /**
+     * @param  Collection<int, string>  $lockedOwnerIds
+     */
+    public function assertAnotherActiveOwner(Collection $lockedOwnerIds, Membership $leaving): void
+    {
+        if ($lockedOwnerIds->reject(static fn (string $id): bool => $id === $leaving->id)->isEmpty()) {
             throw new LastOwnerRequired('A organização precisa manter ao menos um proprietário ativo.');
         }
     }
