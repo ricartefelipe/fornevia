@@ -49,6 +49,12 @@ trait RefreshFornevia
 
                 throw new RuntimeException('Teste encerrado com transação aberta na conexão da aplicação.');
             }
+
+            // Fecha explicitamente as conexões do teste: sem isso, elas só são
+            // liberadas na coleta de lixo e podem esgotar max_connections.
+            foreach (array_keys(DB::getConnections()) as $name) {
+                DB::disconnect($name);
+            }
         });
     }
 
