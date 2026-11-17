@@ -11,8 +11,9 @@ use Tests\Support\Concurrency\ConcurrencyHarness;
 /*
  * Dois proprietários revogam um ao outro ao mesmo tempo, em processos
  * separados. O OwnershipGuard bloqueia todas as associações de
- * proprietário antes de contar: exatamente uma revogação prevalece e a
- * organização nunca fica sem proprietário ativo.
+ * proprietário antes de decidir: exatamente uma revogação prevalece; a
+ * outra é recusada porque, sob lock, o ator já não é proprietário ativo.
+ * A organização nunca fica sem proprietário ativo.
  */
 it('mantém ao menos um proprietário quando dois revogam um ao outro simultaneamente', function (): void {
     $tenant = TenantScenario::create();
@@ -53,7 +54,7 @@ it('mantém ao menos um proprietário quando dois revogam um ao outro simultanea
 
     expect($succeeded)->toHaveCount(1)
         ->and($failed)->toHaveCount(1)
-        ->and($failed[0]['error'])->toBe(App\Domain\Identity\Exceptions\LastOwnerRequired::class);
+        ->and($failed[0]['error'])->toBe(Illuminate\Auth\Access\AuthorizationException::class);
 
     $activeOwners = $tenant->system(fn (): int => Membership::query()
         ->whereIn('id', [$first->id, $second->id])

@@ -49,6 +49,7 @@ final readonly class RevokeMembership
 
             if ($locked->kind === MembershipKind::Staff && $locked->role->key === SystemRole::Owner->value) {
                 $this->authorization->authorizeRole($locked->role);
+                $this->ownership->assertActorIsActiveOwner($owners, $this->context->require()->membershipId);
                 $this->ownership->assertAnotherActiveOwner($owners, $locked);
             }
 

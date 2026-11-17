@@ -10,6 +10,7 @@ use App\Enums\Identity\SystemRole;
 use App\Models\Identity\Membership;
 use App\Models\Identity\Role;
 use App\Services\Audit\AuditRecorder;
+use App\Support\Tenancy\CurrentContext;
 use Illuminate\Support\Facades\DB;
 
 final readonly class ChangeMembershipRole
@@ -18,6 +19,7 @@ final readonly class ChangeMembershipRole
         private AuthorizesMemberManagement $authorization,
         private OwnershipGuard $ownership,
         private AuditRecorder $audit,
+        private CurrentContext $context,
     ) {}
 
     public function handle(Membership $membership, string $roleId): Membership
@@ -39,9 +41,14 @@ final readonly class ChangeMembershipRole
             }
 
             $this->authorization->authorizeRole($role);
+            $touchesOwnership = $role->key === SystemRole::Owner->value || $locked->role->key === SystemRole::Owner->value;
+
+            if ($touchesOwnership) {
+                $this->authorization->authorizeRole($locked->role);
+                $this->ownership->assertActorIsActiveOwner($owners, $this->context->require()->membershipId);
+            }
 
             if ($locked->role->key === SystemRole::Owner->value) {
-                $this->authorization->authorizeRole($locked->role);
                 $this->ownership->assertAnotherActiveOwner($owners, $locked);
             }
 

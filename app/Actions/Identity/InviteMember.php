@@ -63,6 +63,14 @@ final readonly class InviteMember
                 : null;
 
             $email = mb_strtolower(trim($data->email));
+
+            // Serializa emissões para o mesmo destinatário e contexto (duplo
+            // clique, reenvio simultâneo): a segunda vê e revoga o convite da
+            // primeira, sem violar o índice de convite pendente único.
+            DB::select('select pg_advisory_xact_lock(hashtextextended(?, 0))', [
+                implode('|', ['invitation', $this->context->tenantId(), $email, $data->kind->value, (string) $buyerCompanyId]),
+            ]);
+
             $this->assertNotMember($email, $data->kind, $buyerCompanyId);
 
             $now = $this->clock->now();

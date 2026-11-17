@@ -10,6 +10,7 @@ use App\Enums\Identity\MembershipStatus;
 use App\Enums\Identity\SystemRole;
 use App\Models\Identity\Membership;
 use App\Models\Identity\Role;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Collection;
 
 /**
@@ -39,6 +40,19 @@ final class OwnershipGuard
             ->pluck('id');
 
         return $ids;
+    }
+
+    /**
+     * Confirma, já sob lock, que o ator continua proprietário ativo: uma
+     * revogação concorrente do próprio ator não pode ser ignorada.
+     *
+     * @param  Collection<int, string>  $lockedOwnerIds
+     */
+    public function assertActorIsActiveOwner(Collection $lockedOwnerIds, ?string $actorMembershipId): void
+    {
+        if ($actorMembershipId === null || ! $lockedOwnerIds->contains($actorMembershipId)) {
+            throw new AuthorizationException('Somente proprietários ativos concedem ou retiram o papel de proprietário.');
+        }
     }
 
     /**
