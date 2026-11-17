@@ -7,6 +7,7 @@ namespace App\Support\Auth;
 use App\Enums\Identity\MembershipKind;
 use App\Enums\Identity\Permission;
 use App\Models\Identity\Membership;
+use App\Support\Tenancy\CurrentContext;
 use Illuminate\Auth\Access\AuthorizationException;
 
 /**
@@ -24,6 +25,8 @@ final class Access
     private ?array $integrationPermissions = null;
 
     private ?string $apiClientId = null;
+
+    public function __construct(private readonly CurrentContext $context) {}
 
     /**
      * @internal Middleware de contexto.
@@ -95,13 +98,18 @@ final class Access
 
     public function can(Permission $permission): bool
     {
+        $active = $this->context->get();
+
         if ($this->integrationPermissions !== null) {
-            return in_array($permission->value, $this->integrationPermissions, true);
+            return $active?->apiClientId === $this->apiClientId
+                && in_array($permission->value, $this->integrationPermissions, true);
         }
 
         $membership = $this->membership;
 
-        if ($membership === null || ! $membership->isActive()) {
+        // Permissões só valem dentro do contexto da própria associação (não,
+        // por exemplo, durante uma elevação para outro contexto).
+        if ($membership === null || ! $membership->isActive() || $active?->membershipId !== $membership->id) {
             return false;
         }
 

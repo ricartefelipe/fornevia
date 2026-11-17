@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Audit;
 
 use App\Models\Audit\AuditLog;
-use App\Support\Auth\Access;
 use App\Support\Observability\RedactSensitiveData;
 use App\Support\Tenancy\CurrentContext;
 use Illuminate\Database\Eloquent\Model;
@@ -20,7 +19,6 @@ final readonly class AuditRecorder
 {
     public function __construct(
         private CurrentContext $context,
-        private Access $access,
         private Request $request,
         private RedactSensitiveData $redactor,
     ) {}
@@ -36,7 +34,9 @@ final readonly class AuditRecorder
         $log = new AuditLog;
         $log->forceFill([
             'actor_user_id' => $execution->userId,
-            'actor_membership_id' => $this->access->membershipOrNull()?->id,
+            // A associação vem do contexto da transação (e não do Access), para
+            // que a referência pertença sempre ao tenant em que se grava.
+            'actor_membership_id' => $execution->membershipId,
             'actor_api_client_id' => $execution->apiClientId,
             'action' => $action,
             'subject_type' => $subject?->getMorphClass(),

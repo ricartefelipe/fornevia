@@ -89,15 +89,15 @@ final readonly class TenantDatabase
     }
 
     /**
-     * Um contexto apenas de usuário (sem tenant) pode entrar temporariamente
-     * em um contexto de tenant do mesmo usuário: seleção de contexto, aceite
-     * de convite e onboarding. Nunca há troca direta entre tenants.
+     * Elevação controlada (ADR-014): uma unidade de trabalho iniciada por um
+     * usuário pode entrar temporariamente em outro contexto do MESMO usuário
+     * (seleção de contexto, aceite de convite, onboarding). Contextos sem
+     * usuário (jobs, sistema) nunca trocam de contexto, e não há troca para
+     * contexto de outro usuário.
      */
     private function canElevate(ExecutionContext $active, ExecutionContext $requested): bool
     {
-        return $active->kind === ContextKind::User
-            && $requested->kind->hasTenant()
-            && $active->userId !== null
+        return $active->userId !== null
             && $requested->userId === $active->userId;
     }
 
