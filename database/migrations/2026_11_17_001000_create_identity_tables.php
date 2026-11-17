@@ -95,7 +95,9 @@ return new class extends Migration
         // O próprio usuário enxerga suas associações em todos os tenants
         // (seleção de contexto); o comprador vê apenas colegas da empresa e
         // o representante responsável por ela.
-        DB::statement('create policy own_memberships on memberships as permissive for select using (user_id = app_current_user())');
+        // Restrita ao contexto User: dentro de um tenant, as associações do
+        // usuário em outros tenants não aparecem.
+        DB::statement("create policy own_memberships on memberships as permissive for select using (app_context_kind() = 'user' and user_id = app_current_user())");
         DB::statement('create policy buyer_isolation on memberships as restrictive for all
             using (app_sees_all_buyers() or user_id = app_current_user() or buyer_company_id = app_current_buyer()
                    or id = (select bc.sales_rep_membership_id from buyer_companies bc where bc.id = app_current_buyer()))
@@ -124,7 +126,9 @@ return new class extends Migration
         DB::statement("alter table invitations add constraint invitations_kind_check check (kind in ('staff', 'buyer'))");
         DB::statement("alter table invitations add constraint invitations_buyer_company_check check ((kind = 'buyer') = (buyer_company_id is not null))");
         DB::statement("create unique index invitations_one_pending on invitations (tenant_id, email, kind, coalesce(buyer_company_id, '00000000-0000-0000-0000-000000000000'::uuid)) where accepted_at is null and revoked_at is null");
-        TenantSchema::enableRowLevelSecurity('invitations', 'nullable');
+        // Comprador enxerga e grava apenas convites da própria empresa; convites
+        // de equipe (sem empresa) ficam restritos à equipe e ao sistema.
+        TenantSchema::enableRowLevelSecurity('invitations', 'required');
 
         Schema::create('audit_logs', function (Blueprint $table): void {
             $table->uuid('id')->primary();
