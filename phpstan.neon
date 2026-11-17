@@ -1,0 +1,15 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 8
+    paths:
+        - app
+        - bootstrap/app.php
+        - config
+        - database
+        - routes
+    tmpDir: build/phpstan
+    checkMissingCallableSignature: true
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: true

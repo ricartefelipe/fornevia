@@ -1,0 +1,213 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main, 'release/**']
+  push:
+    branches: [develop, main, 'release/**', 'hotfix/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PHP_VERSION: '8.5'
+  NODE_VERSION: '26.13.1'
+  PHP_EXTENSIONS: pdo_pgsql, pgsql, redis, intl, bcmath, pcntl, zip
+
+jobs:
+  quality:
+    name: Qualidade (Pint, PHPStan, Composer Audit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+          tools: composer:2.11.2
+      - name: Cache do Composer
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+      - name: Validar composer.json e lock
+        run: composer validate --strict --no-check-publish
+      - name: Instalar dependências (lockfile)
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Pint
+        run: vendor/bin/pint --test
+      - name: PHPStan (Larastan)
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+      - name: Composer Audit
+        run: composer audit --locked
+
+  frontend:
+    name: Frontend (npm audit e build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Instalar dependências (lockfile)
+        run: npm ci --no-fund
+      - name: Auditoria de dependências
+        run: npm audit --audit-level=moderate
+      - name: Build dos assets
+        run: npm run build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: assets
+          path: public/build
+          retention-days: 3
+
+  secrets:
+    name: Verificação de segredos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:v8.30.1 \
+            git --redact --no-banner --config /repo/.gitleaks.toml --verbose
+
+  tests:
+    name: Testes (PostgreSQL e Redis reais, cobertura)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [frontend]
+    services:
+      postgres:
+        image: postgres:18.7-alpine3.24
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres-ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:8.8.4-alpine3.23
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USERNAME: fornevia_app
+      DB_PASSWORD: app-ci
+      DB_OWNER_USERNAME: fornevia_owner
+      DB_OWNER_PASSWORD: owner-ci
+      DB_RELAY_USERNAME: fornevia_relay
+      DB_RELAY_PASSWORD: relay-ci
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: xdebug
+          ini-values: xdebug.mode=coverage
+          tools: composer:2.11.2
+      - name: Cache do Composer
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+      - name: Instalar dependências (lockfile)
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: assets
+          path: public/build
+      - name: Provisionar papéis e bancos
+        env:
+          PGHOST: 127.0.0.1
+          PGPASSWORD: postgres-ci
+          POSTGRES_USER: postgres
+          FORNEVIA_OWNER_PASSWORD: owner-ci
+          FORNEVIA_APP_PASSWORD: app-ci
+          FORNEVIA_RELAY_PASSWORD: relay-ci
+          FORNEVIA_DATABASES: fornevia fornevia_test fornevia_browser
+        run: sh docker/postgres/init/01-roles.sh
+      - name: Preparar ambiente
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+      - name: Migrations em banco limpo (papel de manutenção)
+        run: |
+          php artisan migrate --database=pgsql_owner --force
+          php artisan migrate:rollback --database=pgsql_owner --force
+          php artisan migrate --database=pgsql_owner --force
+      - name: Testes com cobertura
+        env:
+          FORNEVIA_TEST_FRESH: '1'
+          XDEBUG_MODE: coverage
+        run: |
+          mkdir -p build/coverage
+          vendor/bin/pest --coverage --path-coverage \
+            --coverage-cobertura=build/coverage/cobertura.xml \
+            --coverage-clover=build/coverage/clover.xml \
+            --log-junit=build/junit.xml
+      - name: Metas de cobertura do núcleo
+        run: php scripts/coverage-gate.php build/coverage/cobertura.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: coverage
+          path: build
+          retention-days: 7
+
+  image:
+    name: Build e análise da imagem
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [quality]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build da imagem da aplicação
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/php/Dockerfile
+          target: prod
+          tags: fornevia-app:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
+      - name: Build da imagem web
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/php/Dockerfile
+          target: web
+          tags: fornevia-web:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=app
+      - name: Análise de vulnerabilidades (Trivy)
+        run: |
+          for image in fornevia-app:ci fornevia-web:ci; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.76.2 \
+              image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress "$image"
+          done
+      - name: Verificar que a imagem não contém segredos de desenvolvimento
+        run: |
+          docker run --rm --entrypoint sh fornevia-app:ci -c 'test ! -f /var/www/html/.env && test ! -d /var/www/html/tests'
