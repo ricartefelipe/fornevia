@@ -69,6 +69,11 @@ HEALTHCHECK --interval=15s --timeout=3s --retries=5 CMD SCRIPT_NAME=/fpm-ping SC
 CMD ["fornevia-start", "php-fpm"]
 
 FROM ${NGINX_IMAGE} AS web
+# A imagem base pode estar atrás das correções do Alpine: aplica as
+# atualizações de segurança disponíveis e volta ao usuário sem privilégios.
+USER root
+RUN apk upgrade --no-cache
+USER 101
 COPY docker/nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=prod /var/www/html/public /var/www/html/public
 ENV FPM_HOST=app FPM_PORT=9000
