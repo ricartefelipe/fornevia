@@ -113,7 +113,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    restart: unless-stopped
+    # Sem reinício automático: o bind de ./docker/postgres/init não pode ser
+    # resolvido no boot antes de o disco do projeto estar montado.
+    restart: "no"
 
   redis:
     image: redis:8.8.4-alpine3.23
