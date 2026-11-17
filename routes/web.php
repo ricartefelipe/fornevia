@@ -39,14 +39,26 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
 
     Route::livewire('/onboarding', CreateOrganizationForm::class)->name('onboarding');
 
+    // Área da equipe do distribuidor: cada módulo registra suas rotas em
+    // routes/staff/<modulo>.php (permissões declaradas rota a rota).
     Route::middleware(['context:staff', 'two-factor'])->group(function (): void {
         Route::livewire('/painel', Dashboard::class)->name('dashboard');
         Route::livewire('/equipe', TeamMembers::class)->middleware('permission:members.manage')->name('team.index');
         Route::livewire('/filiais', BranchesIndex::class)->middleware('permission:organization.manage')->name('branches.index');
+
+        foreach (glob(__DIR__.'/staff/*.php') ?: [] as $file) {
+            require $file;
+        }
     });
 
+    // Portal do comprador: rotas em routes/portal/<modulo>.php, prefixo
+    // /portal e nomes portal.*.
     Route::middleware(['context:buyer'])->prefix('portal')->name('portal.')->group(function (): void {
         Route::livewire('/', PortalHome::class)->name('home');
+
+        foreach (glob(__DIR__.'/portal/*.php') ?: [] as $file) {
+            require $file;
+        }
     });
 
     Route::middleware(['platform-admin', 'two-factor'])->prefix('plataforma')->name('platform.')->group(function (): void {
