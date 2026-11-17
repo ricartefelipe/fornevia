@@ -13,6 +13,7 @@ use App\Enums\Identity\OrganizationStatus;
 use App\Enums\Identity\Permission;
 use App\Enums\Identity\SystemRole;
 use App\Enums\Platform\SubscriptionStatus;
+use App\Models\Catalog\UnitOfMeasure;
 use App\Models\Identity\Branch;
 use App\Models\Identity\Membership;
 use App\Models\Identity\Organization;
@@ -20,6 +21,8 @@ use App\Models\Identity\Role;
 use App\Models\Identity\User;
 use App\Models\Platform\Plan;
 use App\Models\Platform\Subscription;
+use App\Models\Pricing\PaymentTerm;
+use App\Models\Pricing\PricingSettings;
 use App\Services\Audit\AuditRecorder;
 use App\Support\Clock\Clock;
 use App\Support\Tenancy\ExecutionContext;
@@ -63,6 +66,28 @@ final readonly class CreateOrganization
         } catch (UniqueConstraintViolationException) {
             throw new OrganizationAlreadyRegistered('Já existe uma organização cadastrada com este CNPJ.');
         }
+    }
+
+    /**
+     * Unidades de medida, condições de pagamento e configuração de preços
+     * iniciais do tenant (editáveis pela equipe).
+     */
+    private function createCommercialDefaults(): void
+    {
+        foreach ([['UN', 'Unidade', 0], ['PC', 'Peça', 0], ['CX', 'Caixa', 0], ['PCT', 'Pacote', 0], ['PAR', 'Par', 0],
+            ['RL', 'Rolo', 0], ['M', 'Metro', 2], ['KG', 'Quilograma', 3], ['L', 'Litro', 3]] as [$code, $name, $decimals]) {
+            $unit = new UnitOfMeasure;
+            $unit->forceFill(['code' => $code, 'name' => $name, 'decimals' => $decimals])->save();
+        }
+
+        foreach ([['AVISTA', 'À vista', [0], false], ['28D', '28 dias', [28], true], ['30-60', '30/60 dias', [30, 60], true],
+            ['30-60-90', '30/60/90 dias', [30, 60, 90], true]] as [$code, $name, $days, $credit]) {
+            $term = new PaymentTerm;
+            $term->forceFill(['code' => $code, 'name' => $name, 'installment_days' => $days, 'requires_credit' => $credit, 'is_active' => true])->save();
+        }
+
+        $settings = new PricingSettings;
+        $settings->forceFill(['min_margin_bps' => 1_000, 'price_version' => 1])->save();
     }
 
     private function create(string $organizationId, User $owner, Plan $plan, CreateOrganizationData $data): Membership
@@ -126,6 +151,8 @@ final readonly class CreateOrganization
             'branch_id' => $headquarters->id,
             'status' => MembershipStatus::Active,
         ])->save();
+
+        $this->createCommercialDefaults();
 
         $this->audit->record('organization.created', $organization, [
             'plan' => $plan->code,
