@@ -35,3 +35,6 @@ Thumbs.db
 /tests/Browser/screenshots
 /tests/Browser/console
 /tests/Browser/source
+
+# Ajustes locais do Compose
+compose.override.yaml

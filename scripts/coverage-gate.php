@@ -11,7 +11,12 @@ declare(strict_types=1);
  *
  * Exclusões são explícitas e justificadas em EXCLUDED, nunca por padrão.
  *
- * Uso: php scripts/coverage-gate.php build/coverage/cobertura.xml
+ * Uso:
+ *   php scripts/coverage-gate.php build/coverage/cobertura.xml --lines
+ *     (suíte completa com PCOV: linhas do núcleo e dos caminhos críticos)
+ *   php scripts/coverage-gate.php build/coverage/branches.xml --branches
+ *     (testes unitários com Xdebug --path-coverage: branches das regras de
+ *     domínio dos caminhos críticos)
  */
 const CORE_PATHS = ['app/Domain/', 'app/Actions/'];
 const CRITICAL_PATHS = [
@@ -22,9 +27,6 @@ const CRITICAL_PATHS = [
     'app/Domain/Inventory/',
     'app/Domain/Approvals/',
     'app/Domain/Finance/',
-    'app/Actions/Ordering/',
-    'app/Actions/Inventory/',
-    'app/Actions/Credit/',
 ];
 const EXCLUDED = [
     // Nenhuma exclusão no momento.
@@ -33,6 +35,12 @@ const LINE_TARGET = 90.0;
 const BRANCH_TARGET = 80.0;
 
 $report = $argv[1] ?? 'build/coverage/cobertura.xml';
+$mode = $argv[2] ?? '--lines';
+
+if (! in_array($mode, ['--lines', '--branches'], true)) {
+    fwrite(STDERR, "Modo inválido: {$mode} (use --lines ou --branches)\n");
+    exit(2);
+}
 
 if (! is_file($report)) {
     fwrite(STDERR, "Relatório não encontrado: {$report}\n");
@@ -48,19 +56,22 @@ if ($xml === false) {
 
 $sources = [];
 foreach ($xml->sources->source ?? [] as $source) {
-    $sources[] = rtrim((string) $source, '/').'/';
+    $sources[] = rtrim((string) $source, '/');
 }
 
 $totals = ['core' => [0, 0], 'critical_lines' => [0, 0], 'critical_branches' => [0, 0]];
 
 foreach ($xml->xpath('//class') ?: [] as $class) {
-    $file = (string) $class['filename'];
-    foreach ($sources as $source) {
-        if (str_starts_with($file, $source)) {
-            $file = substr($file, strlen($source));
-        }
+    // Os nomes de arquivo do relatório são relativos ao <source> (ex.:
+    // /var/www/html/app); normaliza para caminhos a partir da raiz (app/...).
+    $filename = (string) $class['filename'];
+    $absolute = str_starts_with($filename, '/') ? $filename : ($sources[0] ?? '').'/'.$filename;
+
+    if (preg_match('#(?:^|/)(app/.+)$#', $absolute, $match) !== 1) {
+        continue;
     }
-    $file = ltrim(preg_replace('#^.*?(app/)#', 'app/', $file) ?? $file, '/');
+
+    $file = $match[1];
 
     if (in_array($file, EXCLUDED, true)) {
         continue;
@@ -93,14 +104,38 @@ foreach ($xml->xpath('//class') ?: [] as $class) {
     }
 }
 
+// O núcleo existe no código mas não aparece no relatório: falha, para que
+// um relatório incompleto nunca seja tomado como meta atingida.
+$coreFiles = [];
+foreach (CORE_PATHS as $path) {
+    $directory = dirname(__DIR__).'/'.$path;
+    if (is_dir($directory)) {
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS)) as $entry) {
+            if ($entry->isFile() && str_ends_with($entry->getFilename(), '.php')) {
+                $coreFiles[] = $entry->getPathname();
+            }
+        }
+    }
+}
+
+if ($mode === '--lines' && $coreFiles !== [] && $totals['core'][1] === 0) {
+    fwrite(STDERR, 'O relatório não contém linhas do núcleo ('.count($coreFiles)." arquivos em app/Domain e app/Actions).\n");
+    exit(1);
+}
+
 $percent = static fn (array $pair): ?float => $pair[1] === 0 ? null : round($pair[0] * 100 / $pair[1], 2);
 $failures = [];
 
-foreach ([
-    ['Linhas no núcleo (Domain + Actions)', $percent($totals['core']), LINE_TARGET, $totals['core']],
-    ['Linhas nos caminhos críticos', $percent($totals['critical_lines']), LINE_TARGET, $totals['critical_lines']],
-    ['Branches nos caminhos críticos', $percent($totals['critical_branches']), BRANCH_TARGET, $totals['critical_branches']],
-] as [$label, $value, $target, $pair]) {
+$checks = $mode === '--lines'
+    ? [
+        ['Linhas no núcleo (Domain + Actions)', $percent($totals['core']), LINE_TARGET, $totals['core']],
+        ['Linhas nos caminhos críticos', $percent($totals['critical_lines']), LINE_TARGET, $totals['critical_lines']],
+    ]
+    : [
+        ['Branches nos caminhos críticos', $percent($totals['critical_branches']), BRANCH_TARGET, $totals['critical_branches']],
+    ];
+
+foreach ($checks as [$label, $value, $target, $pair]) {
     if ($value === null) {
         echo sprintf("%-40s sem código medido\n", $label);
 

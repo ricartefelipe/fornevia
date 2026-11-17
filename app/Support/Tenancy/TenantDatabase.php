@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\Context;
  */
 final readonly class TenantDatabase
 {
+    private const array LOG_KEYS = ['context_kind', 'tenant_id', 'user_id', 'buyer_company_id', 'api_client_id'];
+
     public function __construct(
         private DatabaseManager $db,
         private CurrentContext $current,
@@ -39,28 +41,31 @@ final readonly class TenantDatabase
         if ($connection->transactionLevel() > 0) {
             $active = $this->current->get();
 
-            if ($active === null || ! $active->equals($context)) {
-                throw new TenantContextConflict(
-                    'Transação aberta com contexto diferente do solicitado.'
-                );
+            if ($active !== null && $active->equals($context)) {
+                return $connection->transaction($callback);
             }
 
-            return $connection->transaction($callback);
+            if ($active !== null && $this->canElevate($active, $context)) {
+                return $this->elevate($connection, $active, $context, $callback);
+            }
+
+            throw new TenantContextConflict(
+                'Transação aberta com contexto diferente do solicitado.'
+            );
         }
 
         return $connection->transaction(function () use ($connection, $context, $callback): mixed {
             $this->apply($connection, $context);
             $previous = $this->current->swap($context);
-            $logKeys = ['context_kind', 'tenant_id', 'user_id', 'buyer_company_id', 'api_client_id'];
-            $previousLog = Context::only($logKeys);
-            Context::forget($logKeys);
+            $previousLog = Context::only(self::LOG_KEYS);
+            Context::forget(self::LOG_KEYS);
             Context::add($context->toLogContext());
 
             try {
                 return $callback();
             } finally {
                 $this->current->swap($previous);
-                Context::forget($logKeys);
+                Context::forget(self::LOG_KEYS);
                 Context::add($previousLog);
             }
         }, $attempts);
@@ -83,13 +88,51 @@ final readonly class TenantDatabase
         return (array) $row;
     }
 
+    /**
+     * Elevação controlada (ADR-014): uma unidade de trabalho iniciada por um
+     * usuário pode entrar temporariamente em outro contexto do MESMO usuário
+     * (seleção de contexto, aceite de convite, onboarding). Contextos sem
+     * usuário (jobs, sistema) nunca trocam de contexto, e não há troca para
+     * contexto de outro usuário.
+     */
+    private function canElevate(ExecutionContext $active, ExecutionContext $requested): bool
+    {
+        return $active->userId !== null
+            && $requested->userId === $active->userId;
+    }
+
+    /**
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    private function elevate(ConnectionInterface $connection, ExecutionContext $active, ExecutionContext $context, Closure $callback): mixed
+    {
+        // Em savepoint: se falhar, o ROLLBACK TO SAVEPOINT desfaz também as
+        // configurações; em caso de sucesso, o contexto anterior é reaplicado.
+        return $connection->transaction(function () use ($connection, $active, $context, $callback): mixed {
+            $this->apply($connection, $context);
+            $previous = $this->current->swap($context);
+
+            try {
+                $result = $callback();
+            } finally {
+                $this->current->swap($previous);
+            }
+
+            $this->apply($connection, $active);
+
+            return $result;
+        });
+    }
+
     private function apply(ConnectionInterface $connection, ExecutionContext $context): void
     {
-        $settings = $context->databaseSettings();
         $sql = [];
         $bindings = [];
 
-        foreach ($settings as $name => $value) {
+        foreach ($context->databaseSettings() as $name => $value) {
             $sql[] = 'set_config(?, ?, true)';
             $bindings[] = $name;
             $bindings[] = $value;

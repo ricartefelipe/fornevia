@@ -12,3 +12,12 @@ paths = [
   '''^compose\.yaml$''',
   '''^\.github/workflows/ci\.yml$''',
 ]
+
+# Senhas fictícias usadas em testes automatizados de autenticação. A exceção
+# vale apenas para a regra genérica e para o diretório de testes.
+[[allowlists]]
+description = "Credenciais fictícias de testes automatizados"
+targetRules = ["generic-api-key"]
+paths = [
+  '''(^|/)tests/''',
+]
