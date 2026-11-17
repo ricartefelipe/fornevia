@@ -22,6 +22,9 @@
         <testsuite name="Integration">
             <directory>tests/Integration</directory>
         </testsuite>
+        <testsuite name="Concurrency">
+            <directory>tests/Concurrency</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
@@ -38,7 +41,7 @@
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array" force="true"/>
         <env name="DB_CONNECTION" value="pgsql" force="true"/>
-        <env name="DB_DATABASE" value="fornevia_test" force="true"/>
+        <env name="DB_DATABASE" value="fornevia_test"/>
         <env name="LOG_CHANNEL" value="null" force="true"/>
         <env name="MAIL_MAILER" value="array" force="true"/>
         <env name="QUEUE_CONNECTION" value="sync" force="true"/>
