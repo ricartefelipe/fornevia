@@ -167,13 +167,19 @@ compensatórios.
 
 Toda operação que bloqueia mais de um recurso segue a ordem:
 
+0. gestão de acessos: associações de proprietário ativas (por `id`) antes
+   da associação alvo; assinatura do tenant (limites do plano) antes de
+   inserir convites ou filiais;
 1. documento de origem (carrinho, cotação, pedido);
 2. chave de idempotência;
 3. saldos de estoque, ordenados por `(warehouse_id, sku_id)`;
 4. conta de crédito da empresa compradora;
 5. orçamento do centro de custo.
 
-Ordem consistente evita deadlocks entre confirmações concorrentes.
+Ordem consistente evita deadlocks entre confirmações concorrentes. O
+teste de concorrência `LastOwnerRaceTest` reproduziu um deadlock quando a
+associação alvo era bloqueada antes do conjunto de proprietários; a ordem
+acima corrigiu o problema.
 
 ---
 
@@ -249,3 +255,78 @@ ou bits de execução (ex.: vfat). Nesses casos, recomenda-se trabalhar em um
 `git worktree` em sistema de arquivos POSIX. O `compose.yaml` usa bind
 mount do diretório do projeto; o Docker Desktop precisa ter o diretório
 compartilhado nas configurações de *File sharing*.
+
+---
+
+## ADR-013 — Contexto revalidado a cada requisição
+
+**Status:** aceita
+
+**Decisão.** A sessão guarda apenas a referência do contexto escolhido
+(membership, tenant, tipo, empresa compradora). `EstablishRequestContext`
+roda antes do route model binding e, dentro da transação da requisição,
+recarrega a associação exigindo: mesmo id, mesmo usuário, status ativo,
+tipo e empresa idênticos aos da sessão e organização com acesso permitido.
+Qualquer divergência limpa o contexto e redireciona para a seleção.
+
+A requisição autenticada roda em uma transação curta com o contexto local.
+Como o pipeline do Laravel converte exceções em respostas antes de devolver
+ao middleware, uma resposta que carrega exceção provoca rollback explícito
+(`RollbackWithResponse`). Chamadas externas não ocorrem nessa transação.
+
+**Consequências.** Revogação de acesso e suspensão de organização valem na
+requisição seguinte, sem depender de expiração de sessão. A troca de
+contexto regenera o identificador da sessão.
+
+---
+
+## ADR-014 — Elevação controlada para contextos do mesmo usuário
+
+**Status:** aceita (revisada após testes: a primeira versão só permitia
+elevar a partir do contexto `User`, o que quebrava troca de contexto,
+aceite de convite e onboarding quando já havia contexto ativo na sessão)
+
+**Contexto.** Seleção de contexto, aceite de convite e onboarding precisam
+ler ou gravar dados de tenants aos quais o próprio usuário pertence (ou
+passará a pertencer), inclusive quando a requisição já roda no contexto de
+outro tenant do mesmo usuário.
+
+**Decisão.** Dentro de uma transação aberta, `TenantDatabase::run()` só
+aceita outro contexto se ambos tiverem o **mesmo usuário (não nulo)**. A
+entrada ocorre em savepoint; ao final, as configurações do contexto anterior
+são reaplicadas (em falha, o rollback do savepoint as restaura). Contextos
+sem usuário (jobs, sistema) e contextos de outro usuário são recusados com
+`TenantContextConflict`.
+
+Salvaguardas: `Access::can()` nega qualquer permissão quando o contexto
+ativo não é o da associação vinculada (portanto, nada é autorizado "por
+herança" durante uma elevação), e a auditoria registra a associação do
+contexto da transação, nunca a do contexto externo.
+
+---
+
+## ADR-015 — Assinatura da plataforma separada das vendas do tenant
+
+**Status:** aceita
+
+**Decisão.** Planos, assinaturas, módulos e auditoria da plataforma usam
+`organization_id` e tabelas próprias, administradas pela plataforma. Não há
+tabela compartilhada com pedidos, faturas comerciais ou contas a receber do
+distribuidor. Limites efetivos: usuários da equipe (ativos + convites
+pendentes) e filiais sob lock da assinatura; pedidos por mês por incremento
+condicional; módulos incluídos ou adicionais. Valores comerciais iniciais
+são hipóteses de produto configuráveis.
+
+---
+
+## ADR-016 — Autenticação com Fortify e 2FA para perfis privilegiados
+
+**Status:** aceita
+
+**Decisão.** Fortify fornece login, cadastro, verificação de e-mail,
+redefinição de senha e TOTP com confirmação. Perfis com permissões
+`organization.manage`, `members.manage`, `credit.manage`, `finance.manage`,
+`integrations.manage` ou `subscription.manage`, e administradores da
+plataforma, só acessam o contexto com 2FA confirmado (`RequireTwoFactor`).
+Senhas: mínimo de 12 caracteres com letras e números e verificação de
+vazamento (desligável por configuração em testes).

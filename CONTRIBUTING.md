@@ -67,6 +67,19 @@ docker compose run --rm node                           # build dos assets
 docker compose up -d
 ```
 
+## Testes em paralelo
+
+O banco de testes padrão é `fornevia_test`. Para execuções paralelas,
+use bancos com sufixo `_test` provisionados pelo script de papéis e
+informe-os por variável de ambiente:
+
+```bash
+docker compose run --rm -e DB_DATABASE=fornevia_w1_test app vendor/bin/pest tests/Feature
+```
+
+Testes de concorrência usam `tests/Support/Concurrency` (processos PHP
+separados, portões por advisory lock e verificação de bloqueio por lock).
+
 ## Verificações antes do PR
 
 ```bash
@@ -77,6 +90,10 @@ docker compose run --rm app vendor/bin/pest
 ```
 
 ## Convenções de código
+
+- Nomes de arquivos não podem diferir apenas por maiúsculas/minúsculas
+  (o projeto precisa funcionar em sistemas de arquivos que não fazem essa
+  distinção).
 
 - `declare(strict_types=1)` em todo PHP próprio; tipos em parâmetros e
   retornos; PHPStan nível 8 sem baseline.
