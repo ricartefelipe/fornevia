@@ -48,19 +48,22 @@ if ($xml === false) {
 
 $sources = [];
 foreach ($xml->sources->source ?? [] as $source) {
-    $sources[] = rtrim((string) $source, '/').'/';
+    $sources[] = rtrim((string) $source, '/');
 }
 
 $totals = ['core' => [0, 0], 'critical_lines' => [0, 0], 'critical_branches' => [0, 0]];
 
 foreach ($xml->xpath('//class') ?: [] as $class) {
-    $file = (string) $class['filename'];
-    foreach ($sources as $source) {
-        if (str_starts_with($file, $source)) {
-            $file = substr($file, strlen($source));
-        }
+    // Os nomes de arquivo do relatório são relativos ao <source> (ex.:
+    // /var/www/html/app); normaliza para caminhos a partir da raiz (app/...).
+    $filename = (string) $class['filename'];
+    $absolute = str_starts_with($filename, '/') ? $filename : ($sources[0] ?? '').'/'.$filename;
+
+    if (preg_match('#(?:^|/)(app/.+)$#', $absolute, $match) !== 1) {
+        continue;
     }
-    $file = ltrim(preg_replace('#^.*?(app/)#', 'app/', $file) ?? $file, '/');
+
+    $file = $match[1];
 
     if (in_array($file, EXCLUDED, true)) {
         continue;
@@ -91,6 +94,25 @@ foreach ($xml->xpath('//class') ?: [] as $class) {
             }
         }
     }
+}
+
+// O núcleo existe no código mas não aparece no relatório: falha, para que
+// um relatório incompleto nunca seja tomado como meta atingida.
+$coreFiles = [];
+foreach (CORE_PATHS as $path) {
+    $directory = dirname(__DIR__).'/'.$path;
+    if (is_dir($directory)) {
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS)) as $entry) {
+            if ($entry->isFile() && str_ends_with($entry->getFilename(), '.php')) {
+                $coreFiles[] = $entry->getPathname();
+            }
+        }
+    }
+}
+
+if ($coreFiles !== [] && $totals['core'][1] === 0) {
+    fwrite(STDERR, "O relatório não contém linhas do núcleo (".count($coreFiles)." arquivos em app/Domain e app/Actions).\n");
+    exit(1);
 }
 
 $percent = static fn (array $pair): ?float => $pair[1] === 0 ? null : round($pair[0] * 100 / $pair[1], 2);

@@ -82,3 +82,40 @@ exercitadas quando houve chamada real ao provedor.
 - Harness de concorrência com processos separados; corrida entre dois
   proprietários revogando um ao outro (revelou e levou à correção de um
   deadlock por ordem de locks).
+
+### Verificado localmente (Docker, engine nativo)
+
+| Verificação | Resultado |
+|---|---|
+| `vendor/bin/pest` (suíte completa) | 655 testes, 3.482 asserções, todos aprovados |
+| Cobertura de linhas do núcleo (`app/Domain` + `app/Actions`, PCOV) | 97,96% (433/442) |
+| `vendor/bin/phpstan analyse` (nível 8) | sem erros |
+| `vendor/bin/pint --test` | sem pendências |
+| `composer audit` | sem vulnerabilidades conhecidas |
+| Testes de concorrência (processos separados) | corrida entre proprietários; convites simultâneos; aceite simultâneo |
+
+### Defeitos encontrados pela suíte e pela revisão adversarial (corrigidos)
+
+| Defeito | Correção |
+|---|---|
+| Deadlock ao revogar proprietários em cruz | ordem única de locks (ADR-006) |
+| Troca de contexto, aceite de convite e onboarding falhavam com contexto ativo | elevação para contextos do mesmo usuário (ADR-014) |
+| Convites de equipe visíveis e graváveis em contexto de comprador | política RLS por empresa |
+| Associações de outros tenants visíveis dentro de um tenant | `own_memberships` só no contexto de usuário |
+| 2FA, contexto e e-mail verificado não reaplicados em ações Livewire com JSON | bloqueio por exceção ou redirect; middleware persistente |
+| Sessões antigas válidas após redefinição de senha | `AuthenticateSession` e remoção das sessões persistidas |
+| Links de e-mail gerados a partir do cabeçalho Host | `URL::forceRootUrl` e hosts confiáveis |
+| Códigos de recuperação exibidos sem confirmação de senha | `password.confirm` e `no-store` |
+| Força bruta distribuída no desafio 2FA | limite por conta e por IP |
+| Convites simultâneos ao mesmo destinatário geravam erro de banco | lock consultivo por destinatário |
+| Proprietário recém-revogado concluía operação de propriedade | revalidação do ator sob lock |
+| Identificadores malformados e entradas em lista geravam erro 500 | tratamento como inexistente / validação |
+| Fila de notificações sem consumidor | Horizon com supervisores por fila |
+| Conexões de teste esgotavam `max_connections` | fechamento explícito por teste |
+| Gate de cobertura não media o núcleo (passava sem dados) | normalização de caminhos e falha sem dados |
+
+### Pendente neste incremento
+
+- Execução da CI no GitHub para a branch (após o push).
+- Aprovação humana obrigatória nas proteções de branch: não habilitada
+  (mantenedor único).
