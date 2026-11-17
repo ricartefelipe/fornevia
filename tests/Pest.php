@@ -9,9 +9,9 @@ use Tests\TestCase;
 
 /*
 | Unit: regras puras, sem Laravel, banco, Redis ou rede.
-| Feature/Integration/Concurrency: aplicação + PostgreSQL real.
+| Feature/Integration: aplicação + PostgreSQL real.
 */
-pest()->extend(TestCase::class)->in('Feature', 'Integration', 'Concurrency');
+pest()->extend(TestCase::class)->in('Feature', 'Integration');
 
 /**
  * Executa o callback no contexto de sistema do tenant (transação com RLS).
