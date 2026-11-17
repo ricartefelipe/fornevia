@@ -42,7 +42,8 @@ final class ContextController
         $user = $request->user();
 
         try {
-            $membership = $select->handle($user, (string) $request->input('membership_id', ''));
+            $membershipId = $request->input('membership_id');
+            $membership = $select->handle($user, is_string($membershipId) ? $membershipId : '');
         } catch (ContextUnavailable) {
             return redirect()->route('contexts.index', ['escolher' => 1])->with('error', 'Contexto indisponível.');
         }

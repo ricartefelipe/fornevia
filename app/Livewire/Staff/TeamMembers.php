@@ -15,6 +15,7 @@ use App\Models\Identity\Branch;
 use App\Models\Identity\Invitation;
 use App\Models\Identity\Membership;
 use App\Models\Identity\Role;
+use App\Support\Http\UntrustedId;
 use Illuminate\Contracts\View\View;
 use InvalidArgumentException;
 use Livewire\Attributes\Layout;
@@ -111,7 +112,8 @@ final class TeamMembers extends Component
 
     public function cancelInvitation(string $invitationId, RevokeInvitation $revoke): void
     {
-        $invitation = Invitation::query()->where('kind', MembershipKind::Staff->value)->findOrFail($invitationId);
+        $invitation = Invitation::query()->where('kind', MembershipKind::Staff->value)
+            ->findOrFail(UntrustedId::uuid($invitationId, Invitation::class));
         $revoke->handle($invitation);
         $this->message = 'Convite cancelado.';
     }
@@ -142,7 +144,7 @@ final class TeamMembers extends Component
     {
         return Membership::query()
             ->where('kind', MembershipKind::Staff->value)
-            ->findOrFail($membershipId);
+            ->findOrFail(UntrustedId::uuid($membershipId, Membership::class));
     }
 
     private function syncRoleSelections(): void

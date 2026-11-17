@@ -114,7 +114,7 @@ final readonly class EstablishRequestContext
                     (string) $stored['buyer_company_id'],
                     (string) $stored['membership_id'],
                 ),
-                default => ExecutionContext::user($user->id),
+                default => throw new InvalidExecutionContext('Tipo de contexto inválido na sessão.'),
             };
         } catch (InvalidExecutionContext) {
             $request->session()->forget(self::SESSION_KEY);

@@ -8,6 +8,7 @@ use App\Actions\Platform\SavePlan;
 use App\Enums\Platform\PlatformModule;
 use App\Models\Identity\User;
 use App\Models\Platform\Plan;
+use App\Support\Http\UntrustedId;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -53,7 +54,7 @@ final class PlansIndex extends Component
 
     public function edit(string $planId): void
     {
-        $plan = Plan::query()->findOrFail($planId);
+        $plan = Plan::query()->findOrFail(UntrustedId::uuid($planId, Plan::class));
         $this->editingId = $plan->id;
         $this->code = $plan->code;
         $this->name = $plan->name;

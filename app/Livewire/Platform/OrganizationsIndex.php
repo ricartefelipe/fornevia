@@ -10,6 +10,7 @@ use App\Enums\Platform\SubscriptionStatus;
 use App\Models\Identity\Organization;
 use App\Models\Identity\User;
 use App\Models\Platform\Subscription;
+use App\Support\Http\UntrustedId;
 use Illuminate\Contracts\View\View;
 use InvalidArgumentException;
 use Livewire\Attributes\Layout;
@@ -63,7 +64,7 @@ final class OrganizationsIndex extends Component
         $actor = auth()->user();
 
         try {
-            $change->handle($actor, Organization::query()->findOrFail($organizationId), $status, $this->reason);
+            $change->handle($actor, Organization::query()->findOrFail(UntrustedId::uuid($organizationId, Organization::class)), $status, $this->reason);
         } catch (InvalidArgumentException) {
             $this->addError('reason', 'Informe a justificativa (mínimo de 5 caracteres).');
 
@@ -71,6 +72,7 @@ final class OrganizationsIndex extends Component
         }
 
         $this->reset('reason');
+        $this->resetErrorBag();
         $this->message = 'Situação atualizada.';
     }
 }

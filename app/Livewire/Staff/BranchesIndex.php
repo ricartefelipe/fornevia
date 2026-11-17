@@ -8,6 +8,7 @@ use App\Actions\Identity\SaveBranch;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Cnpj;
 use App\Models\Identity\Branch;
+use App\Support\Http\UntrustedId;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
@@ -37,7 +38,7 @@ final class BranchesIndex extends Component
 
     public function edit(string $branchId): void
     {
-        $branch = Branch::query()->findOrFail($branchId);
+        $branch = Branch::query()->findOrFail(UntrustedId::uuid($branchId, Branch::class));
         $this->editingId = $branch->id;
         $this->code = $branch->code;
         $this->name = $branch->name;
