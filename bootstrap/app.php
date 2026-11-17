@@ -34,6 +34,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->replace(TrustProxies::class, TrustConfiguredProxies::class);
         $middleware->encryptCookies();
 
+        // Sessões de outros dispositivos deixam de valer quando a senha muda.
+        $middleware->authenticateSessions();
+
+        // Somente o host configurado em APP_URL é aceito (fora de local/testes).
+        $middleware->trustHosts(at: static fn (): array => [
+            (string) parse_url((string) config('app.url'), PHP_URL_HOST),
+        ], subdomains: false);
+
         // Contexto de tenant antes do route model binding: bindings, policies
         // e componentes Livewire já consultam o banco sob RLS.
         $middleware->appendToGroup('web', EstablishRequestContext::class);

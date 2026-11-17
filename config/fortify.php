@@ -9,7 +9,9 @@ return [
     'passwords' => 'users',
     'username' => 'email',
     'email' => 'email',
-    'lowercase_usernames' => true,
+    // E-mails são citext (comparação sem distinção de caixa) e normalizados
+    // nas Actions após a validação; o Fortify não altera a entrada bruta.
+    'lowercase_usernames' => false,
 
     // Após autenticar, o usuário escolhe (ou retoma) o contexto de trabalho.
     'home' => '/contextos',

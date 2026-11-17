@@ -37,9 +37,13 @@ final readonly class RequireTwoFactor
             return $next($request);
         }
 
-        return $request->expectsJson()
-            ? response()->json(['message' => 'Ative a autenticação em dois fatores.'], 403)
-            : redirect()->route('profile.security')
-                ->with('warning', 'Seu perfil exige autenticação em dois fatores. Ative-a para continuar.');
+        // Bloqueio sempre interrompe o pipeline: o middleware persistente do
+        // Livewire só respeita redirects e exceções, não outras respostas.
+        if ($request->expectsJson()) {
+            abort(403, 'Ative a autenticação em dois fatores.');
+        }
+
+        return redirect()->route('profile.security')
+            ->with('warning', 'Seu perfil exige autenticação em dois fatores. Ative-a para continuar.');
     }
 }

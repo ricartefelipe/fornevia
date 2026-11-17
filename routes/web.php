@@ -25,13 +25,19 @@ Route::post('/convites/{organization}/{token}', [InvitationController::class, 'a
     ->middleware(['auth', 'throttle:invitations'])
     ->name('invitations.accept');
 
+// Segurança da conta: exige confirmação recente de senha (códigos de
+// recuperação e segredo TOTP) e fica acessível mesmo com e-mail pendente de
+// verificação, para permitir corrigir um endereço digitado errado.
+Route::view('/perfil/seguranca', 'profile.security')
+    ->middleware(['auth', 'password.confirm', 'cache.headers:no_store;private'])
+    ->name('profile.security');
+
 Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::get('/contextos', [ContextController::class, 'index'])->name('contexts.index');
     Route::post('/contextos', [ContextController::class, 'store'])->middleware('throttle:30,1')->name('contexts.store');
     Route::post('/contextos/sair', [ContextController::class, 'leave'])->name('contexts.leave');
 
     Route::livewire('/onboarding', CreateOrganizationForm::class)->name('onboarding');
-    Route::view('/perfil/seguranca', 'profile.security')->name('profile.security');
 
     Route::middleware(['context:staff', 'two-factor'])->group(function (): void {
         Route::livewire('/painel', Dashboard::class)->name('dashboard');

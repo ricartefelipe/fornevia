@@ -22,9 +22,12 @@ final readonly class RequireContext
     public function handle(Request $request, Closure $next, string $kind = 'any'): Response
     {
         if (! $this->access->hasMembership()) {
-            return $request->expectsJson()
-                ? response()->json(['message' => 'Selecione um contexto.'], 409)
-                : redirect()->guest(route('contexts.index'));
+            // Exceção ou redirect: ambos interrompem também as ações Livewire.
+            if ($request->expectsJson()) {
+                abort(409, 'Selecione um contexto.');
+            }
+
+            return redirect()->guest(route('contexts.index'));
         }
 
         $allowed = match ($kind) {

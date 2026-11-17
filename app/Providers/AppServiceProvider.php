@@ -16,6 +16,9 @@ use App\Support\Clock\SystemClock;
 use App\Support\Tenancy\CurrentContext;
 use App\Support\Tenancy\TenantDatabase;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Auth\Middleware\Authenticate;
+use Illuminate\Auth\Middleware\EnsureEmailIsVerified;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
@@ -23,8 +26,11 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Schema\Grammars\PostgresGrammar;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Livewire\Livewire;
@@ -46,6 +52,24 @@ final class AppServiceProvider extends ServiceProvider
     {
         Date::use(CarbonImmutable::class);
 
+        // Links (e-mails de convite, redefinição de senha, verificação) usam a
+        // URL configurada, nunca o cabeçalho Host da requisição.
+        URL::forceRootUrl((string) config('app.url'));
+
+        if (str_starts_with((string) config('app.url'), 'https://')) {
+            URL::forceScheme('https');
+        }
+
+        // Redefinição de senha encerra todas as sessões persistidas do usuário
+        // (o Fortify já rotaciona o token de "lembrar-me").
+        Event::listen(PasswordReset::class, static function (PasswordReset $event): void {
+            $id = $event->user->getAuthIdentifier();
+
+            if (is_string($id)) {
+                DB::table('sessions')->where('user_id', $id)->delete();
+            }
+        });
+
         // Tipo citext (extensão provisionada no banco) para e-mails e slugs.
         PostgresGrammar::macro('typeCitext', fn (): string => 'citext');
 
@@ -59,6 +83,8 @@ final class AppServiceProvider extends ServiceProvider
         // As ações de componentes Livewire reaplicam no servidor as mesmas
         // exigências da rota que renderizou a página.
         Livewire::addPersistentMiddleware([
+            Authenticate::class,
+            EnsureEmailIsVerified::class,
             RequireContext::class,
             RequirePermission::class,
             RequireTwoFactor::class,

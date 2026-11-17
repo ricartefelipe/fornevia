@@ -35,12 +35,17 @@ final class FortifyServiceProvider extends ServiceProvider
         Fortify::confirmPasswordView(static fn () => view('auth.confirm-password'));
 
         RateLimiter::for('login', static function (Request $request): Limit {
-            $email = Str::lower((string) $request->input(Fortify::username()));
+            $input = $request->input(Fortify::username());
+            $email = is_string($input) ? Str::lower($input) : '';
 
             return Limit::perMinute(5)->by(Str::transliterate($email.'|'.$request->ip()));
         });
 
-        RateLimiter::for('two-factor', static fn (Request $request): Limit => Limit::perMinute(5)
-            ->by((string) $request->session()->get('login.id').'|'.$request->ip()));
+        // Desafio 2FA limitado por conta (independe do IP, contra tentativas
+        // distribuídas) e, adicionalmente, por IP.
+        RateLimiter::for('two-factor', static fn (Request $request): array => [
+            Limit::perMinute(5)->by('2fa-user|'.(string) $request->session()->get('login.id')),
+            Limit::perMinute(20)->by('2fa-ip|'.(string) $request->ip()),
+        ]);
     }
 }
