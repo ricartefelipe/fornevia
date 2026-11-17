@@ -10,6 +10,6 @@ final class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // Dados demonstrativos: php artisan db:seed --class=DemoSeeder
+        $this->call(PlanSeeder::class);
     }
 }
