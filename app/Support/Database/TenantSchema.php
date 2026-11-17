@@ -89,6 +89,20 @@ final class TenantSchema
     }
 
     /**
+     * Tabelas mantidas pela equipe do distribuidor (configuração, cadastros,
+     * catálogo, preços): contextos de comprador e de usuário só leem. As
+     * políticas são restritivas e se somam às de tenant e de empresa.
+     */
+    public static function buyerReadOnly(string $table): void
+    {
+        self::assertIdentifier($table);
+
+        DB::statement("create policy staff_insert on {$table} as restrictive for insert with check (app_sees_all_buyers())");
+        DB::statement("create policy staff_update on {$table} as restrictive for update using (app_sees_all_buyers()) with check (app_sees_all_buyers())");
+        DB::statement("create policy staff_delete on {$table} as restrictive for delete using (app_sees_all_buyers())");
+    }
+
+    /**
      * Tabelas de histórico: a aplicação apenas insere e lê.
      * Correções são feitas por lançamentos compensatórios.
      */
