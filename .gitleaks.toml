@@ -1,0 +1,14 @@
+title = "Fornevia"
+
+[extend]
+useDefault = true
+
+# Valores fixos de ambientes locais, CI e testes (não são segredos reais).
+[[allowlists]]
+description = "Credenciais locais e de teste documentadas"
+paths = [
+  '''^\.env\.example$''',
+  '''^phpunit\.xml$''',
+  '''^compose\.yaml$''',
+  '''^\.github/workflows/ci\.yml$''',
+]
