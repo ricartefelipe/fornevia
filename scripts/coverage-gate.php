@@ -111,7 +111,7 @@ foreach (CORE_PATHS as $path) {
 }
 
 if ($coreFiles !== [] && $totals['core'][1] === 0) {
-    fwrite(STDERR, "O relatório não contém linhas do núcleo (".count($coreFiles)." arquivos em app/Domain e app/Actions).\n");
+    fwrite(STDERR, 'O relatório não contém linhas do núcleo ('.count($coreFiles)." arquivos em app/Domain e app/Actions).\n");
     exit(1);
 }
 
