@@ -88,9 +88,20 @@ return new class extends Migration
         DB::statement('alter table shopping_list_items add constraint shopping_list_items_quantity_check check (quantity > 0)');
         TenantSchema::enableRowLevelSecurity('shopping_list_items', 'required');
 
-        DB::statement('create sequence order_number_seq as bigint start 1');
-        $app = TenantSchema::appRole();
-        DB::statement("grant usage on sequence order_number_seq to {$app}");
+        // Numeração de pedidos por tenant (uma sequência global revelaria o
+        // volume de outros distribuidores). Atualizada no fim da confirmação.
+        Schema::create('order_number_counters', function (Blueprint $table): void {
+            $table->uuid('tenant_id')->primary();
+            $table->foreign('tenant_id')->references('id')->on('organizations')->restrictOnDelete();
+            $table->bigInteger('last_number')->default(0);
+            $table->timestampTz('updated_at')->useCurrent();
+        });
+        DB::statement('alter table order_number_counters add constraint order_number_counters_positive_check check (last_number >= 0)');
+        DB::statement('alter table order_number_counters enable row level security');
+        DB::statement('alter table order_number_counters force row level security');
+        DB::statement('create policy tenant_isolation on order_number_counters as permissive for all
+            using (tenant_id = app_current_tenant()) with check (tenant_id = app_current_tenant())');
+        TenantSchema::buyerReadOnly('order_number_counters');
 
         Schema::create('orders', function (Blueprint $table): void {
             $table->uuid('id')->primary();
@@ -144,8 +155,6 @@ return new class extends Migration
             subtotal_cents >= 0 and discount_cents >= 0 and freight_cents >= 0
             and total_cents = subtotal_cents - discount_cents + freight_cents
             and credit_committed_cents between 0 and total_cents)');
-        // A sequência pertence à coluna: removida junto com a tabela (inclusive em migrate:fresh).
-        DB::statement('alter sequence order_number_seq owned by orders.number');
         TenantSchema::enableRowLevelSecurity('orders', 'required');
 
         Schema::create('order_items', function (Blueprint $table): void {
@@ -315,7 +324,7 @@ return new class extends Migration
         DB::statement('alter table if exists stock_reservations drop constraint if exists stock_reservations_order_item_fk');
         Schema::dropIfExists('order_items');
         Schema::dropIfExists('orders');
-        DB::statement('drop sequence if exists order_number_seq');
+        Schema::dropIfExists('order_number_counters');
         Schema::dropIfExists('shopping_list_items');
         Schema::dropIfExists('shopping_lists');
         Schema::dropIfExists('cart_items');

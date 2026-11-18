@@ -55,7 +55,8 @@ use Illuminate\Support\Str;
  * consumido sem pedido.
  *
  * Ordem de locks (ADR-006): carrinho → chave de idempotência → saldos de
- * estoque (depósito, SKU) → conta de crédito → contador do plano.
+ * estoque (depósito, SKU) → conta de crédito → contador do plano →
+ * contador de numeração do tenant.
  * Estoque, crédito, custos e contador são gravados no contexto de sistema
  * do mesmo usuário (ADR-014), pois o contexto de comprador só lê essas
  * tabelas.
@@ -122,6 +123,10 @@ final readonly class PlaceOrder
             throw new CartNotReady('Revise os itens do carrinho antes de confirmar.', ['lines' => $quote->problems()]);
         }
 
+        if (! $quote->totals->total->isPositive()) {
+            throw new CartNotReady('O total do pedido precisa ser maior que zero. Revise as quantidades.');
+        }
+
         if ($data->expectedTotalCents !== null && $data->expectedTotalCents !== $quote->totals->total->cents) {
             throw new PricesChanged('Os valores mudaram desde a última exibição. Confira o novo total antes de confirmar.', [
                 'expected_total_cents' => $data->expectedTotalCents,
@@ -161,6 +166,7 @@ final readonly class PlaceOrder
             }
 
             $this->limits->consumeOrderQuota();
+            $this->assignNumber($order);
 
             $this->outbox->record('order.confirmed', 'order', $order->id, [
                 'order_id' => $order->id,
@@ -187,6 +193,23 @@ final readonly class PlaceOrder
             'resource_id' => $order->id,
             'response' => ['number' => $order->number, 'total_cents' => $order->total_cents->cents],
         ];
+    }
+
+    /**
+     * Número definitivo por tenant (PED-0000001), no fim da transação: o
+     * contador fica bloqueado apenas até o commit, junto do contador de uso
+     * do plano, que já serializa esse trecho.
+     */
+    private function assignNumber(Order $order): void
+    {
+        $row = DB::selectOne(
+            'insert into order_number_counters (tenant_id, last_number, updated_at) values (?, 1, now())
+             on conflict (tenant_id) do update set last_number = order_number_counters.last_number + 1, updated_at = now()
+             returning last_number',
+            [$order->tenant_id],
+        );
+
+        $order->forceFill(['number' => 'PED-'.str_pad((string) $row->last_number, 7, '0', STR_PAD_LEFT)])->save();
     }
 
     /**
@@ -243,13 +266,14 @@ final readonly class PlaceOrder
 
     private function createOrder(Cart $cart, BuyerCompany $buyer, PlaceOrderData $data, BuyerAddress $shipping, ?BuyerAddress $billing, PaymentTerm $term, ?string $unitId, ?string $costCenterId, \App\Domain\Ordering\DocumentTotals $totals): Order
     {
-        $sequence = (int) DB::selectOne("select nextval('order_number_seq') as value")->value;
         $now = $this->clock->now();
         $membership = $this->access->membership();
 
         $order = new Order;
         $order->forceFill([
-            'number' => 'PED-'.str_pad((string) $sequence, 7, '0', STR_PAD_LEFT),
+            // Provisório até o fim da confirmação (assignNumber), para que o
+            // contador por tenant fique bloqueado só no trecho final.
+            'number' => 'PEND-'.Str::upper(Str::random(15)),
             'buyer_company_id' => $buyer->id,
             'buyer_unit_id' => $unitId,
             'cost_center_id' => $costCenterId,

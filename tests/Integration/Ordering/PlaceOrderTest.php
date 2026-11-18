@@ -209,3 +209,44 @@ it('consome a cota do plano em contexto de sistema e impede o comprador de alter
     expect($changed)->toBe([0, 0])
         ->and(($this->state)($scenario)['usage'])->toBe(1);
 });
+
+it('numera os pedidos por distribuidor, sem expor o volume de outros tenants', function (): void {
+    $first = OrderingScenario::create();
+    $second = OrderingScenario::create();
+
+    $a1 = ($this->place)($first, $first->buyerWithCart(quantity: '1'));
+    $b1 = ($this->place)($second, $second->buyerWithCart(quantity: '1'));
+    $a2 = ($this->place)($first, $first->buyerWithCart(quantity: '1'));
+
+    expect([$a1->number, $a2->number, $b1->number])->toBe(['PED-0000001', 'PED-0000002', 'PED-0000001']);
+});
+
+it('recusa pedido cujo total arredonda para zero', function (): void {
+    $scenario = OrderingScenario::create(stock: '10', unitPriceCents: 1);
+    $scenario->system(function () use ($scenario): void {
+        $kg = App\Models\Catalog\UnitOfMeasure::query()->where('code', 'KG')->firstOrFail();
+        App\Models\Catalog\Product::query()->whereKey($scenario->sku->product_id)->update(['base_unit_id' => $kg->id]);
+        App\Models\Catalog\Sku::query()->whereKey($scenario->sku->id)->update([
+            'sales_unit_id' => $kg->id, 'min_order_quantity' => '0.001', 'order_multiple' => '0.001',
+        ]);
+    });
+    $buyer = $scenario->buyerWithCart(quantity: '0,001');
+
+    expect(fn () => ($this->place)($scenario, $buyer))->toThrow(CartNotReady::class, 'maior que zero');
+    expect(($this->state)($scenario)['orders'])->toBe(0);
+});
+
+it('não mostra ao comprador reservas e movimentações de estoque, nem as do próprio pedido', function (): void {
+    $scenario = OrderingScenario::create();
+    $buyer = $scenario->buyerWithCart(quantity: '2');
+    ($this->place)($scenario, $buyer);
+
+    $seen = $scenario->tenant->actingAs($buyer['membership'], static fn (): array => [
+        DB::table('stock_reservations')->count(),
+        DB::table('stock_movements')->count(),
+    ]);
+
+    expect($seen)->toBe([0, 0])
+        ->and($scenario->system(static fn (): int => DB::table('stock_reservations')->count()))->toBe(1);
+});
+
