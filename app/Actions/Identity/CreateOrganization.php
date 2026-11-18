@@ -22,6 +22,7 @@ use App\Models\Identity\User;
 use App\Models\Platform\Plan;
 use App\Models\Platform\Subscription;
 use App\Models\Pricing\PaymentTerm;
+use App\Models\Pricing\PricingPolicy;
 use App\Models\Pricing\PricingSettings;
 use App\Services\Audit\AuditRecorder;
 use App\Support\Clock\Clock;
@@ -86,8 +87,8 @@ final readonly class CreateOrganization
             $term->forceFill(['code' => $code, 'name' => $name, 'installment_days' => $days, 'requires_credit' => $credit, 'is_active' => true])->save();
         }
 
-        $settings = new PricingSettings;
-        $settings->forceFill(['min_margin_bps' => 1_000, 'price_version' => 1])->save();
+        (new PricingSettings)->forceFill(['price_version' => 1])->save();
+        (new PricingPolicy)->forceFill(['min_margin_bps' => 1_000])->save();
     }
 
     private function create(string $organizationId, User $owner, Plan $plan, CreateOrganizationData $data): Membership

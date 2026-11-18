@@ -15,7 +15,10 @@ use Illuminate\Support\Facades\Schema;
  * - price_list_items / price_tiers: preço por SKU e faixas por volume;
  * - negotiated_prices: condição contratada por empresa e SKU, sem
  *   sobreposição de vigência (exclusion constraint);
- * - pricing_settings: margem mínima padrão e versão de preços (cache).
+ * - pricing_settings: versão de preços (chave do cache), legível pelo
+ *   comprador e somente leitura nesse contexto;
+ * - pricing_policies: margem mínima padrão, dado interno invisível ao
+ *   comprador (internal_only).
  *
  * O comprador enxerga apenas as tabelas aplicáveis a ele (padrão, do seu
  * grupo ou da sua empresa) e as próprias condições negociadas; itens e
@@ -28,19 +31,22 @@ return new class extends Migration
         Schema::create('pricing_settings', function (Blueprint $table): void {
             $table->uuid('tenant_id')->primary();
             $table->foreign('tenant_id')->references('id')->on('organizations')->restrictOnDelete();
-            $table->integer('min_margin_bps')->default(0);
             $table->bigInteger('price_version')->default(1);
             $table->timestampTz('updated_at')->useCurrent();
         });
-        DB::statement('alter table pricing_settings add constraint pricing_settings_margin_check check (min_margin_bps between -10000 and 10000)');
-        DB::statement('alter table pricing_settings enable row level security');
-        DB::statement('alter table pricing_settings force row level security');
-        DB::statement('create policy tenant_isolation on pricing_settings as permissive for all
-            using (tenant_id = app_current_tenant()) with check (tenant_id = app_current_tenant())');
+        self::tenantKeyedTable('pricing_settings');
+        TenantSchema::buyerReadOnly('pricing_settings');
 
-        Schema::table('categories', function (Blueprint $table): void {
-            $table->integer('min_margin_bps')->nullable();
+        Schema::create('pricing_policies', function (Blueprint $table): void {
+            $table->uuid('tenant_id')->primary();
+            $table->foreign('tenant_id')->references('id')->on('organizations')->restrictOnDelete();
+            $table->integer('min_margin_bps')->default(0);
+            $table->timestampTz('updated_at')->useCurrent();
         });
+        DB::statement('alter table pricing_policies add constraint pricing_policies_margin_check check (min_margin_bps between -10000 and 10000)');
+        self::tenantKeyedTable('pricing_policies');
+        DB::statement('create policy internal_only on pricing_policies as restrictive for all
+            using (app_sees_all_buyers()) with check (app_sees_all_buyers())');
 
         Schema::create('price_lists', function (Blueprint $table): void {
             $table->uuid('id')->primary();
@@ -85,8 +91,12 @@ return new class extends Migration
         DB::statement('alter table price_list_items add constraint price_list_items_price_check check (unit_price_cents > 0)');
         TenantSchema::enableRowLevelSecurity('price_list_items');
         TenantSchema::buyerReadOnly('price_list_items');
+        // O item herda a visibilidade da tabela e do SKU (produto restrito
+        // fora do catálogo do comprador não revela preço).
         DB::statement('create policy buyer_visibility on price_list_items as restrictive for select
-            using (app_sees_all_buyers() or exists (select 1 from price_lists pl where pl.id = price_list_id))');
+            using (app_sees_all_buyers() or (
+                exists (select 1 from price_lists pl where pl.id = price_list_id)
+                and exists (select 1 from skus s where s.id = sku_id)))');
 
         Schema::create('price_tiers', function (Blueprint $table): void {
             $table->uuid('id')->primary();
@@ -129,6 +139,8 @@ return new class extends Migration
         ) where (status = 'active')");
         TenantSchema::enableRowLevelSecurity('negotiated_prices', 'required');
         TenantSchema::buyerReadOnly('negotiated_prices');
+        DB::statement('create policy buyer_visibility on negotiated_prices as restrictive for select
+            using (app_sees_all_buyers() or exists (select 1 from skus s where s.id = sku_id))');
     }
 
     public function down(): void
@@ -137,9 +149,19 @@ return new class extends Migration
         Schema::dropIfExists('price_tiers');
         Schema::dropIfExists('price_list_items');
         Schema::dropIfExists('price_lists');
-        Schema::table('categories', function (Blueprint $table): void {
-            $table->dropColumn('min_margin_bps');
-        });
+        Schema::dropIfExists('pricing_policies');
         Schema::dropIfExists('pricing_settings');
+    }
+
+    /**
+     * Tabela com chave tenant_id (uma linha por tenant): RLS forçada com
+     * isolamento pelo próprio tenant_id.
+     */
+    private static function tenantKeyedTable(string $table): void
+    {
+        DB::statement("alter table {$table} enable row level security");
+        DB::statement("alter table {$table} force row level security");
+        DB::statement("create policy tenant_isolation on {$table} as permissive for all
+            using (tenant_id = app_current_tenant()) with check (tenant_id = app_current_tenant())");
     }
 };

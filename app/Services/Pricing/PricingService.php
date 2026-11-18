@@ -5,24 +5,19 @@ declare(strict_types=1);
 namespace App\Services\Pricing;
 
 use App\Domain\Pricing\Exceptions\PriceNotAvailable;
-use App\Domain\Pricing\PriceCandidate;
 use App\Domain\Pricing\PriceResolver;
 use App\Domain\Pricing\PriceSource;
 use App\Domain\Pricing\PriceTier;
 use App\Domain\Pricing\ResolvedPrice;
 use App\Domain\Shared\Money;
 use App\Domain\Shared\Quantity;
-use App\Enums\Pricing\NegotiatedPriceStatus;
-use App\Enums\Pricing\PriceListScope;
-use App\Enums\Pricing\PriceListStatus;
 use App\Models\Buyers\BuyerCompany;
-use App\Models\Pricing\NegotiatedPrice;
-use App\Models\Pricing\PriceListItem;
 use App\Support\Clock\Clock;
+use App\Support\Tenancy\ContextKind;
 use App\Support\Tenancy\CurrentContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Cache\Repository as Cache;
-use Illuminate\Database\Eloquent\Builder;
+use LogicException;
 
 /**
  * Preço de venda para uma empresa compradora (servidor é a única fonte:
@@ -43,6 +38,7 @@ final readonly class PricingService
         private Cache $cache,
         private Clock $clock,
         private CurrentContext $context,
+        private PriceCandidateLoader $loader,
     ) {}
 
     /**
@@ -51,6 +47,8 @@ final readonly class PricingService
      */
     public function resolve(BuyerCompany $buyer, array $quantities, ?CarbonImmutable $on = null): array
     {
+        $this->assertVisibleBuyer($buyer);
+
         $date = ($on ?? $this->clock->today())->startOfDay();
         $version = $this->version->current();
         $results = [];
@@ -70,7 +68,7 @@ final readonly class PricingService
             return $results;
         }
 
-        $candidates = $this->candidates($buyer, array_keys($missing), $date, $version);
+        $candidates = $this->loader->load($buyer, array_map('strval', array_keys($missing)), $date, $version)['candidates'];
 
         foreach ($missing as $skuId => $quantity) {
             try {
@@ -89,70 +87,17 @@ final readonly class PricingService
     }
 
     /**
-     * @param  list<string>  $skuIds
-     * @return array<string, list<PriceCandidate>>
+     * O cache não passa pelo RLS: no contexto de comprador, só os preços da
+     * própria empresa podem ser lidos ou gravados. Calcular para outra
+     * empresa nesse contexto veria menos candidatos e envenenaria o cache.
      */
-    private function candidates(BuyerCompany $buyer, array $skuIds, CarbonImmutable $date, int $version): array
+    private function assertVisibleBuyer(BuyerCompany $buyer): void
     {
-        $day = $date->toDateString();
-        $candidates = [];
+        $active = $this->context->get();
 
-        $negotiated = NegotiatedPrice::query()
-            ->where('buyer_company_id', $buyer->id)
-            ->whereIn('sku_id', $skuIds)
-            ->where('status', NegotiatedPriceStatus::Active->value)
-            ->where('valid_from', '<=', $day)
-            ->where(static fn (Builder $q) => $q->whereNull('valid_until')->orWhere('valid_until', '>=', $day))
-            ->get();
-
-        foreach ($negotiated as $price) {
-            $candidates[$price->sku_id][] = new PriceCandidate(
-                source: PriceSource::Negotiated,
-                referenceId: $price->id,
-                unitPrice: $price->unit_price_cents,
-                validFrom: $price->valid_from->toDateTimeImmutable(),
-                validUntil: $price->valid_until?->toDateTimeImmutable(),
-                version: $version,
-            );
+        if ($active !== null && $active->kind === ContextKind::Buyer && $active->buyerCompanyId !== $buyer->id) {
+            throw new LogicException('Preço de outra empresa solicitado no contexto de comprador.');
         }
-
-        $items = PriceListItem::query()
-            ->with(['priceList', 'tiers'])
-            ->whereIn('sku_id', $skuIds)
-            ->whereHas('priceList', static function (Builder $list) use ($buyer, $day): void {
-                $list->where('status', PriceListStatus::Active->value)
-                    ->where('valid_from', '<=', $day)
-                    ->where(static fn (Builder $q) => $q->whereNull('valid_until')->orWhere('valid_until', '>=', $day))
-                    ->where(static function (Builder $scope) use ($buyer): void {
-                        $scope->where('scope', PriceListScope::Default->value)
-                            ->orWhere(static fn (Builder $q) => $q->where('scope', PriceListScope::Customer->value)->where('buyer_company_id', $buyer->id));
-
-                        if ($buyer->customer_group_id !== null) {
-                            $scope->orWhere(static fn (Builder $q) => $q->where('scope', PriceListScope::Group->value)->where('customer_group_id', $buyer->customer_group_id));
-                        }
-                    });
-            })
-            ->get();
-
-        foreach ($items as $item) {
-            $list = $item->priceList;
-            $candidates[$item->sku_id][] = new PriceCandidate(
-                source: match ($list->scope) {
-                    PriceListScope::Customer => PriceSource::CustomerList,
-                    PriceListScope::Group => PriceSource::GroupList,
-                    PriceListScope::Default => PriceSource::DefaultList,
-                },
-                referenceId: $list->id,
-                unitPrice: $item->unit_price_cents,
-                validFrom: $list->valid_from->toDateTimeImmutable(),
-                validUntil: $list->valid_until?->toDateTimeImmutable(),
-                priority: $list->priority,
-                tiers: array_values($item->tiers->map(static fn ($t): PriceTier => new PriceTier($t->min_quantity, $t->unit_price_cents))->all()),
-                version: $version,
-            );
-        }
-
-        return $candidates;
     }
 
     private function key(BuyerCompany $buyer, int $version, CarbonImmutable $date, string $skuId, Quantity $quantity): string

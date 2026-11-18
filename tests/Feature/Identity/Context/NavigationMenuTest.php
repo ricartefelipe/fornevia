@@ -16,8 +16,9 @@ use Tests\Support\Builders\TenantScenario;
 | as permissões do papel ativo. Rotas ainda não registradas não aparecem.
 |
 | Algumas rotas de módulos futuros são registradas aqui para exercitar o
-| filtro por permissão; as demais (preços, cotações, pedidos, estoque,
-| expedição, devoluções e integrações) permanecem ausentes de propósito.
+| filtro por permissão; as demais (cotações, pedidos, estoque, expedição,
+| devoluções e integrações) permanecem ausentes de propósito. As tabelas
+| de preço usam a rota real do módulo.
 */
 
 beforeEach(function (): void {
@@ -60,17 +61,17 @@ it('monta o menu da equipe conforme as permissões do papel', function (SystemRo
     expect(($this->menuFor)($membership))->toBe($expected);
 })->with([
     'proprietário' => [SystemRole::Owner, [
-        'dashboard', 'buyers.index', 'catalog.products', 'credit.index', 'finance.index',
+        'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'credit.index', 'finance.index',
         'audit.index', 'team.index', 'branches.index', 'subscription.show',
     ]],
     'administrador' => [SystemRole::Admin, [
-        'dashboard', 'buyers.index', 'catalog.products', 'credit.index', 'finance.index',
+        'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'credit.index', 'finance.index',
         'audit.index', 'team.index', 'branches.index',
     ]],
-    'representante comercial' => [SystemRole::SalesRep, ['dashboard', 'buyers.index', 'catalog.products', 'credit.index']],
+    'representante comercial' => [SystemRole::SalesRep, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'credit.index']],
     'estoque e expedição' => [SystemRole::Warehouse, ['dashboard', 'catalog.products']],
     'financeiro e crédito' => [SystemRole::Finance, ['dashboard', 'buyers.index', 'credit.index', 'finance.index', 'audit.index']],
-    'consulta' => [SystemRole::Viewer, ['dashboard', 'buyers.index', 'catalog.products', 'credit.index', 'finance.index']],
+    'consulta' => [SystemRole::Viewer, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'credit.index', 'finance.index']],
 ]);
 
 it('monta o menu do portal conforme as permissões do papel do comprador', function (SystemRole $role, array $expected): void {
@@ -97,7 +98,7 @@ it('reflete o ajuste de permissões feito pelo tenant em um papel', function ():
         ])->save();
     });
 
-    expect(($this->menuFor)($membership))->toBe(['dashboard', 'buyers.index', 'catalog.products']);
+    expect(($this->menuFor)($membership))->toBe(['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists']);
 });
 
 it('não exibe itens de navegação sem contexto ativo', function (): void {
