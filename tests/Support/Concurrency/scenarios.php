@@ -64,4 +64,4 @@ return [
         });
     },
 
-];
+] + (require __DIR__.'/ordering-scenarios.php');
