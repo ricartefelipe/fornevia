@@ -1,0 +1,298 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Livewire\Portal\Ordering;
+
+use App\Actions\Ordering\CancelOrderItems;
+use App\Actions\Ordering\Portal\BuyerOrders;
+use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
+use App\Actions\Ordering\Portal\Reorder;
+use App\Domain\Shared\BusinessRuleViolation;
+use App\Domain\Shared\Money;
+use App\Domain\Shared\Quantity;
+use App\Enums\Identity\Permission;
+use App\Enums\Ordering\CommercialStatus;
+use App\Models\Buyers\BuyerUnit;
+use App\Models\Buyers\CostCenter;
+use App\Models\Catalog\UnitOfMeasure;
+use App\Models\Ordering\Order;
+use App\Models\Ordering\OrderEvent;
+use App\Models\Ordering\OrderItem;
+use App\Support\Auth\Access;
+use App\Support\Http\UntrustedId;
+use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Str;
+use InvalidArgumentException;
+use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
+use Livewire\Attributes\Title;
+use Livewire\Component;
+
+/**
+ * Detalhe do pedido do comprador: itens, totais, estados separados
+ * (comercial, aprovação, atendimento e financeiro), entrega, pagamento e
+ * histórico. Permite cancelar itens ainda não expedidos (RF-062) a quem
+ * pode confirmar pedidos e comprar novamente (recompra com preços
+ * vigentes).
+ */
+#[Layout('layouts.app')]
+#[Title('Pedido')]
+final class OrderShow extends Component
+{
+    public const int MIN_REASON_LENGTH = 5;
+
+    public const int MAX_REASON_LENGTH = 500;
+
+    /** @var array<string, string> */
+    private const array EVENT_LABELS = [
+        'order.confirmed' => 'Pedido confirmado',
+        'order.items_cancelled' => 'Itens cancelados',
+        'order.cancelled' => 'Pedido cancelado',
+    ];
+
+    #[Locked]
+    public string $orderId = '';
+
+    /** @var array<string, string> quantidade a cancelar por item (entrada não confiável) */
+    public array $cancelQuantities = [];
+
+    public string $cancelReason = '';
+
+    #[Locked]
+    public ?string $message = null;
+
+    #[Locked]
+    public ?string $failure = null;
+
+    /** @var array{summary: string, added: int, rejected: int, lines: list<array<string, mixed>>}|null */
+    #[Locked]
+    public ?array $report = null;
+
+    public function mount(string $order, BuyerOrders $orders): void
+    {
+        $this->orderId = $orders->find($orders->actor(), $order)->id;
+    }
+
+    /**
+     * Mantém apenas entradas com chave de item e texto de tamanho limitado.
+     */
+    public function updatedCancelQuantities(): void
+    {
+        $sanitized = [];
+
+        foreach ($this->cancelQuantities as $itemId => $value) {
+            if (count($sanitized) >= 500) {
+                break;
+            }
+
+            if (is_string($itemId) && Str::isUuid($itemId) && is_string($value)) {
+                $sanitized[strtolower($itemId)] = mb_substr($value, 0, 21);
+            }
+        }
+
+        $this->cancelQuantities = $sanitized;
+    }
+
+    public function cancelItems(BuyerOrders $orders, CancelOrderItems $cancel): void
+    {
+        $this->clearFeedback();
+        $order = $orders->find($orders->actor(), $this->orderId);
+        $reason = $this->reason();
+        $quantities = $this->requestedCancellations($order);
+
+        if ($reason === null || $quantities === null) {
+            return;
+        }
+
+        $this->cancel($cancel, $order, $quantities, $reason);
+    }
+
+    public function cancelAll(BuyerOrders $orders, CancelOrderItems $cancel): void
+    {
+        $this->clearFeedback();
+        $order = $orders->find($orders->actor(), $this->orderId);
+        $reason = $this->reason();
+
+        if ($reason === null) {
+            return;
+        }
+
+        $this->cancel($cancel, $order, null, $reason);
+    }
+
+    public function reorder(Reorder $reorder): void
+    {
+        $this->clearFeedback();
+
+        try {
+            $this->report = $reorder->handle($this->orderId)->toDisplay();
+        } catch (InvalidCartItem $e) {
+            $this->failure = $e->getMessage();
+        }
+    }
+
+    public function render(BuyerOrders $orders, Access $access): View
+    {
+        $order = $orders->find($orders->actor(), $this->orderId);
+        $names = $orders->userNames([
+            $order->placed_by_user_id,
+            ...$order->events->map(static fn (OrderEvent $event): ?string => $event->actor_user_id)->all(),
+        ]);
+
+        return view('livewire.portal.ordering.order-show', [
+            'order' => $order,
+            'placedBy' => $names[$order->placed_by_user_id] ?? null,
+            'events' => $order->events->map(static fn (OrderEvent $event): array => [
+                'id' => $event->id,
+                'label' => self::EVENT_LABELS[$event->type] ?? 'Atualização do pedido',
+                'at' => $event->created_at,
+                'actor' => $event->actor_user_id !== null ? ($names[$event->actor_user_id] ?? null) : null,
+                'details' => self::eventDetails($event),
+            ])->all(),
+            'unitName' => $order->buyer_unit_id !== null ? BuyerUnit::query()->whereKey($order->buyer_unit_id)->value('name') : null,
+            'costCenterName' => $order->cost_center_id !== null ? CostCenter::query()->whereKey($order->cost_center_id)->value('name') : null,
+            'canCancel' => $orders->canCancel($order),
+            'canReorder' => $access->can(Permission::PortalCart),
+        ])->title("Pedido {$order->number}");
+    }
+
+    /**
+     * @param  array<string, Quantity>|null  $quantities
+     */
+    private function cancel(CancelOrderItems $cancel, Order $order, ?array $quantities, string $reason): void
+    {
+        try {
+            $updated = $cancel->handle($order, $quantities, $reason);
+        } catch (BusinessRuleViolation $e) {
+            $this->failure = $e->getMessage();
+
+            return;
+        } catch (InvalidArgumentException) {
+            $this->failure = 'Não foi possível cancelar: confira as quantidades informadas.';
+
+            return;
+        }
+
+        $this->reset('cancelQuantities', 'cancelReason');
+        $this->message = $quantities === null || $updated->commercial_status === CommercialStatus::Cancelled
+            ? 'Pedido cancelado. As reservas e o crédito correspondentes foram liberados.'
+            : 'Itens cancelados. As reservas e o crédito correspondentes foram liberados.';
+    }
+
+    private function reason(): ?string
+    {
+        $reason = trim((string) preg_replace('/\s+/u', ' ', $this->cancelReason));
+
+        if (mb_strlen($reason) < self::MIN_REASON_LENGTH) {
+            $this->addError('cancelReason', 'Informe o motivo do cancelamento (ao menos '.self::MIN_REASON_LENGTH.' caracteres).');
+
+            return null;
+        }
+
+        if (mb_strlen($reason) > self::MAX_REASON_LENGTH) {
+            $this->addError('cancelReason', 'O motivo deve ter até '.self::MAX_REASON_LENGTH.' caracteres.');
+
+            return null;
+        }
+
+        return $reason;
+    }
+
+    /**
+     * Quantidades digitadas por item (pt-BR), conferidas contra o saldo não
+     * expedido e as casas decimais da unidade; null quando há erro.
+     *
+     * @return array<string, Quantity>|null
+     */
+    private function requestedCancellations(Order $order): ?array
+    {
+        $items = $order->items->keyBy('id');
+        $decimals = UnitOfMeasure::query()->whereIn('code', $order->items->pluck('unit_code')->unique()->all())->pluck('decimals', 'code')->all();
+        $quantities = [];
+        $valid = true;
+
+        foreach ($this->cancelQuantities as $itemId => $input) {
+            if (trim($input) === '') {
+                continue;
+            }
+
+            /** @var OrderItem|null $item */
+            $item = $items->get(UntrustedId::uuid($itemId, OrderItem::class));
+
+            if ($item === null) {
+                throw (new ModelNotFoundException)->setModel(OrderItem::class, [$itemId]);
+            }
+
+            $key = "cancelQuantities.{$item->id}";
+
+            try {
+                $quantity = Quantity::parseLocalized($input);
+            } catch (InvalidArgumentException|BusinessRuleViolation) {
+                $this->addError($key, 'Informe a quantidade em números, por exemplo 2 ou 1,5.');
+                $valid = false;
+
+                continue;
+            }
+
+            $open = BuyerOrders::cancellable($item);
+            $unitDecimals = isset($decimals[$item->unit_code]) ? (int) $decimals[$item->unit_code] : Quantity::SCALE;
+
+            $error = match (true) {
+                ! $quantity->isPositive() => 'Informe uma quantidade maior que zero.',
+                $quantity->decimalPlaces() > $unitDecimals => $unitDecimals === 0
+                    ? "A unidade {$item->unit_code} não aceita casas decimais."
+                    : "A unidade {$item->unit_code} aceita no máximo {$unitDecimals} casas decimais.",
+                $quantity->greaterThan($open) => "Só é possível cancelar até {$open->format()} {$item->unit_code} deste item (saldo não expedido).",
+                default => null,
+            };
+
+            if ($error !== null) {
+                $this->addError($key, $error);
+                $valid = false;
+
+                continue;
+            }
+
+            $quantities[$item->id] = $quantity;
+        }
+
+        if ($valid && $quantities === []) {
+            $this->addError('cancelQuantities', 'Informe a quantidade a cancelar em ao menos um item.');
+
+            return null;
+        }
+
+        return $valid ? $quantities : null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function eventDetails(OrderEvent $event): array
+    {
+        $data = $event->data;
+        $details = [];
+
+        foreach (['total_cents' => 'Total', 'value_cents' => 'Valor cancelado'] as $key => $label) {
+            if (isset($data[$key]) && is_int($data[$key])) {
+                $details[] = $label.': '.Money::ofCents($data[$key])->format();
+            }
+        }
+
+        if (isset($data['reason']) && is_string($data['reason']) && $data['reason'] !== '') {
+            $details[] = 'Motivo: '.$data['reason'];
+        }
+
+        return $details;
+    }
+
+    private function clearFeedback(): void
+    {
+        $this->resetErrorBag();
+        $this->message = null;
+        $this->failure = null;
+        $this->report = null;
+    }
+}
