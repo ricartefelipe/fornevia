@@ -190,3 +190,54 @@ exercitadas quando houve chamada real ao provedor.
 - Ações do comprador que alterem preços (por exemplo, aceite de cotação que
   gera condição negociada) precisarão de contexto elevado de sistema, pois
   as tabelas de preço são somente leitura no contexto de comprador.
+
+## Incremento 4 — Estoque, crédito e pedidos (`feature/estoque-credito-pedidos`)
+
+### Implementado
+
+- Domínio: posição de crédito (RN-080) e alocação de estoque por prioridade
+  de depósito, com encomenda explícita.
+- Estoque: depósitos, ledger de movimentações append-only com saldo
+  projetado por trigger (físico ≥ 0, reservado ≤ físico), entradas,
+  ajustes com motivo, transferências na mesma transação e histórico.
+- Crédito: contas, limites, bloqueio, tolerância de vencidos, exceções
+  temporárias, movimentos e histórico de limite.
+- Pedidos: confirmação transacional (reserva, crédito, cota do plano,
+  eventos, outbox, idempotência), cancelamento total ou parcial, estados
+  separados, numeração por distribuidor (ADR-022).
+- Portal: carrinho, pedido rápido por SKU, listas, recompra, checkout e meus
+  pedidos. Equipe: pedidos (com carteira do representante), estoque e
+  crédito.
+
+### Verificado localmente (Docker, engine nativo)
+
+| Verificação | Resultado |
+|---|---|
+| Testes de concorrência (processos separados) | 16 aprovados: última unidade, saldo parcial, limite de crédito, chave repetida, ajuste × reserva, redução de limite × checkout, cancelamento × confirmação, convites e proprietários |
+| Suítes do incremento (pedidos, estoque, crédito, portal, equipe, tenancy, unitários) | aprovadas após as correções da revisão |
+| `migrate:fresh`, rollback completo e `migrate` | concluídos sem erro |
+| Cobertura de linhas (última execução completa, anterior às correções) | núcleo 97,75%; caminhos críticos 100% |
+| PHPStan nível 8 e Pint | sem erros |
+
+A execução completa da suíte depois das correções foi interrompida antes do
+fim; a evidência da suíte completa é a CI do PR.
+
+### Defeitos encontrados pela revisão adversarial (corrigidos)
+
+| Defeito | Correção |
+|---|---|
+| Reserva sempre recusada pelo trigger de saldo (CHECK avaliado na linha proposta do upsert) | atualização antes da inserção |
+| Conta de crédito não podia ser criada pela aplicação | grant de inserção sem colunas de saldo |
+| Impasse entre cancelamento e confirmação (locks fora da ordem do ADR-006) | saldos bloqueados em (depósito, SKU) antes do laço; teste concorrente que reproduz o impasse |
+| Comprador lia reservas, movimentações e dados de crédito de outras empresas | leitura restrita à equipe, integrações e sistema (ADR-020) |
+| Sequência global de pedidos revelava o volume de outros tenants | contador por distribuidor (ADR-022) |
+| Total zero, saldo acima de `numeric(18,3)` e total da página geravam erro 500 | recusa como regra de negócio |
+| Encomenda exibida na unidade base com o código da unidade de venda | conversão pelo fator |
+| Teste de corrida de crédito disputava o estoque, não a conta | SKUs distintos |
+
+### Pendente neste incremento
+
+- Verificação adversarial das correções (interrompida) e suíte completa
+  local após as correções.
+- Fluxo de aprovação interna do comprador (os pedidos saem confirmados).
+- Recorte de carteira do representante apenas em pedidos.
