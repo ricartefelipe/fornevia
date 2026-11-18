@@ -16,7 +16,15 @@ use InvalidArgumentException;
  */
 final readonly class Money
 {
-    private function __construct(public int $cents) {}
+    /** Maior valor absoluto aceito: R$ 10 trilhões (cabe em bigint com folga para somas). */
+    public const int MAX_CENTS = 1_000_000_000_000_000;
+
+    private function __construct(public int $cents)
+    {
+        if ($cents > self::MAX_CENTS || $cents < -self::MAX_CENTS) {
+            throw new AmountOutOfRange('Valor monetário fora do intervalo suportado.');
+        }
+    }
 
     public static function ofCents(int $cents): self
     {
@@ -44,7 +52,21 @@ final readonly class Money
             throw new InvalidArgumentException("Valor monetário inválido: {$value}");
         }
 
-        return new self(BigDecimal::of($normalized)->multipliedBy(100)->toScale(0)->toInt());
+        return self::fromDecimalCents(BigDecimal::of($normalized)->multipliedBy(100)->toScale(0));
+    }
+
+    public static function min(self $a, self $b): self
+    {
+        return $a->cents <= $b->cents ? $a : $b;
+    }
+
+    private static function fromDecimalCents(BigDecimal $cents): self
+    {
+        if ($cents->abs()->isGreaterThan(self::MAX_CENTS)) {
+            throw new AmountOutOfRange('Valor monetário fora do intervalo suportado.');
+        }
+
+        return new self($cents->toInt());
     }
 
     public function plus(self $other): self
@@ -67,11 +89,10 @@ final readonly class Money
      */
     public function times(Quantity $quantity): self
     {
-        return new self(
+        return self::fromDecimalCents(
             BigDecimal::of($this->cents)
                 ->multipliedBy($quantity->value)
-                ->toScale(0, RoundingMode::HalfUp)
-                ->toInt(),
+                ->toScale(0, RoundingMode::HalfUp),
         );
     }
 

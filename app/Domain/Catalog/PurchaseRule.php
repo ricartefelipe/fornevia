@@ -15,6 +15,9 @@ use InvalidArgumentException;
  */
 final readonly class PurchaseRule
 {
+    /** Maior mínimo, múltiplo ou quantidade de uma linha (cabe com folga em numeric(18,3)). */
+    public const string MAX_QUANTITY = '999999999';
+
     public function __construct(
         public Quantity $minimum,
         public Quantity $multiple,
@@ -61,18 +64,16 @@ final readonly class PurchaseRule
     }
 
     /**
-     * Menor quantidade válida maior ou igual à informada (sugestão ao usuário).
+     * Menor quantidade válida maior ou igual à informada (sugestão ao usuário):
+     * o primeiro múltiplo a partir de max(quantidade, mínimo). Como o múltiplo
+     * é arredondado para cima a partir de um valor já ≥ mínimo, o resultado
+     * nunca fica abaixo do mínimo.
      */
     public function nearestValid(Quantity $quantity): Quantity
     {
         $target = $quantity->lessThan($this->minimum) ? $this->minimum : $quantity;
         $steps = $target->value->dividedBy($this->multiple->value, 0, RoundingMode::Ceiling);
-        $candidate = Quantity::fromDecimal($steps->multipliedBy($this->multiple->value));
 
-        while ($candidate->lessThan($this->minimum)) {
-            $candidate = $candidate->plus($this->multiple);
-        }
-
-        return $candidate;
+        return Quantity::fromDecimal($steps->multipliedBy($this->multiple->value));
     }
 }

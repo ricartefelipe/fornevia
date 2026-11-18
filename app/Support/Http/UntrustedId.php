@@ -24,6 +24,8 @@ final class UntrustedId
             throw (new ModelNotFoundException)->setModel($model);
         }
 
-        return $value;
+        // Forma canônica: o PostgreSQL aceita UUID em maiúsculas, mas comparações
+        // na aplicação (listas, chaves de array) usam a forma minúscula.
+        return strtolower($value);
     }
 }
