@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Staff\Orders;
 
 use App\Actions\Ordering\Staff\StaffOrderQuery;
+use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\Cnpj;
 use App\Domain\Shared\Money;
 use App\Enums\Ordering\ApprovalStatus;
@@ -100,7 +101,7 @@ final class OrdersIndex extends Component
 
         return view('livewire.staff.orders.orders-index', [
             'orders' => $orders,
-            'pageTotal' => Money::sum(array_map(static fn (Order $order): Money => $order->total_cents, $page)),
+            'pageTotal' => self::pageTotal($page),
             'pageCount' => count($page),
             'companyOptions' => $this->companyOptions($query),
             'commercialOptions' => self::options(CommercialStatus::cases()),
@@ -234,5 +235,19 @@ final class OrdersIndex extends Component
         }
 
         return $options;
+    }
+
+    /**
+     * Soma da página; null quando excede o limite de valores monetários.
+     *
+     * @param  array<int, Order>  $page
+     */
+    private static function pageTotal(array $page): ?Money
+    {
+        try {
+            return Money::sum(array_map(static fn (Order $order): Money => $order->total_cents, $page));
+        } catch (AmountOutOfRange) {
+            return null;
+        }
     }
 }

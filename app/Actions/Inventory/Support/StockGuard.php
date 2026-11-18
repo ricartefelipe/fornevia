@@ -7,6 +7,7 @@ namespace App\Actions\Inventory\Support;
 use App\Data\Inventory\StockBalance;
 use App\Domain\Inventory\Exceptions\InsufficientStock;
 use App\Domain\Inventory\Exceptions\InvalidInventoryOperation;
+use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\Quantity;
 use App\Models\Catalog\Sku;
 use App\Models\Catalog\UnitOfMeasure;
@@ -171,6 +172,10 @@ final class StockGuard
         try {
             return DB::transaction($callback);
         } catch (QueryException $e) {
+            if ($e->getCode() === '22003') {
+                throw new AmountOutOfRange('O saldo resultante excede o limite de quantidade suportado.', ['field' => 'quantity']);
+            }
+
             if ($e->getCode() === '23514' && str_contains($e->getMessage(), 'stock_levels_')) {
                 throw new InsufficientStock(
                     'O saldo mudou durante a operação e a movimentação deixaria o estoque físico abaixo do reservado. Consulte o saldo atualizado e tente novamente.',

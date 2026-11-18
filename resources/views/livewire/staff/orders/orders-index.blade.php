@@ -87,7 +87,7 @@
                         <th scope="row" colspan="8" class="text-left font-semibold">
                             Total desta página ({{ $pageCount }} {{ $pageCount === 1 ? 'pedido' : 'pedidos' }})
                         </th>
-                        <td class="whitespace-nowrap text-right font-semibold">{{ $pageTotal->format() }}</td>
+                        <td class="whitespace-nowrap text-right font-semibold">{{ $pageTotal?->format() ?? "Acima do limite de cálculo" }}</td>
                     </tr>
                 </tfoot>
             </table>
