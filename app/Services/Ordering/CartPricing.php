@@ -9,7 +9,6 @@ use App\Data\Ordering\CartQuote;
 use App\Domain\Catalog\PurchaseRuleViolation;
 use App\Domain\Ordering\DocumentTotals;
 use App\Domain\Ordering\LineAmounts;
-use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\Percentage;
 use App\Domain\Shared\Quantity;
 use App\Models\Buyers\BuyerCompany;
@@ -96,12 +95,10 @@ final readonly class CartPricing
             $problems[] = 'Item sem preço vigente para a sua empresa.';
         }
 
-        try {
-            $amounts = $price !== null ? LineAmounts::calculate($price->unitPrice, Percentage::zero(), $item->quantity) : null;
-        } catch (AmountOutOfRange) {
-            $amounts = null;
-            $problems[] = 'O total do item excede o limite de cálculo. Reduza a quantidade.';
-        }
+        // Total acima do limite: AmountOutOfRange interrompe o cálculo do
+        // carrinho inteiro (o portal sinaliza o carrinho sem exibir total
+        // parcial; a confirmação recusa como regra de negócio).
+        $amounts = $price !== null ? LineAmounts::calculate($price->unitPrice, Percentage::zero(), $item->quantity) : null;
         $availability = match (true) {
             $base !== null && $available->greaterThanOrEqual($base) => 'available',
             $sku->product->allow_backorder => 'backorder',

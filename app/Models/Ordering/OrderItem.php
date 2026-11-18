@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Models\Ordering;
 
+use App\Domain\Shared\Quantity;
 use App\Models\Inventory\StockReservation;
 use App\Support\Database\Casts\AsDecimal;
 use App\Support\Database\Casts\AsMoney;
 use App\Support\Database\Casts\AsQuantity;
 use App\Support\Tenancy\BelongsToTenant;
+use Brick\Math\RoundingMode;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,20 +31,20 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $unit_code
  * @property string|null $package_label
  * @property \Brick\Math\BigDecimal $conversion_factor
- * @property \App\Domain\Shared\Quantity $quantity
- * @property \App\Domain\Shared\Quantity $base_quantity
+ * @property Quantity $quantity
+ * @property Quantity $base_quantity
  * @property \App\Domain\Shared\Money $unit_price_cents
  * @property int $discount_bps
  * @property \App\Domain\Shared\Money $unit_net_price_cents
  * @property \App\Domain\Shared\Money $line_gross_cents
  * @property \App\Domain\Shared\Money $line_total_cents
  * @property array<string, mixed> $price_source
- * @property \App\Domain\Shared\Quantity $quantity_reserved
- * @property \App\Domain\Shared\Quantity $quantity_backordered
- * @property \App\Domain\Shared\Quantity $quantity_cancelled
- * @property \App\Domain\Shared\Quantity $quantity_shipped
- * @property \App\Domain\Shared\Quantity $quantity_delivered
- * @property \App\Domain\Shared\Quantity $quantity_returned
+ * @property Quantity $quantity_reserved
+ * @property Quantity $quantity_backordered
+ * @property Quantity $quantity_cancelled
+ * @property Quantity $quantity_shipped
+ * @property Quantity $quantity_delivered
+ * @property Quantity $quantity_returned
  */
 class OrderItem extends Model
 {
@@ -74,6 +76,19 @@ class OrderItem extends Model
             'quantity_returned' => AsQuantity::class,
             'line_number' => 'integer',
         ];
+    }
+
+    /**
+     * Quantidade encomendada (registrada na unidade base) expressa na
+     * unidade de venda, arredondada para cima nas casas de Quantity.
+     */
+    public function backorderedInSalesUnit(): Quantity
+    {
+        if ($this->conversion_factor->isZero()) {
+            return $this->quantity_backordered;
+        }
+
+        return Quantity::fromDecimal($this->quantity_backordered->value->dividedBy($this->conversion_factor, Quantity::SCALE, RoundingMode::Up));
     }
 
     /**

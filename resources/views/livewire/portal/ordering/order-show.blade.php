@@ -98,7 +98,7 @@
                                                 <p class="text-xs text-slate-600">{{ implode(' · ', array_filter([$item->variant_label, $item->package_label])) }}</p>
                                             @endif
                                             @if ($item->quantity_backordered->isPositive())
-                                                <p class="text-xs text-amber-800">Sob encomenda: {{ $item->quantity_backordered->format() }} {{ $item->unit_code }}</p>
+                                                <p class="text-xs text-amber-800">Sob encomenda: {{ $item->backorderedInSalesUnit()->format() }} {{ $item->unit_code }}</p>
                                             @endif
                                         </td>
                                         <td class="text-right">{{ $item->quantity->format() }} {{ $item->unit_code }}</td>

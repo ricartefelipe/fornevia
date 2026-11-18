@@ -167,6 +167,6 @@ it('recusa item de outro pedido e quantidade acima do saldo, sem efeito parcial'
         expect($e->details())->toBe(['order_item_id' => $itemId, 'cancellable' => '3.000']);
     }
 
-    expect(fn () => ($this->cancel)($scenario->tenant, $manager, $placed['order']->id, null, 'não'))->toThrow(InvalidArgumentException::class)
+    expect(fn () => ($this->cancel)($scenario->tenant, $manager, $placed['order']->id, null, 'não'))->toThrow(OrderNotCancellable::class, 'motivo')
         ->and(Fx::state($scenario->tenant, $placed['order']))->toBe($before);
 });
