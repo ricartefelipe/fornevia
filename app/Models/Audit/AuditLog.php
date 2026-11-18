@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $reason
  * @property string|null $ip
  * @property string|null $correlation_id
+ * @property-read string|null $buyer_company_id coluna gerada a partir de data->>'buyer_company_id'
  * @property CarbonImmutable $created_at
  * @property-read User|null $actor
  */
