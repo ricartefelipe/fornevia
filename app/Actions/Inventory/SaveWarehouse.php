@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Inventory;
 
-use App\Actions\Inventory\Exceptions\InvalidInventoryOperation;
-use App\Actions\Inventory\Exceptions\WarehouseCodeTaken;
 use App\Data\Inventory\WarehouseData;
+use App\Domain\Inventory\Exceptions\InvalidInventoryOperation;
+use App\Domain\Inventory\Exceptions\WarehouseCodeTaken;
 use App\Enums\Identity\Permission;
 use App\Models\Identity\Branch;
 use App\Models\Inventory\Warehouse;

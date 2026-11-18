@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Ordering\Portal;
 
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
 use App\Actions\Ordering\Portal\Support\CartWriter;
 use App\Actions\Ordering\Portal\Support\PortalBuyer;
 use App\Actions\Ordering\Portal\Support\PurchasableSkus;
 use App\Actions\Ordering\Portal\Support\QuickOrderParser;
 use App\Data\Ordering\Portal\CartAdditionLine;
 use App\Data\Ordering\Portal\CartAdditionReport;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Enums\Identity\Permission;
 use Illuminate\Support\Facades\DB;
 

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Actions\Ordering\Portal\Exceptions;
+namespace App\Domain\Ordering\Exceptions;
 
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Quantity;

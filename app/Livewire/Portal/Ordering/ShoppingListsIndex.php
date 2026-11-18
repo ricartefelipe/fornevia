@@ -6,10 +6,10 @@ namespace App\Livewire\Portal\Ordering;
 
 use App\Actions\Ordering\Portal\AddListToCart;
 use App\Actions\Ordering\Portal\DeleteShoppingList;
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
-use App\Actions\Ordering\Portal\Exceptions\InvalidShoppingList;
 use App\Actions\Ordering\Portal\SaveShoppingList;
 use App\Actions\Ordering\Portal\ShoppingLists;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
+use App\Domain\Ordering\Exceptions\InvalidShoppingList;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;

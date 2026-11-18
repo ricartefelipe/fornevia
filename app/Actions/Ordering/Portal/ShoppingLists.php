@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Ordering\Portal;
 
-use App\Actions\Ordering\Portal\Exceptions\InvalidShoppingList;
 use App\Actions\Ordering\Portal\Support\PortalBuyer;
 use App\Data\Ordering\Portal\BuyerActor;
+use App\Domain\Ordering\Exceptions\InvalidShoppingList;
 use App\Enums\Identity\Permission;
 use App\Models\Identity\Membership;
 use App\Models\Ordering\ShoppingList;

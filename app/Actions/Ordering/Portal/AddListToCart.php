@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Ordering\Portal;
 
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
 use App\Actions\Ordering\Portal\Support\CartWriter;
 use App\Actions\Ordering\Portal\Support\PurchasableSkus;
 use App\Data\Ordering\Portal\CartAdditionReport;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Models\Ordering\ShoppingListItem;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;

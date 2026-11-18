@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Credit;
 
-use App\Actions\Credit\Exceptions\CreditExceptionNotActive;
 use App\Domain\Buyers\Justification;
+use App\Domain\Credit\Exceptions\CreditExceptionNotActive;
 use App\Enums\Identity\Permission;
 use App\Models\Credit\CreditAccount;
 use App\Models\Credit\CreditException;

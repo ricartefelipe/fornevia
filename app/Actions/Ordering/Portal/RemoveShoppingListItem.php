@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Ordering\Portal;
 
-use App\Actions\Ordering\Portal\Exceptions\InvalidShoppingList;
+use App\Domain\Ordering\Exceptions\InvalidShoppingList;
 use App\Models\Ordering\ShoppingListItem;
 use App\Support\Http\UntrustedId;
 use Illuminate\Database\Eloquent\ModelNotFoundException;

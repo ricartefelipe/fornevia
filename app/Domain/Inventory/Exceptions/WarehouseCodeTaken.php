@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Actions\Inventory\Exceptions;
+namespace App\Domain\Inventory\Exceptions;
 
 use App\Domain\Shared\ConflictingState;
 

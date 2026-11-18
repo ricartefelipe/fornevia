@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Credit;
 
-use App\Actions\Credit\Exceptions\CreditAccountAlreadyOpen;
 use App\Domain\Buyers\Justification;
+use App\Domain\Credit\Exceptions\CreditAccountAlreadyOpen;
 use App\Domain\Shared\Money;
 use App\Enums\Credit\CreditAccountStatus;
 use App\Enums\Identity\Permission;

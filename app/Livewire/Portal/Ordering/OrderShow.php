@@ -6,8 +6,8 @@ namespace App\Livewire\Portal\Ordering;
 
 use App\Actions\Ordering\CancelOrderItems;
 use App\Actions\Ordering\Portal\BuyerOrders;
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
 use App\Actions\Ordering\Portal\Reorder;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Money;
 use App\Domain\Shared\Quantity;

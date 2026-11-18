@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Inventory;
 
-use App\Actions\Inventory\Exceptions\InvalidInventoryOperation;
 use App\Actions\Inventory\Support\StockGuard;
 use App\Data\Inventory\StockBalance;
+use App\Domain\Inventory\Exceptions\InvalidInventoryOperation;
 use App\Domain\Shared\Quantity;
 use App\Enums\Catalog\SkuStatus;
 use App\Enums\Identity\Permission;

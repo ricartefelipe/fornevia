@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Inventory;
 
-use App\Actions\Inventory\Exceptions\WarehouseHasHistory;
+use App\Domain\Inventory\Exceptions\WarehouseHasHistory;
 use App\Enums\Identity\Permission;
 use App\Models\Inventory\Warehouse;
 use App\Services\Audit\AuditRecorder;

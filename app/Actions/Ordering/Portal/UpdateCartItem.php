@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Ordering\Portal;
 
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
 use App\Actions\Ordering\Portal\Support\CartWriter;
 use App\Actions\Ordering\Portal\Support\PortalBuyer;
 use App\Actions\Ordering\Portal\Support\PurchasableSkus;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Enums\Identity\Permission;
 use App\Models\Ordering\CartItem;
 use App\Support\Http\UntrustedId;

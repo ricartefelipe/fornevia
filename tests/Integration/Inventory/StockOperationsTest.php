@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\Inventory\AdjustStock;
-use App\Actions\Inventory\Exceptions\InvalidInventoryOperation;
 use App\Actions\Inventory\ReceiveStock;
 use App\Actions\Inventory\TransferStock;
 use App\Data\Inventory\StockBalance;
 use App\Data\Inventory\StockTransferResult;
 use App\Domain\Inventory\Exceptions\InsufficientStock;
+use App\Domain\Inventory\Exceptions\InvalidInventoryOperation;
 use App\Domain\Shared\Quantity;
 use App\Enums\Catalog\SkuStatus;
 use App\Enums\Identity\SystemRole;

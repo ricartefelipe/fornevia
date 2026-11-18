@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Ordering\Portal\Support;
 
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
 use App\Data\Ordering\CartLineQuote;
 use App\Data\Ordering\CartQuote;
 use App\Data\Ordering\Portal\BuyerActor;
 use App\Data\Ordering\Portal\CartAdditionLine;
 use App\Data\Ordering\Portal\CartAdditionReport;
 use App\Domain\Catalog\PurchaseRule;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Domain\Ordering\LineAmounts;
 use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\Percentage;

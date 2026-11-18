@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use App\Actions\Inventory\DeleteWarehouse;
-use App\Actions\Inventory\Exceptions\InvalidInventoryOperation;
-use App\Actions\Inventory\Exceptions\WarehouseCodeTaken;
-use App\Actions\Inventory\Exceptions\WarehouseHasHistory;
 use App\Actions\Inventory\SaveWarehouse;
 use App\Data\Inventory\WarehouseData;
+use App\Domain\Inventory\Exceptions\InvalidInventoryOperation;
+use App\Domain\Inventory\Exceptions\WarehouseCodeTaken;
+use App\Domain\Inventory\Exceptions\WarehouseHasHistory;
 use App\Enums\Identity\SystemRole;
 use App\Models\Audit\AuditLog;
 use App\Models\Identity\Branch;

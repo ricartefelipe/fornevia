@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Inventory\Support;
 
-use App\Actions\Inventory\Exceptions\InvalidInventoryOperation;
 use App\Data\Inventory\StockBalance;
 use App\Domain\Inventory\Exceptions\InsufficientStock;
+use App\Domain\Inventory\Exceptions\InvalidInventoryOperation;
 use App\Domain\Shared\Quantity;
 use App\Models\Catalog\Sku;
 use App\Models\Catalog\UnitOfMeasure;

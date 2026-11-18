@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Livewire\Portal\Ordering;
 
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
 use App\Actions\Ordering\Portal\QuickOrder;
 use App\Actions\Ordering\Portal\Support\QuickOrderParser;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;

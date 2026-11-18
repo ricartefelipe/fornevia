@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
 use App\Actions\Ordering\Portal\QuickOrder;
 use App\Data\Ordering\Portal\CartAdditionLine;
 use App\Data\Ordering\Portal\CartAdditionReport;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Enums\Catalog\ProductVisibility;
 use App\Enums\Identity\SystemRole;
 use Illuminate\Auth\Access\AuthorizationException;

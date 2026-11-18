@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Actions\Credit\Exceptions\CreditExceptionNotActive;
-use App\Actions\Credit\Exceptions\InvalidCreditValue;
 use App\Actions\Credit\GrantCreditException;
 use App\Actions\Credit\RevokeCreditException;
+use App\Domain\Credit\Exceptions\CreditExceptionNotActive;
+use App\Domain\Credit\Exceptions\InvalidCreditValue;
 use App\Domain\Shared\Money;
 use App\Enums\Identity\SystemRole;
 use App\Models\Credit\CreditException;

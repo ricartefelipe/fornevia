@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Actions\Credit\Exceptions;
+namespace App\Domain\Credit\Exceptions;
 
 use App\Domain\Shared\ConflictingState;
 

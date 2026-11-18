@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Staff\Inventory\Concerns;
 
-use App\Actions\Inventory\Exceptions\InvalidInventoryOperation;
+use App\Domain\Inventory\Exceptions\InvalidInventoryOperation;
 use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Quantity;

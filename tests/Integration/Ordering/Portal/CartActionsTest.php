@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Actions\Ordering\Portal\AddToCart;
 use App\Actions\Ordering\Portal\CurrentCart;
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
 use App\Actions\Ordering\Portal\RemoveCartItem;
 use App\Actions\Ordering\Portal\UpdateCartItem;
 use App\Data\Ordering\Portal\CartView;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Domain\Shared\Quantity;
 use App\Enums\Catalog\ProductVisibility;
 use App\Enums\Identity\SystemRole;

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Ordering\Portal\Support;
 
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
 
 /**
  * Interpreta o texto colado no pedido rápido: uma linha por item, no

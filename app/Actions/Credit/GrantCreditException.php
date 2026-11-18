@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Credit;
 
-use App\Actions\Credit\Exceptions\InvalidCreditValue;
 use App\Data\Credit\CreditExceptionPeriod;
 use App\Domain\Buyers\Justification;
+use App\Domain\Credit\Exceptions\InvalidCreditValue;
 use App\Domain\Shared\Money;
 use App\Enums\Identity\Permission;
 use App\Models\Buyers\BuyerCompany;

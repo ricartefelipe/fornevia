@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\Ordering\Portal\AddListToCart;
 use App\Actions\Ordering\Portal\DeleteShoppingList;
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
-use App\Actions\Ordering\Portal\Exceptions\InvalidShoppingList;
 use App\Actions\Ordering\Portal\RemoveShoppingListItem;
 use App\Actions\Ordering\Portal\SaveShoppingList;
 use App\Actions\Ordering\Portal\SaveShoppingListItem;
 use App\Actions\Ordering\Portal\ShoppingLists;
 use App\Data\Ordering\Portal\CartAdditionLine;
 use App\Data\Ordering\Portal\CartAdditionReport;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
+use App\Domain\Ordering\Exceptions\InvalidShoppingList;
 use App\Enums\Identity\SystemRole;
 use App\Models\Identity\Membership;
 use App\Models\Ordering\ShoppingList;

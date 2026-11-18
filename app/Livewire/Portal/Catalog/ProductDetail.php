@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Livewire\Portal\Catalog;
 
 use App\Actions\Ordering\Portal\AddToCart;
-use App\Actions\Ordering\Portal\Exceptions\InvalidCartItem;
 use App\Data\Catalog\Portal\CatalogSku;
+use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Enums\Identity\Permission;
 use App\Models\Catalog\Product;
 use App\Models\Catalog\Sku;
