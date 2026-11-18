@@ -353,6 +353,60 @@ domínio puro, onde a medição de branches é rápida e significativa.
 
 ---
 
+## ADR-018 — Entrada numérica localizada e limites de magnitude
+
+**Status:** aceita
+
+**Decisão.**
+- `Money` e `Quantity` recusam valores além das colunas que os persistem
+  (centavos até 10¹⁵; quantidades com até 15 dígitos inteiros) com
+  `AmountOutOfRange`, antes de qualquer conversão para inteiro.
+- Telas de preço e o portal interpretam quantidades em pt-BR
+  (`Quantity::parseLocalized`): ponto agrupando milhares em blocos de três
+  dígitos, com primeiro grupo sem zero à esquerda, é separador de milhar;
+  vírgula é decimal; `0.500` é decimal.
+- O cadastro de SKU mantém entrada estrita (vírgula decimal, sem ponto),
+  porque fatores de conversão com três casas (`1.000`) seriam ambíguos.
+
+**Motivo.** "1.000" lido como 1 em uma faixa de preço publicava o preço de
+volume para qualquer quantidade; valores enormes chegavam ao banco como
+estouro numérico (erro 500) em vez de erro de campo.
+
+---
+
+## ADR-019 — Embalagem do SKU fixa após existir preço
+
+**Status:** aceita
+
+**Decisão.** Unidade de venda e fator de conversão de um SKU não mudam
+quando há item de tabela de preço ou condição negociada ativa para ele.
+Uma nova embalagem é cadastrada como novo SKU. As Actions de preço leem o
+SKU com lock compartilhado, serializando com a alteração do SKU, e recebem
+a embalagem vista quando o formulário foi aberto: se ela mudou nesse
+intervalo (SKU ainda sem preço), a gravação é recusada.
+
+**Motivo.** Preços, faixas e condições estão na unidade de venda; trocar a
+embalagem mudaria silenciosamente o significado comercial de todos eles.
+
+---
+
+## ADR-020 — Dados comerciais internos fora do alcance do comprador no banco
+
+**Status:** aceita
+
+**Decisão.** Dados internos (custos, política comercial do SKU e margem
+mínima padrão) ficam em tabelas com política restritiva `internal_only`,
+nunca em colunas de tabelas que o portal lê: `pricing_policies` separada de
+`pricing_settings` (que o portal lê para a versão de preços). A auditoria
+do tenant não é legível no contexto de comprador. O cache de preços, que
+não passa pelo RLS, recusa cálculo para outra empresa nesse contexto.
+
+**Motivo.** O RLS é a segunda barreira: mesmo com um defeito de
+autorização na aplicação, a conexão do portal não deve alcançar dados
+internos ou de outras empresas.
+
+---
+
 ## ADR-021 — Exceções explícitas na auditoria de dependências npm
 
 **Status:** aceita

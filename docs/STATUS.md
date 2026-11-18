@@ -119,3 +119,74 @@ exercitadas quando houve chamada real ao provedor.
 - Execução da CI no GitHub para a branch (após o push).
 - Aprovação humana obrigatória nas proteções de branch: não habilitada
   (mantenedor único).
+
+## Incremento 3 — Compradores, catálogo e preços (`feature/compradores-catalogo-precos`)
+
+### Implementado
+
+- Domínio puro: `Money` (centavos, HALF_UP, limites), `Quantity`
+  (`numeric(18,3)`, leitura pt-BR), `Percentage`, `Cnpj`, regra de compra
+  (mínimo, múltiplo, casas decimais), resolução de preço com precedência e
+  faixas (ADR-010, ADR-011) e política de desconto por margem e preço
+  mínimo.
+- Empresas compradoras: cadastro com CNPJ, grupos de clientes,
+  representante, unidades, endereços padrão por finalidade, centros de
+  custo, contatos, condições de pagamento permitidas, usuários compradores
+  e histórico a partir da auditoria.
+- Catálogo da equipe: produtos, SKUs com embalagem e conversão exata,
+  categorias em árvore, unidades de medida, mídias em disco privado com
+  verificação de conteúdo, custos (histórico) e política comercial
+  internos, catálogos privados por empresa ou grupo.
+- Catálogo do portal: busca, filtros, detalhe, preço do comprador e
+  orientação de quantidade conforme a regra de compra; visibilidade
+  verificada também no banco.
+- Preços: tabelas padrão, por grupo e por empresa (rascunho, ativa,
+  arquivada) com vigência, prioridade e faixas; condições negociadas sem
+  sobreposição; condições de pagamento; margem mínima padrão; simulador
+  que explica a precedência; cache por versão de preços.
+- Onboarding cria unidades, condições de pagamento e configurações de
+  preço padrão do tenant.
+
+### Verificado localmente (Docker, engine nativo)
+
+| Verificação | Resultado |
+|---|---|
+| `vendor/bin/pest` (suíte completa, schema recriado) | 1.374 testes; na execução completa, 1 falha no contrato de códigos de erro (novo código não listado), corrigida e reexecutada com a suíte unitária (231 aprovados) |
+| Cobertura de linhas do núcleo (`app/Domain` + `app/Actions`, PCOV) | 97,91% (2.389/2.440); caminhos críticos 100% (173/173) |
+| `vendor/bin/phpstan analyse` (nível 8) | sem erros |
+| `vendor/bin/pint --test` | sem pendências |
+
+### Defeitos encontrados pela revisão adversarial (corrigidos)
+
+| Defeito | Correção |
+|---|---|
+| Quantidade "1.000" lida como 1 nas faixas e no simulador | leitura pt-BR (`Quantity::parseLocalized`, ADR-018) |
+| Valores e quantidades enormes geravam erro 500 | limites de magnitude no domínio (`AmountOutOfRange`) |
+| Datas com ano 0000 geravam erro 500 | intervalo comercial de datas (2000–2099) |
+| SKU com preço trocava unidade de venda ou fator | bloqueio da troca de embalagem (ADR-019) |
+| Redução de casas da unidade base não verificava SKUs e faixas | verificação de unidade base, faixas e quantidades convertidas |
+| Inclusão/remoção em catálogo privado desfazia alterações concorrentes | alterações pontuais sob lock do catálogo |
+| Comprador lia catálogos privados de outros grupos | políticas restritivas de leitura |
+| Comprador alterava configurações de preço do tenant | `pricing_settings` somente leitura no contexto de comprador |
+| Margem mínima e margens internas legíveis pelo comprador no banco | `pricing_policies` com `internal_only` (ADR-020) |
+| Comprador lia a auditoria pelo banco e podia gravar registros em nome de terceiros | leitura vedada; gravação apenas como o próprio usuário e empresa |
+| Comprador alterava unidades, endereços, centros de custo e contatos pelo banco | tabelas somente leitura no contexto de comprador |
+| Preço de produto restrito visível em tabelas e faixas | itens, faixas e condições herdam a visibilidade do SKU |
+| Preço gravado para outra embalagem com o formulário aberto | embalagem vista ao abrir conferida na gravação |
+| Faixa com mais casas decimais que a unidade de venda | recusa na gravação da faixa |
+| "0.500" lido como 500 | ponto após zero inicial é decimal |
+| Quantidades extremas no portal e no simulador de SKU geravam erro 500 | total não calculado com aviso; recusa como não positiva; simulação protegida |
+| Índice do histórico não usado sob RLS | coluna gerada `buyer_company_id` indexada |
+| Cálculo de preço de outra empresa no contexto de comprador envenenava o cache | recusa explícita no serviço de preços |
+| Margem mínima no estado Livewire de perfis de consulta | envio apenas para `pricing.manage` |
+| Envio temporário de mídia sem `catalog.manage` | autorização antes da URL de envio |
+| UUID em maiúsculas gerava violação de unicidade | normalização para minúsculas |
+| Histórico com chaves técnicas e consulta sem índice | rótulos e índice de expressão |
+
+### Pendente neste incremento
+
+- Execução da CI no GitHub para a branch (após o push), incluindo a
+  cobertura de branches com Xdebug.
+- Ações do comprador que alterem preços (por exemplo, aceite de cotação que
+  gera condição negociada) precisarão de contexto elevado de sistema, pois
+  as tabelas de preço são somente leitura no contexto de comprador.

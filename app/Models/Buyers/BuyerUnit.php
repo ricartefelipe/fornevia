@@ -1,0 +1,47 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models\Buyers;
+
+use App\Support\Tenancy\BelongsToTenant;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+/**
+ * Unidade da empresa compradora (obra, loja, planta).
+ *
+ * @property string $id
+ * @property string $tenant_id
+ * @property string $buyer_company_id
+ * @property string $code
+ * @property string $name
+ * @property bool $is_active
+ */
+class BuyerUnit extends Model
+{
+    use BelongsToTenant;
+    use HasUuids;
+
+    /** @var list<string> */
+    protected $fillable = ['code', 'name', 'is_active'];
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+        ];
+    }
+
+    /**
+     * @return BelongsTo<BuyerCompany, $this>
+     */
+    public function buyerCompany(): BelongsTo
+    {
+        return $this->belongsTo(BuyerCompany::class);
+    }
+}

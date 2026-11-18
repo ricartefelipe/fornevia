@@ -275,3 +275,95 @@ Regras adicionais:
 | Pedidos por mês | incremento condicional em `tenant_usage_counters` na transação da confirmação |
 | Módulos | incluídos no plano ou contratados como adicionais ativos |
 | Trial expirado ou assinatura cancelada | operações de escrita recusadas (`SubscriptionInactive`) |
+
+## 8. Compradores, catálogo e preços
+
+### 8.1 Empresas compradoras
+
+Cadastro com CNPJ validado, grupo de clientes, representante responsável,
+unidades, endereços (um padrão por finalidade), centros de custo, contatos,
+condições de pagamento permitidas (com uma padrão) e histórico montado a
+partir da auditoria do tenant. As tabelas de detalhes usam RLS `required`
+(o comprador lê apenas a própria empresa) e são somente leitura no contexto
+de comprador (o cadastro é mantido pela equipe).
+
+O histórico filtra a auditoria pelo assunto (empresa, associações e
+convites) e pela coluna gerada `audit_logs.buyer_company_id` (extraída de
+`data->>'buyer_company_id'` quando é UUID), indexada. Uma expressão sobre
+`jsonb` não seria usada como índice sob RLS (operador não *leakproof*);
+a comparação `uuid = uuid` é. Condições negociadas só aparecem para quem
+tem `pricing.view`.
+
+No banco, o comprador não lê a auditoria do tenant e só grava registros em
+nome do próprio usuário, sem atribuí-los a outra empresa.
+
+### 8.2 Catálogo
+
+| Conceito | Regra |
+|---|---|
+| Unidade de medida | código único, 0 a 3 casas decimais; reduzir casas é recusado se algum SKU vendido na unidade, ou de produto que a usa como unidade base, deixaria de ter mínimo, múltiplo, faixa de preço ou quantidade convertida representáveis |
+| Produto | unidade base fixa depois que existe SKU; situação (rascunho, ativo, inativo, arquivado); visibilidade pública ou restrita |
+| SKU | unidade de venda, fator de conversão (`numeric(18,6)`), mínimo e múltiplo nas casas da unidade de venda; mínimo × fator e múltiplo × fator exatos na unidade base (RN-021) |
+| Embalagem com preço | SKU com item de tabela ou condição negociada ativa não troca unidade de venda nem fator: os preços estão na unidade de venda; nova embalagem é um novo SKU. Formulários de preço guardam a embalagem vista ao abrir e recusam a gravação se ela mudou |
+| Limites de quantidade | mínimo, múltiplo e quantidade por linha até 999.999.999; quantidades convertidas para a unidade base dentro de `numeric(18,3)` |
+| Custos e política comercial | `sku_costs` (histórico imutável) e `sku_commercial_policies` com política `internal_only`: invisíveis ao comprador no banco; exibição exige `catalog.view_costs` |
+| Mídias | disco privado, tipo verificado pelo conteúdo, download por rota autorizada; o envio temporário do Livewire só é aceito para quem tem `catalog.manage` |
+
+Visibilidade para o comprador, verificada no banco
+(`app_buyer_sees_product`): produto ativo e público, ou restrito em
+catálogo privado ativo atribuído à empresa ou ao grupo dela. Os próprios
+catálogos privados, seus produtos e atribuições seguem o mesmo critério:
+o comprador não descobre catálogos de outros grupos.
+
+Inclusão e remoção de produtos de catálogo privado pela tela são
+incrementais e calculadas sob o lock do catálogo, sem desfazer alterações
+concorrentes.
+
+### 8.3 Preços
+
+```mermaid
+flowchart LR
+    T[Tela ou documento] --> S[PricingService]
+    S -->|cache por tenant, versão, empresa, grupo, data, SKU e quantidade| C[(Redis)]
+    S --> L[PriceCandidateLoader]
+    L --> N[condições negociadas]
+    L --> P[tabelas: padrão, grupo, empresa]
+    S --> R[PriceResolver - domínio]
+    Sim[Simulador da equipe] --> S
+    Sim --> L
+```
+
+- Precedência e faixas: ADR-010 e ADR-011, implementadas no domínio puro
+  (`PriceResolver`).
+- `PriceCandidateLoader` é a única consulta de candidatos, usada pelo
+  cálculo e pelo simulador (que explica a ordem aplicando o próprio
+  resolvedor sucessivamente).
+- Invalidação: `pricing_settings.price_version` é incrementada na mesma
+  transação de qualquer alteração que afete preço (itens, faixas,
+  ativação, arquivamento, condições negociadas, grupo da empresa,
+  política comercial do SKU); a versão faz parte da chave do cache.
+- O cache não passa pelo RLS: no contexto de comprador, o serviço recusa
+  calcular para outra empresa (evita ler ou gravar entradas de terceiros).
+- `pricing_settings` (versão de preços) é legível pelo comprador e somente
+  leitura nesse contexto; a margem mínima padrão fica em `pricing_policies`,
+  invisível ao comprador no banco (`internal_only`) e enviada ao navegador
+  apenas de quem tem `pricing.manage`.
+- Itens, faixas e condições negociadas herdam também a visibilidade do SKU:
+  o comprador não vê preço de produto restrito fora do seu catálogo.
+- Faixas aceitam quantidade mínima apenas com as casas decimais da unidade
+  de venda.
+
+### 8.4 Entrada numérica e limites
+
+| Entrada | Interpretação |
+|---|---|
+| Valores em reais | `1.234,56`, `1234,56` ou `1234.56`; até 2 casas |
+| Quantidades nas telas de preço e no portal | pt-BR: `1.000` = mil, `1.250,5`, `2,5`; ponto seguido de 1 ou 2 dígitos, ou após zero inicial, é decimal (`2.5`, `0.500`) |
+| Quantidades e fatores no cadastro de SKU | apenas vírgula decimal (`0,5`); ponto recusado para evitar ambiguidade |
+| Limites | dinheiro até R$ 10 trilhões em centavos; quantidades até 15 dígitos inteiros (`numeric(18,3)`) |
+
+Valores fora do intervalo geram `AmountOutOfRange` (regra de negócio,
+código `amount_out_of_range`), exibida no campo, nunca como erro 500. No
+portal, um total que excederia o limite não é calculado: a tela pede
+redução da quantidade.
+Datas comerciais digitadas aceitam de 2000-01-01 a 2099-12-31.
