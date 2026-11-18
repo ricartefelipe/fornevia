@@ -25,6 +25,6 @@ it('oculta do comprador o histórico de alterações de limite', function (): vo
         'account' => DB::table('credit_accounts')->count(),
     ]);
 
-    expect($seen)->toBe(['changes' => 0, 'account' => 1])
+    expect($seen)->toBe(['changes' => 0, 'account' => 0])
         ->and($tenant->system(static fn (): int => DB::table('credit_limit_changes')->count()))->toBe(2);
 });

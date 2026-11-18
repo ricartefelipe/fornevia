@@ -30,7 +30,7 @@ use Tests\Support\Builders\TenantScenario;
 /*
 | Autorização (credit.view para consultar, credit.manage para alterar),
 | isolamento entre distribuidores e entre empresas compradoras: o
-| comprador só lê a própria conta e não altera nada, nem pelo banco.
+| comprador não lê nem altera dados de crédito pelo banco (ADR-020).
 */
 
 beforeEach(function (): void {
@@ -116,7 +116,7 @@ it('isola os distribuidores: a equipe de outro tenant não vê nem altera a cont
             + CreditException::query()->count() + CreditMovement::query()->count()))->toBe(1);
 });
 
-it('deixa o comprador ler somente a própria conta, exceções e movimentos', function (): void {
+it('não deixa o comprador ler dados de crédito pelo banco, nem os da própria empresa', function (): void {
     $buyer = $this->tenant->addBuyerUser($this->company, SystemRole::BuyerAdmin);
 
     $seen = $this->tenant->actingAs($buyer, static fn (): array => [
@@ -126,7 +126,7 @@ it('deixa o comprador ler somente a própria conta, exceções e movimentos', fu
         DB::table('credit_accounts')->count(),
     ]);
 
-    expect($seen)->toBe([[$this->company->id], [$this->company->id], [$this->company->id], 1]);
+    expect($seen)->toBe([[], [], [], 0]);
 });
 
 it('impede o comprador de alterar a conta pelas Actions e pelo banco', function (): void {
