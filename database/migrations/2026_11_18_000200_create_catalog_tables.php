@@ -223,6 +223,20 @@ return new class extends Migration
             using (app_sees_all_buyers() or (visible_to_buyers and exists (select 1 from products p where p.id = product_id)))
             with check (app_sees_all_buyers())');
 
+        // Catálogos privados, seus produtos e atribuições: o comprador vê apenas
+        // os atribuídos à própria empresa ou ao seu grupo (não descobre
+        // catálogos exclusivos de outros clientes).
+        DB::statement('create policy buyer_visibility on private_catalog_assignments as restrictive for select
+            using (app_sees_all_buyers() or buyer_company_id = app_current_buyer() or customer_group_id = app_buyer_group())');
+        DB::statement('create policy buyer_visibility on private_catalogs as restrictive for select
+            using (app_sees_all_buyers() or exists (
+                select 1 from private_catalog_assignments pca where pca.private_catalog_id = private_catalogs.id
+            ))');
+        DB::statement('create policy buyer_visibility on private_catalog_products as restrictive for select
+            using (app_sees_all_buyers() or exists (
+                select 1 from private_catalog_assignments pca where pca.private_catalog_id = private_catalog_products.private_catalog_id
+            ))');
+
         // Comprador apenas lê o catálogo; escrita é da equipe, integração ou sistema.
         foreach (['units_of_measure', 'categories', 'products', 'skus', 'private_catalogs', 'private_catalog_products',
             'private_catalog_assignments', 'product_media'] as $managed) {

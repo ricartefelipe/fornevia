@@ -38,7 +38,6 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property SkuStatus $status
  * @property-read Product $product
  * @property-read UnitOfMeasure $salesUnit
- * @property-read SkuCost|null $currentCost
  * @property-read SkuCommercialPolicy|null $commercialPolicy
  */
 class Sku extends Model
@@ -84,15 +83,12 @@ class Sku extends Model
     }
 
     /**
-     * Custo vigente (mais recente com início até agora).
-     *
-     * @return HasOne<SkuCost, $this>
+     * Identificação da embalagem de venda (unidade e fator): preços digitados
+     * em um formulário valem para a embalagem vista quando ele foi aberto.
      */
-    public function currentCost(): HasOne
+    public function packagingFingerprint(): string
     {
-        return $this->hasOne(SkuCost::class)->ofMany(['effective_from' => 'max', 'id' => 'max'], static function ($query): void {
-            $query->where('effective_from', '<=', now());
-        });
+        return $this->sales_unit_id.'|'.(string) $this->conversion_factor->toScale(6);
     }
 
     /**

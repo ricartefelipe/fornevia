@@ -18,7 +18,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $name
  * @property string $slug
  * @property int $sort_order
- * @property int|null $min_margin_bps
  */
 class Category extends Model
 {
@@ -35,7 +34,6 @@ class Category extends Model
     {
         return [
             'sort_order' => 'integer',
-            'min_margin_bps' => 'integer',
         ];
     }
 

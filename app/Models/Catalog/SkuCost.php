@@ -25,6 +25,9 @@ class SkuCost extends Model
     use BelongsToTenant;
     use HasUuids;
 
+    /** Histórico imutável: apenas created_at (o custo vigente fica em CurrentSkuCosts). */
+    public const UPDATED_AT = null;
+
     protected $guarded = ['*'];
 
     /**
