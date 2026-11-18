@@ -132,12 +132,23 @@ return new class extends Migration
                 language plpgsql security definer set search_path = public
                 as $$
                 begin
-                    insert into stock_levels (id, tenant_id, warehouse_id, sku_id, on_hand, reserved, updated_at)
-                    values (uuidv7(), new.tenant_id, new.warehouse_id, new.sku_id, new.on_hand_delta, new.reserved_delta, now())
-                    on conflict (tenant_id, warehouse_id, sku_id) do update
-                        set on_hand = stock_levels.on_hand + excluded.on_hand,
-                            reserved = stock_levels.reserved + excluded.reserved,
-                            updated_at = now();
+                    -- Atualiza primeiro: em INSERT ... ON CONFLICT o CHECK é avaliado
+                    -- sobre a linha proposta (ex.: reserva sem físico) antes do conflito.
+                    update stock_levels
+                       set on_hand = on_hand + new.on_hand_delta,
+                           reserved = reserved + new.reserved_delta,
+                           updated_at = now()
+                     where tenant_id = new.tenant_id and warehouse_id = new.warehouse_id and sku_id = new.sku_id;
+
+                    if not found then
+                        insert into stock_levels (id, tenant_id, warehouse_id, sku_id, on_hand, reserved, updated_at)
+                        values (uuidv7(), new.tenant_id, new.warehouse_id, new.sku_id, new.on_hand_delta, new.reserved_delta, now())
+                        on conflict (tenant_id, warehouse_id, sku_id) do update
+                            set on_hand = stock_levels.on_hand + excluded.on_hand,
+                                reserved = stock_levels.reserved + excluded.reserved,
+                                updated_at = now();
+                    end if;
+
                     return null;
                 end
                 $$;
