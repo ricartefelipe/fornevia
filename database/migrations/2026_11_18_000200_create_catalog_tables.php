@@ -246,6 +246,9 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Políticas que consultam outras tabelas do catálogo precisam sair antes delas.
+        DB::statement('drop policy if exists buyer_visibility on private_catalogs');
+        DB::statement('drop policy if exists buyer_visibility on private_catalog_products');
         Schema::dropIfExists('product_media');
         Schema::dropIfExists('private_catalog_assignments');
         Schema::dropIfExists('private_catalog_products');
