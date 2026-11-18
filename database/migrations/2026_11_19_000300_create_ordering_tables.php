@@ -144,6 +144,8 @@ return new class extends Migration
             subtotal_cents >= 0 and discount_cents >= 0 and freight_cents >= 0
             and total_cents = subtotal_cents - discount_cents + freight_cents
             and credit_committed_cents between 0 and total_cents)');
+        // A sequência pertence à coluna: removida junto com a tabela (inclusive em migrate:fresh).
+        DB::statement('alter sequence order_number_seq owned by orders.number');
         TenantSchema::enableRowLevelSecurity('orders', 'required');
 
         Schema::create('order_items', function (Blueprint $table): void {
