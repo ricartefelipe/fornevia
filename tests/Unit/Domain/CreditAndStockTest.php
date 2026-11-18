@@ -80,4 +80,3 @@ it('explica cada decisão de crédito', function (CreditDecision $decision, stri
     'vencidos' => [CreditDecision::Overdue, 'Há títulos vencidos acima da tolerância; regularize para comprar a prazo.'],
     'insuficiente' => [CreditDecision::Insufficient, 'Limite de crédito disponível insuficiente para este pedido.'],
 ]);
-
