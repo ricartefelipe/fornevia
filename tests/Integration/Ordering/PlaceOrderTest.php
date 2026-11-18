@@ -249,4 +249,3 @@ it('não mostra ao comprador reservas e movimentações de estoque, nem as do pr
     expect($seen)->toBe([0, 0])
         ->and($scenario->system(static fn (): int => DB::table('stock_reservations')->count()))->toBe(1);
 });
-
