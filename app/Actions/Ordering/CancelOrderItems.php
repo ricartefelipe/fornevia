@@ -25,7 +25,6 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use InvalidArgumentException;
 
 /**
  * Cancelamento total ou parcial de itens ainda não expedidos (RF-062).
@@ -56,7 +55,7 @@ final readonly class CancelOrderItems
         $reason = trim($reason);
 
         if (mb_strlen($reason) < 5) {
-            throw new InvalidArgumentException('Informe o motivo do cancelamento.');
+            throw new OrderNotCancellable('Informe o motivo do cancelamento (ao menos 5 caracteres).', ['field' => 'reason']);
         }
 
         $this->authorize($order);

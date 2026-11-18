@@ -110,7 +110,7 @@ it('exige motivo e permissão, e restringe o comprador à própria empresa', fun
     $other = $scenario->buyerWithCart(quantity: '1');
     $viewer = $scenario->tenant->addStaff(SystemRole::Viewer);
 
-    expect(fn () => ($this->cancel)($scenario, $buyer['membership'], $order, null, 'não'))->toThrow(InvalidArgumentException::class)
+    expect(fn () => ($this->cancel)($scenario, $buyer['membership'], $order, null, 'não'))->toThrow(OrderNotCancellable::class, 'motivo')
         ->and(fn () => ($this->cancel)($scenario, $viewer, $order, null))->toThrow(AuthorizationException::class)
         ->and(fn () => ($this->cancel)($scenario, $other['membership'], $order, null))->toThrow(AuthorizationException::class);
 
