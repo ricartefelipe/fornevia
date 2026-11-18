@@ -100,6 +100,36 @@ final readonly class StockLedger
      * Libera a parte ainda ativa das reservas de um item, até a quantidade
      * informada (cancelamento de itens não expedidos).
      */
+    /**
+     * Bloqueia, na ordem (warehouse_id, sku_id) do ADR-006, os saldos das
+     * reservas ativas dos itens informados. Operações que liberam ou
+     * consomem reservas de vários itens chamam este método antes de
+     * percorrê-los, para não bloquear saldos na ordem das linhas do pedido.
+     *
+     * @param  list<string>  $orderItemIds
+     */
+    public function lockLevelsForOrderItems(array $orderItemIds): void
+    {
+        $this->assertInTransaction();
+
+        if ($orderItemIds === []) {
+            return;
+        }
+
+        $pairs = DB::table('stock_reservations')
+            ->whereIn('order_item_id', $orderItemIds)
+            ->where('status', ReservationStatus::Active->value)
+            ->select(['warehouse_id', 'sku_id'])
+            ->distinct();
+
+        DB::table('stock_levels')
+            ->whereIn(DB::raw('(warehouse_id, sku_id)'), $pairs)
+            ->orderBy('warehouse_id')
+            ->orderBy('sku_id')
+            ->lockForUpdate()
+            ->get(['id']);
+    }
+
     public function releaseForOrderItem(string $orderItemId, Quantity $quantity, string $reason, string $referenceType, string $referenceId): Quantity
     {
         $this->assertInTransaction();

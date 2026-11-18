@@ -85,7 +85,7 @@ final class OrderingScenario
     /**
      * @return array{membership: Membership, company: BuyerCompany, address: BuyerAddress, cart: Cart}
      */
-    public function buyerWithCart(string $quantity, bool $sameCompany = false): array
+    public function buyerWithCart(string $quantity, bool $sameCompany = false, ?Sku $sku = null): array
     {
         $company = $sameCompany && $this->sharedCompany !== null ? $this->sharedCompany : $this->tenant->addBuyerCompany();
 
@@ -95,7 +95,7 @@ final class OrderingScenario
 
         $membership = $this->tenant->addBuyerUser($company, SystemRole::Purchaser);
 
-        [$address, $cart] = $this->tenant->system(function () use ($company, $membership, $quantity): array {
+        [$address, $cart] = $this->tenant->system(function () use ($company, $membership, $quantity, $sku): array {
             $address = BuyerAddress::query()->where('buyer_company_id', $company->id)->where('kind', 'shipping')->first();
 
             if ($address === null) {
@@ -120,12 +120,36 @@ final class OrderingScenario
             $cart = new Cart;
             $cart->forceFill(['buyer_company_id' => $company->id, 'membership_id' => $membership->id, 'status' => 'open'])->save();
             $item = new CartItem;
-            $item->forceFill(['cart_id' => $cart->id, 'buyer_company_id' => $company->id, 'sku_id' => $this->sku->id, 'quantity' => $quantity])->save();
+            $item->forceFill(['cart_id' => $cart->id, 'buyer_company_id' => $company->id, 'sku_id' => ($sku ?? $this->sku)->id, 'quantity' => $quantity])->save();
 
             return [$address, $cart];
         });
 
         return ['membership' => $membership, 'company' => $company, 'address' => $address, 'cart' => $cart];
+    }
+
+    /**
+     * Outro SKU vendável (mesmo produto e tabela padrão) com estoque próprio,
+     * para cenários em que o estoque não deve ser o recurso disputado.
+     */
+    public function addSku(string $stock = '100', ?int $unitPriceCents = null): Sku
+    {
+        return $this->system(function () use ($stock, $unitPriceCents): Sku {
+            $sku = new Sku;
+            $sku->forceFill([
+                'product_id' => $this->sku->product_id, 'sales_unit_id' => $this->sku->sales_unit_id, 'code' => 'DJ-40A-'.Str::upper(Str::random(4)),
+                'conversion_factor' => '1', 'min_order_quantity' => '1', 'order_multiple' => '1', 'status' => 'active',
+            ])->save();
+
+            $list = PriceList::query()->where('code', 'PADRAO')->firstOrFail();
+            $price = PriceListItem::query()->where('price_list_id', $list->id)->where('sku_id', $this->sku->id)->value('unit_price_cents');
+            $item = new PriceListItem;
+            $item->forceFill(['price_list_id' => $list->id, 'sku_id' => $sku->id, 'unit_price_cents' => $unitPriceCents ?? $price])->save();
+
+            app(StockLedger::class)->receive($this->warehouse->id, $sku->id, Quantity::of($stock), 'Saldo inicial do cenário');
+
+            return $sku->fresh(['product', 'salesUnit']);
+        });
     }
 
     /**

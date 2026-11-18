@@ -39,4 +39,36 @@ return [
         });
     },
 
+    // Cancelamento total como na tela do comprador (contexto de comprador).
+    'cancel-order' => static function (array $args, WorkerGate $gate): array {
+        $membership = app(TenantDatabase::class)->run(
+            App\Support\Tenancy\ExecutionContext::buyer($args['user_id'], $args['tenant_id'], $args['buyer_company_id'], $args['membership_id']),
+            static fn () => Membership::query()->with(['role', 'tenant', 'buyerCompany'])->findOrFail($args['membership_id']),
+        );
+
+        return app(TenantDatabase::class)->run($membership->executionContext(), static function () use ($args, $gate, $membership): array {
+            app(Access::class)->bindMembership($membership);
+            $gate->pass($args['gate'] ?? null);
+
+            $order = app(App\Actions\Ordering\CancelOrderItems::class)->handle(
+                App\Models\Ordering\Order::query()->findOrFail($args['order_id']),
+                null,
+                'Pedido duplicado pelo cliente',
+            );
+
+            return ['status' => $order->commercial_status->value];
+        });
+    },
+
+    // Segura o lock de uma reserva até o portão ser liberado: alarga a janela
+    // entre a liberação de uma linha do pedido e a da seguinte.
+    'hold-reservation' => static function (array $args, WorkerGate $gate): array {
+        return app(TenantDatabase::class)->run(App\Support\Tenancy\ExecutionContext::system((string) $args['tenant_id']), static function () use ($args, $gate): array {
+            Illuminate\Support\Facades\DB::table('stock_reservations')->where('id', $args['reservation_id'])->lockForUpdate()->first();
+            $gate->pass($args['hold'] ?? null);
+
+            return ['held' => true];
+        });
+    },
+
 ];

@@ -9,13 +9,14 @@ use Tests\Support\Concurrency\ConcurrencyHarness;
 
 /*
  * Dois pedidos a prazo da mesma empresa disputam o mesmo limite: cada um
- * cabe sozinho, os dois juntos não. A conta de crédito é bloqueada na
- * confirmação; apenas um pedido compromete o limite.
+ * cabe sozinho, os dois juntos não. Os pedidos usam SKUs diferentes, para
+ * que o recurso disputado seja a conta de crédito (e não o saldo de
+ * estoque); apenas um pedido compromete o limite.
  */
 it('não permite que duas compras simultâneas consumam o mesmo limite disponível', function (): void {
     $scenario = OrderingScenario::create(stock: '100', unitPriceCents: 10_000, creditLimitCents: 150_000, onCredit: true);
     $first = $scenario->buyerWithCart(quantity: '10', sameCompany: true);
-    $second = $scenario->buyerWithCart(quantity: '10', sameCompany: true);
+    $second = $scenario->buyerWithCart(quantity: '10', sameCompany: true, sku: $scenario->addSku(stock: '100'));
 
     $harness = new ConcurrencyHarness;
     $hold = $harness->gate('primeiro-segura');

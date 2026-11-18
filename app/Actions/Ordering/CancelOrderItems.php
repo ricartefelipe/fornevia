@@ -74,6 +74,9 @@ final readonly class CancelOrderItems
             $changes = [];
 
             $this->db->run(ExecutionContext::system($execution->requireTenantId(), $execution->userId), function () use ($requests, $locked, $reason, &$cancelledValue, &$changes): void {
+                // Saldos na ordem (depósito, SKU), como na reserva do checkout (ADR-006).
+                $this->stock->lockLevelsForOrderItems(array_values(array_map(static fn (array $r): string => $r['item']->id, $requests)));
+
                 foreach ($requests as ['item' => $item, 'quantity' => $quantity]) {
                     $base = $quantity->convertedBy($item->conversion_factor);
                     $fromBackorder = Quantity::min($base, $item->quantity_backordered);
