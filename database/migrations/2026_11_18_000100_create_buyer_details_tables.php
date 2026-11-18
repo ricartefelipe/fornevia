@@ -11,7 +11,8 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Cadastro detalhado das empresas compradoras: unidades, endereços,
  * centros de custo, contatos e condições de pagamento permitidas.
- * Todas as tabelas de empresa usam RLS restritiva por empresa compradora.
+ * Todas as tabelas de empresa usam RLS restritiva por empresa compradora e
+ * são somente leitura no contexto de comprador (cadastro mantido pela equipe).
  */
 return new class extends Migration
 {
@@ -29,6 +30,7 @@ return new class extends Migration
             $table->unique(['tenant_id', 'buyer_company_id', 'code']);
         });
         TenantSchema::enableRowLevelSecurity('buyer_units', 'required');
+        TenantSchema::buyerReadOnly('buyer_units');
 
         Schema::create('buyer_addresses', function (Blueprint $table): void {
             $table->uuid('id')->primary();
@@ -53,6 +55,7 @@ return new class extends Migration
         DB::statement("alter table buyer_addresses add constraint buyer_addresses_postal_code_check check (postal_code ~ '^[0-9]{8}$')");
         DB::statement('create unique index buyer_addresses_one_default on buyer_addresses (tenant_id, buyer_company_id, kind) where is_default and is_active');
         TenantSchema::enableRowLevelSecurity('buyer_addresses', 'required');
+        TenantSchema::buyerReadOnly('buyer_addresses');
 
         Schema::create('cost_centers', function (Blueprint $table): void {
             $table->uuid('id')->primary();
@@ -67,6 +70,7 @@ return new class extends Migration
             $table->unique(['tenant_id', 'buyer_company_id', 'code']);
         });
         TenantSchema::enableRowLevelSecurity('cost_centers', 'required');
+        TenantSchema::buyerReadOnly('cost_centers');
 
         Schema::create('buyer_contacts', function (Blueprint $table): void {
             $table->uuid('id')->primary();
@@ -80,6 +84,7 @@ return new class extends Migration
             $table->timestampsTz();
         });
         TenantSchema::enableRowLevelSecurity('buyer_contacts', 'required');
+        TenantSchema::buyerReadOnly('buyer_contacts');
 
         // Condições de pagamento do distribuidor. installment_days: dias de
         // vencimento de cada parcela a partir do faturamento ([0] = à vista).
