@@ -1,0 +1,11 @@
+{
+    "exceptions": [
+        {
+            "advisory": "GHSA-fc5q-39xc-vjpf",
+            "package": "picomatch",
+            "scope": "devDependencies: vite, laravel-vite-plugin (tinyglobby, fdir), vite-plugin-full-reload",
+            "reason": "ReDoS com extglobs controlados por quem informa o padrão. Não há versão corrigida publicada (afeta <= 4.0.7). Usado apenas no build, com padrões de glob fixos do projeto; a imagem de produção contém somente os assets compilados (public/build).",
+            "reviewBy": "2026-12-18"
+        }
+    ]
+}

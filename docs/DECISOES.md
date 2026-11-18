@@ -405,3 +405,22 @@ não passa pelo RLS, recusa cálculo para outra empresa nesse contexto.
 autorização na aplicação, a conexão do portal não deve alcançar dados
 internos ou de outras empresas.
 
+---
+
+## ADR-021 — Exceções explícitas na auditoria de dependências npm
+
+**Status:** aceita
+
+**Decisão.** A CI reprova qualquer alerta npm de severidade moderada ou
+maior, exceto os registrados em `.github/npm-audit-exceptions.json` com
+alerta, pacote, escopo, justificativa e data de revisão. O gate
+(`scripts/npm-audit-gate.mjs`) também reprova exceção vencida, exceção que
+não corresponde mais a nenhum alerta e relatório com erro.
+
+**Motivo.** Alertas sem versão corrigida publicada em ferramentas de build
+(caso do `picomatch`, usado por Vite e pelo plugin do Laravel) bloqueariam
+toda entrega sem reduzir risco: essas dependências não fazem parte da
+imagem de produção, que contém apenas os assets compilados. A exceção é
+pontual, justificada e revista periodicamente; qualquer outro alerta
+continua reprovando a CI.
+
