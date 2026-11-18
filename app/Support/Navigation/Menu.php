@@ -43,6 +43,7 @@ final readonly class Menu
         'portal.home' => ['Início', null],
         'portal.catalog' => ['Catálogo', Permission::PortalCatalog],
         'portal.cart' => ['Carrinho', Permission::PortalCart],
+        'portal.quick-order' => ['Pedido rápido', Permission::PortalCart],
         'portal.lists' => ['Listas de compra', Permission::PortalCart],
         'portal.quotes' => ['Cotações', Permission::PortalQuotes],
         'portal.approvals' => ['Aprovações', Permission::PortalApprovals],
