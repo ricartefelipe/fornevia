@@ -46,7 +46,12 @@ return new class extends Migration
         TenantSchema::enableRowLevelSecurity('credit_accounts', 'required');
         TenantSchema::buyerReadOnly('credit_accounts');
         // Saldos só por movimentos; limite e situação por Action com permissão.
+        // A conta é criada sem saldos (comprometido e recebível nascem zerados).
         TenantSchema::projection('credit_accounts', ['limit_cents', 'status', 'blocked_reason', 'overdue_tolerance_days', 'updated_at']);
+        DB::statement(sprintf(
+            'grant insert (id, tenant_id, buyer_company_id, limit_cents, status, blocked_reason, overdue_tolerance_days, created_at, updated_at) on credit_accounts to %s',
+            TenantSchema::appRole(),
+        ));
 
         Schema::create('credit_movements', function (Blueprint $table): void {
             $table->uuid('id')->primary();
