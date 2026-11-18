@@ -86,8 +86,15 @@ separados, portões por advisory lock e verificação de bloqueio por lock).
 docker compose run --rm app vendor/bin/pint --test
 docker compose run --rm app vendor/bin/phpstan analyse --memory-limit=1G
 docker compose run --rm app composer audit
+docker compose --profile tools run --rm node sh -c \
+  "npm audit --json > build/npm-audit.json; node scripts/npm-audit-gate.mjs build/npm-audit.json"
 docker compose run --rm app vendor/bin/pest
 ```
+
+Alertas de dependências npm sem correção publicada só são aceitos por
+exceção registrada em `.github/npm-audit-exceptions.json`, com justificativa
+e data de revisão (ADR-021). Exceção vencida ou sem alerta correspondente
+reprova a CI.
 
 ## Convenções de código
 

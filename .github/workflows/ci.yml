@@ -61,7 +61,10 @@ jobs:
       - name: Instalar dependências (lockfile)
         run: npm ci --no-fund
       - name: Auditoria de dependências
-        run: npm audit --audit-level=moderate
+        run: |
+          mkdir -p build
+          npm audit --json > build/npm-audit.json || true
+          node scripts/npm-audit-gate.mjs build/npm-audit.json
       - name: Build dos assets
         run: npm run build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
