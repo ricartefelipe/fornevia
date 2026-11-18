@@ -419,3 +419,27 @@ no cancelamento total).
 | Quatro compras disputando saldo parcial | reservado = soma das reservas ativas; sem negativo |
 | Duas compras no mesmo limite de crédito | apenas o que cabe no disponível é comprometido |
 | Envios simultâneos com a mesma chave | um único pedido; o segundo recebe o mesmo resultado |
+
+### 9.4 Telas e permissões
+
+| Área | Rotas | Permissões |
+|---|---|---|
+| Portal: carrinho, pedido rápido, listas, recompra, checkout | `portal.cart`, `portal.quick-order`, `portal.lists`, `portal.lists.show` | `portal.cart`; confirmação exige `portal.orders.place` |
+| Portal: meus pedidos | `portal.orders`, `portal.orders.show`, `portal.orders.confirmation` | próprios pedidos; com `portal.orders.view_all`, os da empresa |
+| Equipe: pedidos | `orders.index`, `orders.show` | `orders.view`; cancelamento com `orders.manage`; custo e margem com `catalog.view_costs` |
+| Equipe: estoque | `inventory.index`, `inventory.movements`, `inventory.warehouses`, `inventory.operations` | `inventory.view`; operações com `inventory.manage` |
+| Equipe: crédito | `credit.index`, `credit.show` | `credit.view`; alterações com `credit.manage` |
+
+- O representante comercial (papel `sales_rep`) consulta apenas pedidos das
+  empresas da própria carteira (`buyer_companies.sales_rep_membership_id`),
+  regra aplicada na consulta de pedidos da equipe. Cadastro de empresas,
+  crédito e estoque seguem as permissões do papel, sem recorte de carteira.
+- O checkout exibe o total calculado no servidor e o envia como valor
+  esperado: se preços mudarem até a confirmação, ela é recusada
+  (`PricesChanged`). A chave de idempotência é gerada no servidor a cada
+  tentativa.
+- Números de pedido são sequenciais por distribuidor (`PED-0000001`),
+  atribuídos no fim da confirmação (ADR-022).
+- Reservas, movimentações de estoque e dados de crédito não são legíveis no
+  contexto de comprador, nem os da própria empresa (ADR-020).
+
