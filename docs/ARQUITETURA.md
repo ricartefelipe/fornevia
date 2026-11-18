@@ -367,3 +367,55 @@ código `amount_out_of_range`), exibida no campo, nunca como erro 500. No
 portal, um total que excederia o limite não é calculado: a tela pede
 redução da quantidade.
 Datas comerciais digitadas aceitam de 2000-01-01 a 2099-12-31.
+
+## 9. Estoque, crédito e pedidos
+
+### 9.1 Ledgers e projeções (ADR-005)
+
+| Ledger (append-only) | Projeção (por trigger) | Invariantes no banco |
+|---|---|---|
+| `stock_movements` (entrada, ajuste, transferência, reserva, liberação, saída) | `stock_levels` (físico, reservado por depósito e SKU) | sinais por tipo; físico ≥ 0; reservado ≤ físico |
+| `credit_movements` (comprometimento, liberação, faturamento, pagamento, nota de crédito, ajuste) | `credit_accounts` (comprometido, recebível) | sinais por tipo; saldos ≥ 0; conta e empresa coerentes |
+
+A aplicação não altera saldos diretamente: o papel `fornevia_app` não tem
+`INSERT` nos saldos nem `UPDATE` nas colunas de saldo. O trigger de estoque
+atualiza a linha existente antes de inserir: em `INSERT ... ON CONFLICT` o
+PostgreSQL avalia o `CHECK` sobre a linha proposta antes do conflito.
+
+Posição de crédito (RN-080): `exposição = comprometido + recebível`;
+`disponível = limite + exceções vigentes − exposição`. Bloqueio e títulos
+vencidos acima da tolerância recusam compra a prazo.
+
+### 9.2 Confirmação do pedido (RN-060)
+
+```mermaid
+sequenceDiagram
+    participant P as Portal (contexto comprador)
+    participant A as PlaceOrder
+    participant S as Contexto de sistema (mesmo usuário)
+    P->>A: checkout (chave de idempotência)
+    A->>A: lock do carrinho, registro da chave
+    A->>A: preços e regra de compra recalculados no servidor
+    A->>A: pedido e itens (snapshot), número por sequência
+    A->>S: custos internos, reservas (lock dos saldos), crédito (lock da conta), cota do plano, outbox
+    A->>A: evento, carrinho convertido, auditoria
+    A-->>P: pedido (ou recusa sem efeito parcial)
+```
+
+Ordem de locks (ADR-006): carrinho → chave de idempotência → saldos de
+estoque (depósito, SKU) → conta de crédito → contador do plano. Gravações
+em estoque, crédito, custos, contador e outbox usam o contexto de sistema do
+mesmo usuário (ADR-014), porque o contexto de comprador só lê essas tabelas.
+
+Cancelamento (RF-062): itens não expedidos, liberando primeiro a parte
+encomendada, depois reservas, e o crédito proporcional (o restante inteiro
+no cancelamento total).
+
+### 9.3 Garantias verificadas com processos concorrentes
+
+| Cenário | Resultado esperado |
+|---|---|
+| Duas compras pela última unidade | uma confirma; a outra recebe `InsufficientStock` |
+| Quatro compras disputando saldo parcial | reservado = soma das reservas ativas; sem negativo |
+| Duas compras no mesmo limite de crédito | apenas o que cabe no disponível é comprometido |
+| Envios simultâneos com a mesma chave | um único pedido; o segundo recebe o mesmo resultado |
