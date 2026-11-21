@@ -278,7 +278,9 @@ final class CartPage extends Component
      */
     private function budgetPosition(string $costCenterId): ?BudgetPosition
     {
-        return app(BudgetLedger::class)->budgetFor($costCenterId, app(Clock::class)->now())?->position();
+        $companyId = app(Access::class)->buyerCompanyId();
+
+        return $companyId === null ? null : app(BudgetLedger::class)->budgetFor($companyId, $costCenterId, app(Clock::class)->now())?->position();
     }
 
     private function validCheckout(CheckoutChoices $choices): bool

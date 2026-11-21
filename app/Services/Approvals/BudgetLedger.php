@@ -38,9 +38,11 @@ final readonly class BudgetLedger
         private Clock $clock,
     ) {}
 
-    public function budgetFor(string $costCenterId, CarbonImmutable $date, bool $lock = false): ?CostCenterBudget
+    public function budgetFor(string $buyerCompanyId, string $costCenterId, CarbonImmutable $date, bool $lock = false): ?CostCenterBudget
     {
         return CostCenterBudget::query()
+            // Empresa explícita: no contexto de sistema o RLS não filtra.
+            ->where('buyer_company_id', $buyerCompanyId)
             ->where('cost_center_id', $costCenterId)
             // Mês no fuso comercial: pedido às 22h do último dia (Brasília) é do próprio mês.
             ->where('period_start', $date->setTimezone((string) config('app.business_timezone', 'America/Sao_Paulo'))->startOfMonth()->toDateString())
@@ -135,7 +137,7 @@ final readonly class BudgetLedger
             return null;
         }
 
-        return $this->budgetFor($order->cost_center_id, $order->submitted_at ?? $this->clock->now(), lock: true);
+        return $this->budgetFor($order->buyer_company_id, $order->cost_center_id, $order->submitted_at ?? $this->clock->now(), lock: true);
     }
 
     private function reservedFor(Order $order, CostCenterBudget $budget): int
