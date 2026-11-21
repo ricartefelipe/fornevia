@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Portal\Ordering;
 
+use App\Actions\Approvals\RetryOrderConfirmation;
 use App\Actions\Ordering\CancelOrderItems;
 use App\Actions\Ordering\Portal\BuyerOrders;
 use App\Actions\Ordering\Portal\Reorder;
@@ -11,16 +12,24 @@ use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Money;
 use App\Domain\Shared\Quantity;
+use App\Enums\Approvals\ApprovalDecision;
+use App\Enums\Approvals\ApprovalOutcome;
+use App\Enums\Approvals\ApprovalStepStatus;
 use App\Enums\Identity\Permission;
+use App\Enums\Ordering\ApprovalStatus;
 use App\Enums\Ordering\CommercialStatus;
+use App\Models\Approvals\OrderApprovalDecision;
+use App\Models\Approvals\OrderApprovalStep;
 use App\Models\Buyers\BuyerUnit;
 use App\Models\Buyers\CostCenter;
 use App\Models\Catalog\UnitOfMeasure;
+use App\Models\Identity\Membership;
 use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderEvent;
 use App\Models\Ordering\OrderItem;
 use App\Support\Auth\Access;
 use App\Support\Http\UntrustedId;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
@@ -32,10 +41,29 @@ use Livewire\Component;
 
 /**
  * Detalhe do pedido do comprador: itens, totais, estados separados
- * (comercial, aprovação, atendimento e financeiro), entrega, pagamento e
- * histórico. Permite cancelar itens ainda não expedidos (RF-062) a quem
- * pode confirmar pedidos e comprar novamente (recompra com preços
- * vigentes).
+ * (comercial, aprovação, atendimento e financeiro), níveis e decisões da
+ * aprovação interna, entrega, pagamento e histórico. Permite cancelar itens
+ * ainda não expedidos (RF-062) a quem pode confirmar pedidos e comprar
+ * novamente (recompra com preços vigentes).
+ *
+ * Pedido aguardando aprovação, ou aprovado e ainda não confirmado com o
+ * distribuidor, só é cancelado por inteiro (libera a reserva de
+ * orçamento). Pedido aprovado cuja confirmação foi recusada mostra o motivo
+ * e permite nova tentativa (RetryOrderConfirmation), com a mesma
+ * reavaliação de preços e condições da aprovação final (RN-054). A tela
+ * lembra que a aprovação interna não garante estoque nem crédito (RN-056).
+ *
+ * @phpstan-type ApprovalLevel array{
+ *     id: string,
+ *     number: int,
+ *     required: int,
+ *     status: ApprovalStepStatus,
+ *     current: bool,
+ *     decidedAt: CarbonImmutable|null,
+ *     approvers: list<string>,
+ *     approvals: int,
+ *     decisions: list<array{id: string, actor: string, principal: string|null, decision: ApprovalDecision, comment: string|null, at: CarbonImmutable, invalidatedAt: CarbonImmutable|null}>
+ * }
  */
 #[Layout('layouts.app')]
 #[Title('Pedido')]
@@ -45,11 +73,28 @@ final class OrderShow extends Component
 
     public const int MAX_REASON_LENGTH = 500;
 
+    /**
+     * Eventos da aprovação interna (também usados na tela da equipe).
+     *
+     * @var array<string, string>
+     */
+    public const array APPROVAL_EVENT_LABELS = [
+        'order.submitted_for_approval' => 'Pedido enviado para aprovação interna',
+        'order.approval_recorded' => 'Aprovação registrada',
+        'order.approval_level_approved' => 'Nível de aprovação concluído',
+        'order.approved' => 'Pedido aprovado internamente',
+        'order.approval_rejected' => 'Pedido rejeitado na aprovação interna',
+        'order.approvals_invalidated' => 'Aprovações invalidadas pela reavaliação de preços',
+        'order.approval_step_reassigned' => 'Aprovadores do nível reatribuídos',
+        'order.confirmation_pending' => 'Confirmação com o distribuidor pendente',
+    ];
+
     /** @var array<string, string> */
     private const array EVENT_LABELS = [
         'order.confirmed' => 'Pedido confirmado',
         'order.items_cancelled' => 'Itens cancelados',
         'order.cancelled' => 'Pedido cancelado',
+        ...self::APPROVAL_EVENT_LABELS,
     ];
 
     #[Locked]
@@ -122,6 +167,32 @@ final class OrderShow extends Component
         $this->cancel($cancel, $order, null, $reason);
     }
 
+    /**
+     * Nova tentativa de confirmar com o distribuidor um pedido aprovado
+     * internamente cuja confirmação foi recusada.
+     */
+    public function retryConfirmation(BuyerOrders $orders, RetryOrderConfirmation $retry): void
+    {
+        $this->clearFeedback();
+        $order = $orders->find($orders->actor(), $this->orderId);
+
+        try {
+            $outcome = $retry->handle($order);
+        } catch (BusinessRuleViolation $e) {
+            $this->failure = $e->getMessage();
+
+            return;
+        }
+
+        if ($outcome === ApprovalOutcome::AwaitingConfirmation) {
+            $this->failure = 'O pedido continua sem confirmação com o distribuidor. Veja o motivo atualizado abaixo.';
+
+            return;
+        }
+
+        $this->message = $outcome->message();
+    }
+
     public function reorder(Reorder $reorder): void
     {
         $this->clearFeedback();
@@ -136,6 +207,8 @@ final class OrderShow extends Component
     public function render(BuyerOrders $orders, Access $access): View
     {
         $order = $orders->find($orders->actor(), $this->orderId);
+        $canPlace = $access->can(Permission::PortalOrdersPlace);
+        $unconfirmed = in_array($order->commercial_status, [CommercialStatus::PendingApproval, CommercialStatus::Approved], true);
         $names = $orders->userNames([
             $order->placed_by_user_id,
             ...$order->events->map(static fn (OrderEvent $event): ?string => $event->actor_user_id)->all(),
@@ -154,8 +227,133 @@ final class OrderShow extends Component
             'unitName' => $order->buyer_unit_id !== null ? BuyerUnit::query()->whereKey($order->buyer_unit_id)->value('name') : null,
             'costCenterName' => $order->cost_center_id !== null ? CostCenter::query()->whereKey($order->cost_center_id)->value('name') : null,
             'canCancel' => $orders->canCancel($order),
+            'canCancelUnconfirmed' => $canPlace && $unconfirmed,
+            'canRetry' => $canPlace && self::awaitsConfirmation($order),
             'canReorder' => $access->can(Permission::PortalCart),
+            'approvalLevels' => self::approvalLevels($order),
         ])->title("Pedido {$order->number}");
+    }
+
+    /**
+     * Aprovado internamente e ainda não confirmado com o distribuidor.
+     */
+    public static function awaitsConfirmation(Order $order): bool
+    {
+        return $order->commercial_status === CommercialStatus::Approved && $order->approval_status === ApprovalStatus::Approved;
+    }
+
+    /**
+     * Níveis de aprovação retratados na submissão, com os aprovadores, o
+     * quórum atingido (titulares distintos, sem o solicitante) e as
+     * decisões, inclusive as invalidadas pela reavaliação. Lido no contexto
+     * de quem consulta: comprador da empresa ou equipe do distribuidor.
+     *
+     * @return list<ApprovalLevel>
+     */
+    public static function approvalLevels(Order $order): array
+    {
+        $steps = OrderApprovalStep::query()->where('order_id', $order->id)->orderBy('level_number')->get();
+
+        if ($steps->isEmpty()) {
+            return [];
+        }
+
+        $decisions = OrderApprovalDecision::query()
+            ->where('order_id', $order->id)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('order_approval_step_id');
+
+        $membershipIds = [];
+
+        foreach ($steps as $step) {
+            array_push($membershipIds, ...array_values($step->approver_membership_ids));
+        }
+
+        foreach ($decisions->flatten() as $decision) {
+            /** @var OrderApprovalDecision $decision */
+            $membershipIds[] = $decision->actor_membership_id;
+            $membershipIds[] = $decision->principal_membership_id;
+        }
+
+        $names = Membership::query()
+            ->with('user')
+            ->whereKey(array_values(array_unique($membershipIds)))
+            ->get()
+            ->mapWithKeys(static fn (Membership $m): array => [$m->id => $m->user->name])
+            ->all();
+        $name = static fn (string $id): string => $names[$id] ?? 'Usuário não identificado';
+        $requester = (string) $order->placed_by_membership_id;
+        $currentId = $order->approval_status === ApprovalStatus::Pending
+            ? $steps->first(static fn (OrderApprovalStep $s): bool => $s->status === ApprovalStepStatus::Pending)?->id
+            : null;
+        $levels = [];
+
+        foreach ($steps as $step) {
+            /** @var \Illuminate\Support\Collection<int, OrderApprovalDecision> $stepDecisions */
+            $stepDecisions = $decisions->get($step->id, collect());
+            $approvedBy = [];
+
+            foreach ($stepDecisions as $decision) {
+                if ($decision->invalidated_at === null && $decision->decision === ApprovalDecision::Approved
+                    && $decision->principal_membership_id !== $requester && $decision->actor_membership_id !== $requester) {
+                    $approvedBy[$decision->principal_membership_id] = true;
+                }
+            }
+
+            $levels[] = [
+                'id' => $step->id,
+                'number' => $step->level_number,
+                'required' => $step->required_approvals,
+                'status' => $step->status,
+                'current' => $step->id === $currentId,
+                'decidedAt' => $step->decided_at,
+                'approvers' => array_values(array_map($name, $step->approver_membership_ids)),
+                'approvals' => count($approvedBy),
+                'decisions' => array_values($stepDecisions->map(static fn (OrderApprovalDecision $d): array => [
+                    'id' => $d->id,
+                    'actor' => $name($d->actor_membership_id),
+                    'principal' => $d->principal_membership_id !== $d->actor_membership_id ? $name($d->principal_membership_id) : null,
+                    'decision' => $d->decision,
+                    'comment' => $d->comment,
+                    'at' => $d->created_at,
+                    'invalidatedAt' => $d->invalidated_at,
+                ])->all()),
+            ];
+        }
+
+        return $levels;
+    }
+
+    /**
+     * Detalhes legíveis dos eventos da aprovação interna (regra, nível e
+     * totais).
+     *
+     * @param  array<string, mixed>  $data
+     * @return list<string>
+     */
+    public static function approvalEventDetails(array $data, bool $withTotal = false): array
+    {
+        $details = [];
+
+        if ($withTotal && isset($data['total_cents']) && is_int($data['total_cents'])) {
+            $details[] = 'Total: '.Money::ofCents($data['total_cents'])->format();
+        }
+
+        if (isset($data['rule']) && is_string($data['rule'])) {
+            $details[] = 'Regra: '.$data['rule'];
+        }
+
+        if (isset($data['level']) && is_int($data['level'])) {
+            $details[] = 'Nível '.$data['level'];
+        }
+
+        if (isset($data['previous_total_cents']) && is_int($data['previous_total_cents'])) {
+            $details[] = 'Total anterior: '.Money::ofCents($data['previous_total_cents'])->format();
+        }
+
+        return $details;
     }
 
     /**
@@ -163,6 +361,8 @@ final class OrderShow extends Component
      */
     private function cancel(CancelOrderItems $cancel, Order $order, ?array $quantities, string $reason): void
     {
+        $unconfirmed = in_array($order->commercial_status, [CommercialStatus::PendingApproval, CommercialStatus::Approved], true);
+
         try {
             $updated = $cancel->handle($order, $quantities, $reason);
         } catch (BusinessRuleViolation $e) {
@@ -176,9 +376,11 @@ final class OrderShow extends Component
         }
 
         $this->reset('cancelQuantities', 'cancelReason');
-        $this->message = $quantities === null || $updated->commercial_status === CommercialStatus::Cancelled
-            ? 'Pedido cancelado. As reservas e o crédito correspondentes foram liberados.'
-            : 'Itens cancelados. As reservas e o crédito correspondentes foram liberados.';
+        $this->message = match (true) {
+            $unconfirmed => 'Pedido cancelado antes da confirmação com o distribuidor. A reserva de orçamento do centro de custo, se houver, foi liberada.',
+            $quantities === null || $updated->commercial_status === CommercialStatus::Cancelled => 'Pedido cancelado. As reservas e o crédito correspondentes foram liberados.',
+            default => 'Itens cancelados. As reservas e o crédito correspondentes foram liberados.',
+        };
     }
 
     private function reason(): ?string
@@ -283,6 +485,10 @@ final class OrderShow extends Component
 
         if (isset($data['reason']) && is_string($data['reason']) && $data['reason'] !== '') {
             $details[] = 'Motivo: '.$data['reason'];
+        }
+
+        if (isset(self::APPROVAL_EVENT_LABELS[$event->type])) {
+            array_push($details, ...self::approvalEventDetails($data));
         }
 
         return $details;

@@ -9,6 +9,7 @@ use App\Data\Ordering\Portal\OrderFilters;
 use App\Enums\Ordering\CommercialStatus;
 use App\Models\Ordering\Order;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
@@ -18,7 +19,9 @@ use Livewire\WithPagination;
 /**
  * Pedidos do comprador: os próprios ou, com portal.orders.view_all, os de
  * toda a empresa. Filtros por situação comercial e período (entrada não
- * confiável, normalizada em OrderFilters) e paginação.
+ * confiável, normalizada em OrderFilters) e paginação. A aprovação interna
+ * aparece com o nível em análise; pedido aprovado ainda não confirmado com
+ * o distribuidor é destacado.
  */
 #[Layout('layouts.app')]
 #[Title('Pedidos')]
@@ -79,6 +82,7 @@ final class OrdersIndex extends Component
 
         /** @var list<Order> $items */
         $items = array_values($page->items());
+        (new EloquentCollection($items))->load('approvalSteps');
 
         return view('livewire.portal.ordering.orders-index', [
             'orders' => $page,

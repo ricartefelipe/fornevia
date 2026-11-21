@@ -29,6 +29,8 @@ use Livewire\WithPagination;
  * Pedidos do distribuidor (RN-062): filtros pelos quatro estados
  * independentes, empresa compradora, período (data do pedido no fuso
  * comercial) e busca por número ou ordem de compra, com totais da página.
+ * A aprovação interna do comprador aparece com o nível em análise, somente
+ * para leitura.
  *
  * Toda consulta passa por StaffOrderQuery: o representante comercial só vê
  * pedidos e empresas da própria carteira. Valores de filtro inválidos
@@ -118,7 +120,7 @@ final class OrdersIndex extends Component
      */
     private function orders(StaffOrderQuery $query): LengthAwarePaginator
     {
-        $orders = $query->orders()->with('buyerCompany')->orderByDesc('created_at')->orderByDesc('id');
+        $orders = $query->orders()->with(['buyerCompany', 'approvalSteps'])->orderByDesc('created_at')->orderByDesc('id');
 
         foreach ([
             'commercial_status' => CommercialStatus::tryFrom($this->commercialStatus),

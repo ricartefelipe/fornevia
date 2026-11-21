@@ -12,6 +12,8 @@ use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Quantity;
 use App\Enums\Identity\Permission;
+use App\Livewire\Portal\Ordering\OrderShow as PortalOrderShow;
+use App\Models\Ordering\OrderEvent;
 use App\Models\Ordering\OrderItem;
 use App\Support\Auth\Access;
 use App\Support\Http\UntrustedId;
@@ -34,6 +36,10 @@ use Livewire\Component;
  * por propriedade bloqueada e recarregado pelo escopo da equipe a cada
  * ação; identificadores de itens recebidos do cliente que não pertencem ao
  * pedido equivalem a registro inexistente.
+ *
+ * A aprovação interna do comprador (níveis, aprovadores e decisões) é
+ * exibida somente para leitura: quem decide são os aprovadores da empresa
+ * compradora, no portal.
  */
 #[Layout('layouts.app')]
 #[Title('Pedido')]
@@ -124,6 +130,13 @@ final class OrderShow extends Component
             'order' => $detail->order,
             'canManage' => $access->can(Permission::OrdersManage),
             'canViewBuyer' => $access->can(Permission::BuyersView),
+            'approvalLevels' => PortalOrderShow::approvalLevels($detail->order),
+            'approvalEventLabels' => PortalOrderShow::APPROVAL_EVENT_LABELS,
+            'eventDetails' => $detail->events->mapWithKeys(static fn (OrderEvent $event): array => [
+                $event->id => isset(PortalOrderShow::APPROVAL_EVENT_LABELS[$event->type])
+                    ? [...$detail->eventDetails($event), ...PortalOrderShow::approvalEventDetails($event->data, withTotal: true)]
+                    : $detail->eventDetails($event),
+            ])->all(),
         ])->title('Pedido '.$detail->order->number);
     }
 
