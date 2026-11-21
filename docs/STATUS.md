@@ -252,23 +252,33 @@ fim; a evidência da suíte completa é a CI do PR.
 - Checkout com submissão para aprovação: níveis retratados, orçamento
   reservado, número atribuído; estoque e crédito apenas na confirmação
   (RN-055, RN-056).
-- Decisão por nível sob lock do pedido; confirmação após a aprovação final
-  com reavaliação de preços e condições (RN-054); nova tentativa quando
-  estoque, crédito ou orçamento recusam; cancelamento do pedido não
-  confirmado.
-- Orçamento mensal por centro de custo (ledger e projeção no banco) e
-  telas do portal: fila de aprovação, regras, delegações e orçamentos;
-  telas de pedido do portal e da equipe com a aprovação interna.
+- Decisão por nível sob lock do pedido, vinculada à versão exibida ao
+  aprovador; confirmação após a aprovação final com reavaliação de preços,
+  condição de pagamento e itens, e nova escolha da regra pelo novo total
+  (RN-054, RF-061); nova tentativa quando estoque, crédito ou orçamento
+  recusam; cancelamento do pedido não confirmado, que encerra a aprovação.
+- Orçamento mensal por centro de custo (ledger e projeção no banco), com
+  reserva, consumo, liberação e estorno do consumo no cancelamento de
+  pedido confirmado; telas do portal: fila de aprovação, regras,
+  delegações e orçamentos; telas de pedido do portal e da equipe com a
+  aprovação interna.
+- Defesa no banco (ADR-024): pedidos e todas as tabelas da aprovação
+  somente leitura no contexto de comprador, com gravação no contexto de
+  sistema do mesmo usuário; chaves estrangeiras compostas por empresa;
+  histórico de decisões e retrato dos níveis protegidos por triggers.
 
 ### Verificado localmente
 
 | Verificação | Resultado |
 |---|---|
-| Testes de concorrência | 18 aprovados, incluindo aprovações simultâneas que completam o quórum (uma única confirmação) e submissões disputando o mesmo orçamento |
-| Fluxo de aprovação, telas e regras | aprovados (aprovação, fila, regras, delegações, orçamentos, telas de pedido) |
-| Migrations (fresh, rollback, migrate) | sem erro |
+| Suíte completa com cobertura (PCOV), esquema recriado, commit `3c8ecd7` | 2.023 testes e 9.778 asserções aprovados (46 min); cobertura de linhas total 95,6%, núcleo 98,17%, caminhos críticos 100% |
+| Testes depois das últimas correções da revisão | unitários, concorrência, aprovação, orçamento e telas do portal aprovados (esquema recriado) |
+| Testes de concorrência | 20 cenários aprovados; a remoção do lock do pedido na decisão e do lock das delegações faz os testes correspondentes falharem |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
 | PHPStan nível 8 e Pint | sem erros |
+| Revisão | revisão independente e revisão em cinco frentes com verificação adversarial; achados confirmados corrigidos com teste de regressão |
 
-A suíte completa e a revisão adversarial deste incremento são registradas
-na conclusão do PR.
+Limitações registradas: associações da empresa compradora ainda graváveis
+no contexto de comprador (revisão de identidade e acesso); sem notificação
+aos aprovadores (incremento de processamento da outbox).
 

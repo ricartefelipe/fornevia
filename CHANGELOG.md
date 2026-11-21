@@ -26,6 +26,15 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   somente leitura na conexão do portal; a gravação ocorre no contexto de
   sistema do mesmo usuário, após a autorização.
 - Submissão para aprovação exige assinatura ativa do distribuidor.
+- Decisão de aprovação vale somente para a versão do pedido exibida ao
+  aprovador: depois de uma reavaliação ou da mudança de nível, a decisão
+  feita na tela antiga é recusada.
+
+### Atualização
+
+- O administrador da empresa compradora dos distribuidores já existentes
+  recebe a permissão de regras e delegações de aprovação
+  (`portal.approval_rules`), por migration de dados.
 
 ## [0.1.0] - 2026-11-21
 

@@ -488,9 +488,14 @@ sem nova contenção nas etapas de estoque e crédito.
   níveis são substituídos pelos dela (o retrato anterior fica marcado como
   substituído). Se nenhuma regra valer, os níveis retratados continuam
   exigidos: a reavaliação não dispensa aprovação.
+- A decisão e a reatribuição valem para a versão do pedido exibida a
+  quem decide (nível em análise e impressão do pedido): se o pedido foi
+  reavaliado ou outro nível entrou em análise desde a exibição, são
+  recusadas e exigem nova revisão. A impressão decidida fica registrada em
+  cada decisão.
 - Recusa de estoque, crédito, orçamento ou cota na confirmação deixa o
   pedido aprovado, sem confirmação, com o motivo registrado e nova
-  tentativa.
+  tentativa (auditada).
 - Cancelamento durante a aprovação encerra a aprovação (situação
   "encerrada") e os níveis sem decisão; cancelamento de pedido confirmado
   estorna o consumo do orçamento, proporcional ao valor cancelado.
