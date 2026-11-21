@@ -31,7 +31,8 @@ final readonly class RetryOrderConfirmation
     {
         if ($this->access->isStaff()) {
             $this->access->authorize(Permission::OrdersManage);
-        } elseif (! ($this->access->isBuyer() && $this->access->can(Permission::PortalOrdersPlace) && $order->buyer_company_id === $this->access->buyerCompanyId())) {
+        } elseif (! ($this->access->isBuyer() && $this->access->can(Permission::PortalOrdersPlace) && $order->buyer_company_id === $this->access->buyerCompanyId()
+            && ($order->placed_by_membership_id === $this->access->membership()->id || $this->access->can(Permission::PortalOrdersViewAll)))) {
             throw new AuthorizationException('Sem permissão para confirmar este pedido.');
         }
 
