@@ -41,10 +41,13 @@ final readonly class ApprovalStepView
         return array_keys($principals);
     }
 
+    /**
+     * Rejeitado por um titular que é aprovador do nível.
+     */
     public function isRejected(): bool
     {
         foreach ($this->decisions as $decision) {
-            if (! $decision['approved']) {
+            if (! $decision['approved'] && in_array($decision['principal'], $this->approverIds, true)) {
                 return true;
             }
         }

@@ -43,9 +43,13 @@ final readonly class ApprovalEligibility
     /**
      * Titulares que delegaram ao ator, com delegação vigente agora.
      *
+     * Com $lock (decisão), as delegações ficam bloqueadas em modo
+     * compartilhado até o fim da transação: uma revogação concorrente
+     * termina antes (e a delegação revogada não é usada) ou espera a decisão.
+     *
      * @return array<string, string> delegator_membership_id => delegation_id
      */
-    public function delegatorsOf(string $buyerCompanyId, string $actorMembershipId): array
+    public function delegatorsOf(string $buyerCompanyId, string $actorMembershipId, bool $lock = false): array
     {
         $now = $this->clock->now();
 
@@ -55,6 +59,7 @@ final readonly class ApprovalEligibility
             ->whereNull('revoked_at')
             ->where('valid_from', '<=', $now)
             ->where('valid_until', '>', $now)
+            ->when($lock, static fn ($query) => $query->sharedLock())
             ->orderBy('created_at')
             ->pluck('id', 'delegator_membership_id')
             ->map(static fn (mixed $id): string => (string) $id)

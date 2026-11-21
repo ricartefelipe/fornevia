@@ -247,8 +247,6 @@ final readonly class ApprovedOrderFinalizer
             ->whereNull('invalidated_at')
             ->update(['invalidated_at' => $now]);
 
-        $this->budgets->release($order);
-
         $order->forceFill([
             'subtotal_cents' => $totals->subtotal,
             'discount_cents' => $totals->discount,
@@ -266,9 +264,13 @@ final readonly class ApprovedOrderFinalizer
             'confirmation_issue' => null,
         ])->save();
 
+        // Regra pelo novo total antes do orçamento (ADR-006: regras antes do
+        // orçamento, como na submissão).
         $rule = $this->rules->forOrder($order);
         $replacement = $rule !== null && $rule->id !== $order->approval_rule_id ? $rule : null;
         $this->restartSteps($order, $replacement, $now);
+
+        $this->budgets->release($order);
 
         try {
             DB::transaction(fn () => $this->budgets->reserve($order));

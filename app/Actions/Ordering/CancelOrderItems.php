@@ -171,7 +171,6 @@ final readonly class CancelOrderItems
         }
 
         $now = $this->clock->now();
-        $this->budgets->release($order);
 
         if ($order->approval_status === ApprovalStatus::Pending) {
             OrderApprovalStep::query()
@@ -180,6 +179,8 @@ final readonly class CancelOrderItems
                 ->update(['status' => ApprovalStepStatus::Cancelled->value, 'decided_at' => $now, 'updated_at' => $now]);
             $order->forceFill(['approval_status' => ApprovalStatus::Cancelled]);
         }
+
+        $this->budgets->release($order);
 
         $order->forceFill([
             'commercial_status' => CommercialStatus::Cancelled,

@@ -102,7 +102,7 @@ final readonly class DecideOrderApproval
 
         $step = ApprovalSteps::current($locked) ?? throw new OrderNotAwaitingApproval('Este pedido não tem nível de aprovação pendente.');
         $requesterId = (string) $locked->placed_by_membership_id;
-        $delegators = $this->eligibility->delegatorsOf($locked->buyer_company_id, $actorId);
+        $delegators = $this->eligibility->delegatorsOf($locked->buyer_company_id, $actorId, lock: true);
 
         $principalId = ApprovalFlow::principalFor(
             ApprovalSteps::view($step),
@@ -140,6 +140,11 @@ final readonly class DecideOrderApproval
 
         if ($view->isRejected()) {
             $step->forceFill(['status' => ApprovalStepStatus::Rejected, 'decided_at' => $now])->save();
+            // Os níveis seguintes deixam de aguardar decisão.
+            OrderApprovalStep::query()
+                ->where('order_id', $locked->id)
+                ->where('status', ApprovalStepStatus::Pending->value)
+                ->update(['status' => ApprovalStepStatus::Cancelled->value, 'decided_at' => $now, 'updated_at' => $now]);
             $locked->forceFill([
                 'commercial_status' => CommercialStatus::Rejected,
                 'approval_status' => ApprovalStatus::Rejected,

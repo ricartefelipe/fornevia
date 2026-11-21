@@ -18,8 +18,8 @@ use Tests\Integration\Approvals\ApprovalFixtures as Fx;
 use Tests\Support\Builders\OrderingScenario;
 
 /*
-| Reavaliação antes da confirmação (RN-054, RF-061) e efeitos do
-| cancelamento sobre a aprovação e o orçamento (RN-055).
+| Reavaliação antes da confirmação (RN-054, RF-061) e encerramento da
+| aprovação na rejeição e no cancelamento, com o orçamento (RN-055).
 */
 
 beforeEach(function (): void {
@@ -39,7 +39,8 @@ beforeEach(function (): void {
 it('troca os níveis pelos da regra que passa a valer quando o novo total cruza a alçada', function (): void {
     Fx::rule($this->scenario, $this->company, [[1, [$this->manager]]], priority: 1, name: 'Gerência');
     Fx::rule($this->scenario, $this->company, [[1, [$this->director]], [1, [$this->cfo]]], ['min_total_cents' => 35_000], priority: 5, name: 'Diretoria');
-    $order = Fx::place($this->scenario, $this->buyer);
+    $budget = Fx::budget($this->scenario, $this->center, 100_000);
+    $order = Fx::place($this->scenario, $this->buyer, ['costCenterId' => $this->center->id]);
 
     expect(Fx::fresh($this->scenario, $order)->approval_rule_name)->toBe('Gerência');
 
@@ -48,17 +49,21 @@ it('troca os níveis pelos da regra que passa a valer quando o novo total cruza 
     expect(Fx::decide($this->scenario, $this->manager, $order))->toBe(ApprovalOutcome::Invalidated);
 
     $stored = Fx::fresh($this->scenario, $order);
-    $all = $this->scenario->system(fn () => OrderApprovalStep::query()->where('order_id', $order->id)->orderBy('created_at')->get());
+    $all = $this->scenario->system(fn () => OrderApprovalStep::query()->where('order_id', $order->id)->get());
 
     expect($stored->total_cents->cents)->toBe(36_000)
         ->and($stored->approval_rule_name)->toBe('Diretoria')
         ->and($stored->approvalSteps->map(static fn (OrderApprovalStep $s): array => [$s->level_number, $s->approver_membership_ids])->all())
         ->toBe([[1, [$this->director->id]], [2, [$this->cfo->id]]])
-        ->and($all->pluck('status')->all())->toBe([ApprovalStepStatus::Superseded, ApprovalStepStatus::Pending, ApprovalStepStatus::Pending])
+        ->and($all->countBy(static fn (OrderApprovalStep $s): string => $s->status->value)->sortKeys()->all())->toBe(['pending' => 2, 'superseded' => 1])
+        ->and($all->firstWhere('status', ApprovalStepStatus::Superseded)?->approver_membership_ids)->toBe([$this->manager->id])
+        // Reserva refeita pelo novo total.
+        ->and(Fx::budgetState($this->scenario, $budget))->toBe(['reserved' => 36_000, 'consumed' => 0])
         ->and(fn () => Fx::decide($this->scenario, $this->manager, $order))->toThrow(App\Domain\Approvals\Exceptions\ApprovalNotAllowed::class);
 
     expect(Fx::decide($this->scenario, $this->director, $order))->toBe(ApprovalOutcome::Pending)
-        ->and(Fx::decide($this->scenario, $this->cfo, $order))->toBe(ApprovalOutcome::Confirmed);
+        ->and(Fx::decide($this->scenario, $this->cfo, $order))->toBe(ApprovalOutcome::Confirmed)
+        ->and(Fx::budgetState($this->scenario, $budget))->toBe(['reserved' => 0, 'consumed' => 36_000]);
 });
 
 it('mantém os níveis retratados quando nenhuma regra vale para o novo total', function (): void {
@@ -124,6 +129,19 @@ it('recusa a submissão para aprovação com a avaliação do distribuidor venci
 
     expect(fn () => Fx::place($this->scenario, $this->buyer))->toThrow(SubscriptionInactive::class)
         ->and($this->scenario->system(static fn (): int => DB::table('orders')->count()))->toBe(0);
+});
+
+it('encerra os níveis seguintes quando um nível rejeita', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->manager]], [1, [$this->director]], [1, [$this->cfo]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+    Fx::decide($this->scenario, $this->manager, $order);
+
+    expect(Fx::decide($this->scenario, $this->director, $order, App\Enums\Approvals\ApprovalDecision::Rejected, 'Fora do planejamento da obra'))
+        ->toBe(ApprovalOutcome::Rejected);
+
+    $stored = Fx::fresh($this->scenario, $order);
+    expect($stored->approval_status)->toBe(ApprovalStatus::Rejected)
+        ->and($stored->approvalSteps->pluck('status')->all())->toBe([ApprovalStepStatus::Approved, ApprovalStepStatus::Rejected, ApprovalStepStatus::Cancelled]);
 });
 
 it('encerra a aprovação pendente quando o pedido é cancelado', function (): void {

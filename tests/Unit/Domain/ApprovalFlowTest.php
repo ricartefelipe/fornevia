@@ -57,10 +57,12 @@ it('exige quórum de titulares distintos, aprovadores do nível, e ignora o soli
         ->and($withOutsider->isApproved('sol'))->toBeFalse();
 });
 
-it('encerra o nível na primeira rejeição', function (): void {
+it('encerra o nível na primeira rejeição de um aprovador do nível', function (): void {
     $rejected = step(1, ['ana', 'bruno'], [['actor' => 'ana', 'principal' => 'ana', 'approved' => false]]);
+    $byOutsider = step(1, ['ana', 'bruno'], [['actor' => 'edu', 'principal' => 'edu', 'approved' => false]]);
 
-    expect($rejected->isRejected())->toBeTrue()
+    expect($byOutsider->isRejected())->toBeFalse()
+        ->and($rejected->isRejected())->toBeTrue()
         ->and($rejected->isApproved('sol'))->toBeFalse()
         ->and(ApprovalFlow::isBlocked($rejected, 'sol', ['bruno']))->toBeFalse();
 });
