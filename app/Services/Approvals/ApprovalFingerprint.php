@@ -9,8 +9,10 @@ use App\Models\Ordering\OrderItem;
 
 /**
  * Impressão do que foi aprovado (RN-054): itens, quantidades, preços,
- * condição de pagamento, endereço de entrega, unidade e centro de custo.
- * Mudança em qualquer um deles invalida as aprovações registradas.
+ * condição de pagamento (código, prazos e exigência de crédito), endereço
+ * de entrega, unidade e centro de custo. Gravada na submissão e conferida
+ * na aprovação final: mudança em qualquer um deles invalida as aprovações
+ * registradas.
  */
 final class ApprovalFingerprint
 {
@@ -26,7 +28,11 @@ final class ApprovalFingerprint
         return hash('sha256', json_encode([
             'items' => $items,
             'total' => $order->total_cents->cents,
-            'payment_term' => $order->payment_term['code'] ?? null,
+            'payment_term' => [
+                $order->payment_term['code'] ?? null,
+                $order->payment_term['installment_days'] ?? null,
+                (bool) ($order->payment_term['requires_credit'] ?? false),
+            ],
             'shipping' => $order->shipping_address['id'] ?? null,
             'unit' => $order->buyer_unit_id,
             'cost_center' => $order->cost_center_id,

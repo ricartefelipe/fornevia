@@ -45,9 +45,20 @@ final class OrderApprovalSummary
         'order.approval_level_approved' => 'Nível de aprovação concluído',
         'order.approved' => 'Pedido aprovado internamente',
         'order.approval_rejected' => 'Pedido rejeitado na aprovação interna',
-        'order.approvals_invalidated' => 'Aprovações invalidadas pela reavaliação de preços',
+        'order.approvals_invalidated' => 'Aprovações invalidadas pela reavaliação do pedido',
         'order.approval_step_reassigned' => 'Aprovadores do nível reatribuídos',
         'order.confirmation_pending' => 'Confirmação com o distribuidor pendente',
+    ];
+
+    /**
+     * Motivos da reavaliação que invalida as aprovações (RN-054).
+     *
+     * @var array<string, string>
+     */
+    private const array INVALIDATION_REASONS = [
+        'price' => 'preço vigente diferente do aprovado',
+        'payment_term' => 'condição de pagamento alterada',
+        'order' => 'pedido diferente do aprovado',
     ];
 
     /**
@@ -113,6 +124,7 @@ final class OrderApprovalSummary
 
             foreach ($stepDecisions as $decision) {
                 if ($decision->invalidated_at === null && $decision->decision === ApprovalDecision::Approved
+                    && in_array($decision->principal_membership_id, $step->approver_membership_ids, true)
                     && $decision->principal_membership_id !== $requester && $decision->actor_membership_id !== $requester) {
                     $approvedBy[$decision->principal_membership_id] = true;
                 }
@@ -167,6 +179,15 @@ final class OrderApprovalSummary
 
         if (isset($data['previous_total_cents']) && is_int($data['previous_total_cents'])) {
             $details[] = 'Total anterior: '.Money::ofCents($data['previous_total_cents'])->format();
+        }
+
+        $reasons = array_values(array_filter(array_map(
+            static fn (mixed $reason): ?string => is_string($reason) ? (self::INVALIDATION_REASONS[$reason] ?? null) : null,
+            is_array($data['reasons'] ?? null) ? $data['reasons'] : [],
+        )));
+
+        if ($reasons !== []) {
+            $details[] = 'Motivo: '.implode(', ', $reasons);
         }
 
         return $details;

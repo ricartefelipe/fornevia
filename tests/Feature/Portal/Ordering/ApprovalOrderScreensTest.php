@@ -185,7 +185,7 @@ it('mostra as decisões invalidadas pela reavaliação de preços', function ():
         ->assertSeeText('R$ 360,00')
         ->assertSeeInOrder(['Nível 1', 'Pendente', 'Em análise', '0 de 1 aprovação necessária', 'por '.($this->name)($this->ana), 'Invalidada em'])
         ->assertSeeInOrder(['Nível 2', 'Pendente', 'por '.($this->name)($this->bruno), 'Invalidada em'])
-        ->assertSeeText('Aprovações invalidadas pela reavaliação de preços')
+        ->assertSeeText('Aprovações invalidadas pela reavaliação do pedido')
         ->assertSeeText('Total anterior: R$ 300,00');
 });
 
