@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Database;
 
+use Closure;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -176,6 +177,32 @@ final class TenantSchema
             }
 
             DB::statement(sprintf('grant update (%s) on %s to %s', implode(', ', $updatableColumns), $table, $app));
+        }
+    }
+
+    /**
+     * Executa o callback no contexto de sistema de cada tenant, em
+     * migrations de dados: o papel de manutenção não ignora o RLS e as
+     * tabelas o forçam. O contexto é desfeito ao final de cada tenant.
+     *
+     * @param  Closure(string): void  $callback  recebe o id do tenant
+     */
+    public static function forEachTenant(Closure $callback): void
+    {
+        foreach (DB::table('organizations')->orderBy('id')->pluck('id') as $tenantId) {
+            DB::transaction(static function () use ($tenantId, $callback): void {
+                DB::select(
+                    "select set_config('app.context_kind', 'system', true), set_config('app.tenant_id', ?, true),
+                            set_config('app.user_id', '', true), set_config('app.buyer_company_id', '', true)",
+                    [(string) $tenantId],
+                );
+
+                try {
+                    $callback((string) $tenantId);
+                } finally {
+                    DB::select("select set_config('app.context_kind', '', true), set_config('app.tenant_id', '', true)");
+                }
+            });
         }
     }
 

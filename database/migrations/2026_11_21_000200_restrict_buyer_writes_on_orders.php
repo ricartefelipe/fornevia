@@ -51,6 +51,13 @@ return new class extends Migration
                 foreign key (tenant_id, {$column}) references {$referenced} (tenant_id, id) on delete restrict");
         }
 
+        // A situação anterior não tem "encerrada": aprovação encerrada pelo
+        // cancelamento volta como reprovada (a situação comercial segue
+        // "cancelled").
+        TenantSchema::forEachTenant(static function (): void {
+            DB::table('orders')->where('approval_status', 'cancelled')->update(['approval_status' => 'rejected']);
+        });
+
         DB::statement('alter table orders drop constraint orders_approval_status_check');
         DB::statement("alter table orders add constraint orders_approval_status_check check (approval_status in ('not_required', 'pending', 'approved', 'rejected'))");
 
