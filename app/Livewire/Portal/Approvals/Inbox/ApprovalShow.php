@@ -7,6 +7,7 @@ namespace App\Livewire\Portal\Approvals\Inbox;
 use App\Actions\Approvals\DecideOrderApproval;
 use App\Actions\Approvals\Queries\ApprovalReview;
 use App\Actions\Approvals\ReassignApprovalStep;
+use App\Data\Approvals\ReviewedApproval;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Enums\Approvals\ApprovalDecision;
 use App\Enums\Approvals\ApprovalOutcome;
@@ -40,6 +41,14 @@ final class ApprovalShow extends Component
 
     #[Locked]
     public string $orderId = '';
+
+    /** Nível pendente exibido na última renderização (ReviewedApproval). */
+    #[Locked]
+    public string $reviewedStepId = '';
+
+    /** Impressão do pedido exibida na última renderização (ReviewedApproval). */
+    #[Locked]
+    public string $reviewedFingerprint = '';
 
     public string $comment = '';
 
@@ -91,8 +100,6 @@ final class ApprovalShow extends Component
             return;
         }
 
-        $level = $data->current->step->level_number;
-
         if (count($this->approvers) > self::MAX_APPROVERS) {
             $this->addError('approvers', 'Escolha até '.self::MAX_APPROVERS.' aprovadores.');
 
@@ -117,7 +124,7 @@ final class ApprovalShow extends Component
         }
 
         try {
-            $reassign->handle($order, $ids, $this->reassignReason);
+            $level = $reassign->handle($order, $ids, $this->reassignReason, $this->reviewedStepId);
         } catch (BusinessRuleViolation $e) {
             $this->violation($e, ['reason' => 'reassignReason', 'approvers' => 'approvers']);
 
@@ -134,8 +141,15 @@ final class ApprovalShow extends Component
         $actor = $review->actor();
         $order = $review->find($actor, $this->orderId);
 
+        $data = $review->review($actor, $order);
+        // O que esta renderização mostra é o que uma decisão ou reatribuição
+        // enviada a partir dela pode alterar.
+        $reviewed = $data->reviewed();
+        $this->reviewedStepId = $reviewed->stepId;
+        $this->reviewedFingerprint = $reviewed->fingerprint;
+
         return view('livewire.portal.approvals.inbox.approval-show', [
-            'review' => $review->review($actor, $order),
+            'review' => $data,
             'membershipId' => $actor->membership->id,
             'now' => $clock->now(),
         ])->title("Aprovação do pedido {$order->number}");
@@ -147,7 +161,7 @@ final class ApprovalShow extends Component
         $order = $review->find($review->actor(), $this->orderId);
 
         try {
-            $outcome = $decide->handle($order, $decision, $this->comment);
+            $outcome = $decide->handle($order, $decision, $this->comment, new ReviewedApproval($this->reviewedStepId, $this->reviewedFingerprint));
         } catch (BusinessRuleViolation $e) {
             $this->violation($e, ['comment' => 'comment']);
 

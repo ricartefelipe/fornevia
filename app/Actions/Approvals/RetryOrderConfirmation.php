@@ -12,9 +12,11 @@ use App\Enums\Ordering\ApprovalStatus;
 use App\Enums\Ordering\CommercialStatus;
 use App\Models\Ordering\Order;
 use App\Services\Approvals\ApprovedOrderFinalizer;
+use App\Services\Audit\AuditRecorder;
 use App\Support\Auth\Access;
 use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Nova tentativa de confirmar um pedido aprovado que não pôde ser
@@ -26,6 +28,7 @@ final readonly class RetryOrderConfirmation
     public function __construct(
         private Access $access,
         private ApprovedOrderFinalizer $finalizer,
+        private AuditRecorder $audit,
         private TenantDatabase $db,
     ) {}
 
@@ -38,19 +41,29 @@ final readonly class RetryOrderConfirmation
             throw new AuthorizationException('Sem permissão para confirmar este pedido.');
         }
 
-        // Pedidos são somente leitura no contexto de comprador (ADR-014).
-        return $this->db->asSystem(function () use ($order): ApprovalOutcome {
-            $locked = Order::query()
-                ->where('buyer_company_id', $order->buyer_company_id)
-                ->lockForUpdate()
-                ->findOrFail($order->id);
+        return DB::transaction(function () use ($order): ApprovalOutcome {
+            // Pedidos são somente leitura no contexto de comprador (ADR-024);
+            // a auditoria fica no contexto de quem pediu a nova tentativa.
+            $outcome = $this->db->asSystem(fn (): ApprovalOutcome => $this->retry($order));
 
-            if ($locked->commercial_status !== CommercialStatus::Approved || $locked->approval_status !== ApprovalStatus::Approved
-                || ApprovalSteps::current($locked) !== null) {
-                throw new OrderNotAwaitingApproval('Somente pedidos aprovados e ainda não confirmados podem ser confirmados novamente.');
-            }
+            $this->audit->record('order.confirmation_retried', $order, ['outcome' => $outcome->value]);
 
-            return $this->finalizer->finalize($locked);
+            return $outcome;
         });
+    }
+
+    private function retry(Order $order): ApprovalOutcome
+    {
+        $locked = Order::query()
+            ->where('buyer_company_id', $order->buyer_company_id)
+            ->lockForUpdate()
+            ->findOrFail($order->id);
+
+        if ($locked->commercial_status !== CommercialStatus::Approved || $locked->approval_status !== ApprovalStatus::Approved
+            || ApprovalSteps::current($locked) !== null) {
+            throw new OrderNotAwaitingApproval('Somente pedidos aprovados e ainda não confirmados podem ser confirmados novamente.');
+        }
+
+        return $this->finalizer->finalize($locked);
     }
 }

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 use App\Actions\Approvals\DecideOrderApproval;
 use App\Actions\Approvals\RevokeApprovalDelegation;
+use App\Data\Approvals\ReviewedApproval;
 use App\Enums\Approvals\ApprovalDecision;
+use App\Enums\Approvals\ApprovalStepStatus;
+use App\Models\Approvals\OrderApprovalStep;
 use App\Models\Identity\Membership;
 use App\Models\Ordering\Order;
 use App\Support\Auth\Access;
@@ -29,7 +32,15 @@ return [
             app(Access::class)->bindMembership($membership);
             $gate->pass($args['gate'] ?? null);
 
-            $outcome = app(DecideOrderApproval::class)->handle(Order::query()->findOrFail($args['order_id']), ApprovalDecision::Approved);
+            // Versão que a tela do aprovador mostraria ao abrir o pedido.
+            $order = Order::query()->findOrFail($args['order_id']);
+            $reviewed = ReviewedApproval::of($order, OrderApprovalStep::query()
+                ->where('order_id', $order->id)
+                ->where('status', ApprovalStepStatus::Pending->value)
+                ->orderBy('level_number')
+                ->first());
+
+            $outcome = app(DecideOrderApproval::class)->handle($order, ApprovalDecision::Approved, null, $reviewed);
 
             $gate->pass($args['hold'] ?? null);
 

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Approvals;
 
 use App\Actions\Approvals\Support\ApprovalSteps;
+use App\Data\Approvals\ReviewedApproval;
 use App\Domain\Approvals\ApprovalFlow;
 use App\Domain\Approvals\Exceptions\ApprovalNotAllowed;
+use App\Domain\Approvals\Exceptions\ApprovalOutdated;
 use App\Domain\Approvals\Exceptions\OrderNotAwaitingApproval;
 use App\Enums\Approvals\ApprovalDecision;
 use App\Enums\Approvals\ApprovalOutcome;
@@ -37,6 +39,9 @@ use Illuminate\Support\Facades\DB;
  * - o pedido é bloqueado antes de decidir: decisões simultâneas no mesmo
  *   pedido, cancelamento, nova tentativa e reatribuição são serializados e
  *   uma única confirmação acontece;
+ * - a decisão vale para a versão exibida (nível e impressão do pedido); se
+ *   o pedido foi reavaliado ou outro nível entrou em análise, é recusada e
+ *   a impressão decidida fica registrada na decisão;
  * - rejeição exige motivo, encerra o pedido e libera o orçamento;
  * - quórum atingido no último nível conclui a aprovação e tenta confirmar
  *   o pedido com o distribuidor (ApprovedOrderFinalizer).
@@ -54,7 +59,10 @@ final readonly class DecideOrderApproval
         private Clock $clock,
     ) {}
 
-    public function handle(Order $order, ApprovalDecision $decision, ?string $comment = null): ApprovalOutcome
+    /**
+     * @param  ReviewedApproval  $reviewed  nível e impressão exibidos ao aprovador
+     */
+    public function handle(Order $order, ApprovalDecision $decision, ?string $comment, ReviewedApproval $reviewed): ApprovalOutcome
     {
         $this->access->authorize(Permission::PortalApprovals);
 
@@ -74,11 +82,11 @@ final readonly class DecideOrderApproval
 
         $actorId = $this->access->membership()->id;
 
-        return DB::transaction(function () use ($order, $decision, $comment, $actorId): ApprovalOutcome {
+        return DB::transaction(function () use ($order, $decision, $comment, $actorId, $reviewed): ApprovalOutcome {
             // Pedido, níveis e decisões são somente leitura no contexto de
             // comprador: a decisão é gravada no contexto de sistema do mesmo
             // usuário, depois da autorização acima (ADR-014).
-            [$outcome, $recorded] = $this->db->asSystem(fn (): array => $this->decide($order, $decision, $comment, $actorId));
+            [$outcome, $recorded] = $this->db->asSystem(fn (): array => $this->decide($order, $decision, $comment, $actorId, $reviewed));
 
             $this->audit->record('order.approval_decided', $order, $recorded, $comment);
 
@@ -89,7 +97,7 @@ final readonly class DecideOrderApproval
     /**
      * @return array{0: ApprovalOutcome, 1: array{level: int, decision: string, principal_membership_id: string, delegated: bool}}
      */
-    private function decide(Order $order, ApprovalDecision $decision, ?string $comment, string $actorId): array
+    private function decide(Order $order, ApprovalDecision $decision, ?string $comment, string $actorId, ReviewedApproval $reviewed): array
     {
         $locked = Order::query()
             ->where('buyer_company_id', $order->buyer_company_id)
@@ -101,6 +109,13 @@ final readonly class DecideOrderApproval
         }
 
         $step = ApprovalSteps::current($locked) ?? throw new OrderNotAwaitingApproval('Este pedido não tem nível de aprovação pendente.');
+
+        // A decisão vale para o que foi exibido: reavaliação (novo total ou
+        // condições) ou outro nível em análise exigem nova revisão (RN-054).
+        if (! $reviewed->matches($locked, $step)) {
+            throw new ApprovalOutdated('O pedido mudou desde que você abriu esta página (valores, condições ou nível em análise). Revise o pedido antes de decidir.');
+        }
+
         $requesterId = (string) $locked->placed_by_membership_id;
         $delegators = $this->eligibility->delegatorsOf($locked->buyer_company_id, $actorId, lock: true);
 
@@ -120,6 +135,7 @@ final readonly class DecideOrderApproval
             'principal_membership_id' => $principalId,
             'decision' => $decision,
             'comment' => $comment,
+            'order_fingerprint' => (string) $locked->approval_fingerprint,
             'delegation_id' => $principalId !== $actorId ? $delegators[$principalId] : null,
         ])->save();
 
@@ -149,6 +165,7 @@ final readonly class DecideOrderApproval
                 'commercial_status' => CommercialStatus::Rejected,
                 'approval_status' => ApprovalStatus::Rejected,
                 'cancel_reason' => $comment,
+                'confirmation_issue' => null,
             ])->save();
             $this->budgets->release($locked);
             $this->confirmation->event($locked, 'order.approval_rejected', ['level' => $step->level_number, 'reason' => $comment]);

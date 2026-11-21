@@ -33,7 +33,8 @@ beforeEach(function (): void {
     $this->company = $this->buyer['company'];
     $this->admin = $this->scenario->tenant->addBuyerUser($this->company, SystemRole::BuyerAdmin);
     $this->center = Fx::costCenter($this->scenario, $this->company);
-    $this->month = CarbonImmutable::now('UTC')->format('Y-m');
+    // Mês corrente no fuso comercial, como a aplicação calcula.
+    $this->month = CarbonImmutable::now((string) config('app.business_timezone'))->format('Y-m');
 
     $this->save = fn (mixed $centerId, string $month, int $cents, ?Membership $as = null): CostCenterBudget => $this->scenario->tenant->actingAs(
         $as ?? $this->admin,

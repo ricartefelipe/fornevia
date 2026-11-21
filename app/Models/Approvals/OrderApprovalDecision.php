@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $principal_membership_id
  * @property \App\Enums\Approvals\ApprovalDecision $decision
  * @property string|null $comment
+ * @property string $order_fingerprint
  * @property string|null $delegation_id
  * @property \Carbon\CarbonImmutable|null $invalidated_at
  * @property \Carbon\CarbonImmutable $created_at

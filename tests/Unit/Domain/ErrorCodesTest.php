@@ -52,6 +52,7 @@ function domainErrorCodes(): array
 it('mantém os códigos de erro das regras de negócio', function (): void {
     expect(domainErrorCodes())->toBe([
         'App\Domain\Approvals\Exceptions\ApprovalNotAllowed' => 'approval_not_allowed',
+        'App\Domain\Approvals\Exceptions\ApprovalOutdated' => 'approval_outdated',
         'App\Domain\Approvals\Exceptions\BudgetExceeded' => 'budget_exceeded',
         'App\Domain\Approvals\Exceptions\InvalidApprovalRule' => 'invalid_approval_rule',
         'App\Domain\Approvals\Exceptions\InvalidBudget' => 'invalid_budget',

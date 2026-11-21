@@ -186,6 +186,7 @@ final readonly class CancelOrderItems
             'commercial_status' => CommercialStatus::Cancelled,
             'cancelled_at' => $now,
             'cancel_reason' => $reason,
+            'confirmation_issue' => null,
         ])->save();
 
         $this->confirmation->event($order, 'order.cancelled', ['reason' => $reason, 'confirmed' => false]);

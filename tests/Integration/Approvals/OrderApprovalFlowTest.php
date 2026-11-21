@@ -134,7 +134,8 @@ it('não deixa aprovador revogado decidir e permite reatribuir o nível bloquead
     $earlyAdmin = $this->scenario->tenant->addBuyerUser($this->company, SystemRole::BuyerAdmin);
 
     // Antes da revogação o nível não está bloqueado: a reatribuição é recusada.
-    expect(fn () => $this->scenario->tenant->actingAs($earlyAdmin, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->bruno->id], 'Troca de aprovador')))
+    $stepId = Fx::reviewed($this->scenario, $order)->stepId;
+    expect(fn () => $this->scenario->tenant->actingAs($earlyAdmin, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->bruno->id], 'Troca de aprovador', $stepId)))
         ->toThrow(ApprovalNotAllowed::class, 'apenas para níveis bloqueados');
     $this->scenario->system(fn () => Membership::query()->whereKey($this->ana->id)->update([
         'status' => MembershipStatus::Revoked->value, 'revoked_at' => now(),
@@ -142,12 +143,14 @@ it('não deixa aprovador revogado decidir e permite reatribuir o nível bloquead
     $admin = $this->scenario->tenant->addBuyerUser($this->company, SystemRole::BuyerAdmin);
 
     expect(fn () => Fx::decide($this->scenario, $this->ana, $order))->toThrow(AuthorizationException::class);
-    expect(fn () => $this->scenario->tenant->actingAs($this->bruno, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->bruno->id], 'Aprovadora desligada')))
+    $stepId = Fx::reviewed($this->scenario, $order)->stepId;
+    expect(fn () => $this->scenario->tenant->actingAs($this->bruno, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->bruno->id], 'Aprovadora desligada', $stepId)))
         ->toThrow(AuthorizationException::class)
-        ->and(fn () => $this->scenario->tenant->actingAs($admin, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->buyer['membership']->id], 'Aprovadora desligada')))
+        ->and(fn () => $this->scenario->tenant->actingAs($admin, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->buyer['membership']->id], 'Aprovadora desligada', $stepId)))
         ->toThrow(ApprovalNotAllowed::class);
 
-    $this->scenario->tenant->actingAs($admin, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->bruno->id], 'Aprovadora desligada'));
+    $stepId = Fx::reviewed($this->scenario, $order)->stepId;
+    $this->scenario->tenant->actingAs($admin, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->bruno->id], 'Aprovadora desligada', $stepId));
 
     expect(Fx::decide($this->scenario, $this->bruno, $order))->toBe(ApprovalOutcome::Confirmed);
 });

@@ -166,7 +166,8 @@ it('tira o aprovador revogado da fila, inclusive dos delegados, e bloqueia o ní
     expect(Inbox::review($this->scenario, $this->bruno, $order->id)->canReassign)->toBeFalse()
         ->and(fn () => Inbox::overview($this->scenario, $this->bruno, InboxTab::Blocked))->toThrow(AuthorizationException::class);
 
-    $this->scenario->tenant->actingAs($this->admin, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->carla->id], 'Aprovadora desligada'));
+    $stepId = Fx::reviewed($this->scenario, $order)->stepId;
+    $this->scenario->tenant->actingAs($this->admin, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->carla->id], 'Aprovadora desligada', $stepId));
 
     expect(Inbox::numbers($this->scenario, $this->admin, InboxTab::Blocked))->toBe([])
         ->and(Inbox::numbers($this->scenario, $this->carla))->toBe([$order->number]);

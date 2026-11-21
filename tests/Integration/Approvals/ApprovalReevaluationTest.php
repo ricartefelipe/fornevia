@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Ordering\CancelOrderItems;
+use App\Domain\Approvals\Exceptions\ApprovalOutdated;
 use App\Domain\Platform\Exceptions\SubscriptionInactive;
 use App\Domain\Shared\Quantity;
 use App\Enums\Approvals\ApprovalOutcome;
@@ -30,6 +31,8 @@ beforeEach(function (): void {
     $this->director = $this->scenario->tenant->addBuyerUser($this->company, SystemRole::Approver);
     $this->cfo = $this->scenario->tenant->addBuyerUser($this->company, SystemRole::Approver);
     $this->center = Fx::costCenter($this->scenario, $this->company);
+    $this->adjustStock = fn (string $delta): mixed => $this->scenario->system(fn () => app(App\Services\Inventory\StockLedger::class)
+        ->adjust($this->scenario->warehouse->id, $this->scenario->sku->id, Quantity::of($delta), 'Quebra no depósito'));
     $this->reprice = function (int $cents): void {
         $this->scenario->system(fn () => DB::table('price_list_items')->where('sku_id', $this->scenario->sku->id)->update(['unit_price_cents' => $cents]));
         $this->scenario->system(static fn () => app(PriceVersion::class)->bump());
@@ -174,4 +177,83 @@ it('estorna o consumo do orçamento ao cancelar pedido confirmado, parcial e tot
     expect(Fx::budgetState($this->scenario, $budget))->toBe(['reserved' => 0, 'consumed' => 0])
         ->and($this->scenario->system(fn (): array => DB::table('budget_movements')->where('order_id', $order->id)->orderBy('created_at')->orderBy('id')->pluck('type')->all()))
         ->toBe(['consumption', 'reversal', 'reversal']);
+});
+
+it('recusa decisão tomada sobre a impressão anterior à reavaliação', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->manager, $this->director]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+    $seen = Fx::reviewed($this->scenario, $order);
+
+    ($this->reprice)(12_000);
+    expect(Fx::decide($this->scenario, $this->manager, $order))->toBe(ApprovalOutcome::Invalidated);
+
+    // Mesmo nível, nova impressão: a tela aberta antes da reavaliação não decide.
+    expect(Fx::reviewed($this->scenario, $order)->stepId)->toBe($seen->stepId)
+        ->and(fn () => Fx::decide($this->scenario, $this->director, $order, reviewed: $seen))->toThrow(ApprovalOutdated::class, 'O pedido mudou')
+        ->and(Fx::decide($this->scenario, $this->director, $order))->toBe(ApprovalOutcome::Confirmed);
+});
+
+it('recusa decisão e reatribuição sobre nível que já não está em análise', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->manager, $this->director]], [1, [$this->cfo]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+    $levelOne = Fx::reviewed($this->scenario, $order);
+    $admin = $this->scenario->tenant->addBuyerUser($this->company, SystemRole::BuyerAdmin);
+
+    expect(Fx::decide($this->scenario, $this->manager, $order))->toBe(ApprovalOutcome::Pending)
+        ->and(fn () => Fx::decide($this->scenario, $this->director, $order, reviewed: $levelOne))->toThrow(ApprovalOutdated::class)
+        ->and(fn () => $this->scenario->tenant->actingAs($admin, fn () => app(App\Actions\Approvals\ReassignApprovalStep::class)
+            ->handle($order, [$this->director->id], 'Diretor substitui o financeiro', $levelOne->stepId)))
+        ->toThrow(ApprovalOutdated::class, 'Outro nível entrou em análise')
+        ->and($this->scenario->system(fn (): int => App\Models\Approvals\OrderApprovalDecision::query()->where('order_id', $order->id)->count()))->toBe(1);
+});
+
+it('registra na decisão a impressão do pedido decidido', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->manager]], [1, [$this->director]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+    $fingerprint = Fx::fresh($this->scenario, $order)->approval_fingerprint;
+
+    Fx::decide($this->scenario, $this->manager, $order);
+
+    expect($this->scenario->system(fn () => App\Models\Approvals\OrderApprovalDecision::query()->where('order_id', $order->id)->value('order_fingerprint')))
+        ->toBe($fingerprint)->not->toBeNull();
+});
+
+it('audita a nova tentativa de confirmação com o resultado', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->manager]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+    ($this->adjustStock)('-49');
+
+    expect(Fx::decide($this->scenario, $this->manager, $order))->toBe(ApprovalOutcome::AwaitingConfirmation)
+        ->and($this->scenario->tenant->actingAs($this->buyer['membership'], fn () => app(App\Actions\Approvals\RetryOrderConfirmation::class)->handle($order)))
+        ->toBe(ApprovalOutcome::AwaitingConfirmation);
+
+    $audit = $this->scenario->system(fn () => DB::table('audit_logs')->where('action', 'order.confirmation_retried')->first());
+    expect($audit)->not->toBeNull()
+        ->and($audit->subject_id)->toBe($order->id)
+        ->and($audit->actor_membership_id)->toBe($this->buyer['membership']->id)
+        ->and(json_decode((string) $audit->data, true))->toBe(['outcome' => 'awaiting_confirmation']);
+});
+
+it('limpa o motivo de confirmação pendente ao rejeitar e ao cancelar', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->manager]], [1, [$this->director]]]);
+    Fx::budget($this->scenario, $this->center, 32_000);
+    $rejected = Fx::place($this->scenario, $this->buyer, ['costCenterId' => $this->center->id]);
+    Fx::decide($this->scenario, $this->manager, $rejected);
+    ($this->reprice)(12_000);
+    Fx::decide($this->scenario, $this->director, $rejected);
+
+    expect(Fx::fresh($this->scenario, $rejected)->confirmation_issue)->toContain('orçamento');
+
+    Fx::decide($this->scenario, $this->manager, $rejected, App\Enums\Approvals\ApprovalDecision::Rejected, 'Fora do orçamento do mês');
+    expect(Fx::fresh($this->scenario, $rejected)->confirmation_issue)->toBeNull();
+
+    $other = $this->scenario->buyerWithCart(quantity: '1', sameCompany: true);
+    $approved = Fx::place($this->scenario, $other);
+    ($this->adjustStock)('-50');
+    Fx::decide($this->scenario, $this->manager, $approved);
+    expect(Fx::decide($this->scenario, $this->director, $approved))->toBe(ApprovalOutcome::AwaitingConfirmation);
+
+    $this->scenario->tenant->actingAs($other['membership'], fn () => app(CancelOrderItems::class)->handle($approved, null, 'Compra feita por engano'));
+
+    expect(Fx::fresh($this->scenario, $approved)->confirmation_issue)->toBeNull();
 });

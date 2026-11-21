@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Approvals\Queries;
 
+use App\Data\Approvals\ReviewedApproval;
+use App\Enums\Approvals\ApprovalStepStatus;
 use App\Models\Ordering\Order;
 use Carbon\CarbonImmutable;
 
@@ -47,5 +49,24 @@ final readonly class ApprovalReviewData
     public function blocked(): bool
     {
         return $this->current !== null && $this->current->blocked;
+    }
+
+    /**
+     * Níveis vigentes (sem os retratos substituídos na reavaliação).
+     */
+    public function levelCount(): int
+    {
+        return count(array_filter($this->steps, static fn (StepReview $s): bool => $s->step->status !== ApprovalStepStatus::Superseded));
+    }
+
+    /**
+     * Versão exibida: nível pendente e impressão do pedido. A decisão e a
+     * reatribuição só valem se o pedido ainda estiver nessa versão.
+     */
+    public function reviewed(): ReviewedApproval
+    {
+        $pending = array_values(array_filter($this->steps, static fn (StepReview $s): bool => $s->step->status === ApprovalStepStatus::Pending));
+
+        return ReviewedApproval::of($this->order, $pending[0]->step ?? null);
     }
 }

@@ -17,8 +17,8 @@ use Illuminate\Support\Facades\Schema;
  * - approval_delegations: delegação com prazo;
  * - order_approval_steps: retrato dos níveis e aprovadores na submissão do
  *   pedido (alterar a regra não muda pedidos já submetidos);
- * - order_approval_decisions: decisões (append-only); invalidação registra
- *   a data, sem apagar o histórico;
+ * - order_approval_decisions: decisões (append-only), com a impressão do
+ *   pedido decidido; invalidação registra a data, sem apagar o histórico;
  * - cost_center_budgets: projeção mantida por budget_movements (ADR-005),
  *   com reservado + consumido <= valor garantido no banco.
  *
@@ -161,6 +161,8 @@ return new class extends Migration
             TenantSchema::companyReference($table, 'principal_membership_id', 'memberships');
             $table->string('decision', 10);
             $table->text('comment')->nullable();
+            // Impressão do pedido que o aprovador viu e decidiu (RN-054).
+            $table->char('order_fingerprint', 64);
             TenantSchema::companyReference($table, 'delegation_id', 'approval_delegations', nullable: true);
             $table->timestampTz('invalidated_at')->nullable();
             $table->timestampTz('created_at')->useCurrent();

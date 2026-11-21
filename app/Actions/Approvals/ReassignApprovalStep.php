@@ -7,6 +7,7 @@ namespace App\Actions\Approvals;
 use App\Actions\Approvals\Support\ApprovalSteps;
 use App\Domain\Approvals\ApprovalFlow;
 use App\Domain\Approvals\Exceptions\ApprovalNotAllowed;
+use App\Domain\Approvals\Exceptions\ApprovalOutdated;
 use App\Domain\Approvals\Exceptions\OrderNotAwaitingApproval;
 use App\Enums\Identity\Permission;
 use App\Enums\Ordering\ApprovalStatus;
@@ -40,8 +41,10 @@ final readonly class ReassignApprovalStep
 
     /**
      * @param  list<string>  $approverIds
+     * @param  string  $reviewedStepId  nível bloqueado exibido ao administrador
+     * @return int número do nível reatribuído
      */
-    public function handle(Order $order, array $approverIds, string $reason): void
+    public function handle(Order $order, array $approverIds, string $reason, string $reviewedStepId): int
     {
         $this->access->authorize(Permission::PortalApprovalRules);
 
@@ -57,12 +60,14 @@ final readonly class ReassignApprovalStep
 
         $ids = array_values(array_unique(array_map(static fn (mixed $id): string => UntrustedId::uuid($id, Membership::class), $approverIds)));
 
-        DB::transaction(function () use ($order, $ids, $reason): void {
+        return DB::transaction(function () use ($order, $ids, $reason, $reviewedStepId): int {
             // Níveis e eventos são somente leitura no contexto de comprador
             // (ADR-014); a auditoria fica no contexto de quem reatribuiu.
-            $audit = $this->db->asSystem(fn (): array => $this->reassign($order, $ids));
+            $audit = $this->db->asSystem(fn (): array => $this->reassign($order, $ids, $reviewedStepId));
 
             $this->audit->record('order.approval_step_reassigned', $order, $audit, $reason);
+
+            return $audit['level'];
         });
     }
 
@@ -70,7 +75,7 @@ final readonly class ReassignApprovalStep
      * @param  list<string>  $ids
      * @return array{level: int, before: list<string>, after: list<string>}
      */
-    private function reassign(Order $order, array $ids): array
+    private function reassign(Order $order, array $ids, string $reviewedStepId): array
     {
         $locked = Order::query()
             ->where('buyer_company_id', $order->buyer_company_id)
@@ -82,6 +87,11 @@ final readonly class ReassignApprovalStep
         }
 
         $step = ApprovalSteps::current($locked) ?? throw new OrderNotAwaitingApproval('Este pedido não tem nível de aprovação pendente.');
+
+        if ($step->id !== $reviewedStepId) {
+            throw new ApprovalOutdated('Outro nível entrou em análise desde que você abriu esta página. Revise o pedido antes de reatribuir.');
+        }
+
         $requesterId = (string) $locked->placed_by_membership_id;
 
         // Só níveis bloqueados (RN-052): com quórum alcançável, os

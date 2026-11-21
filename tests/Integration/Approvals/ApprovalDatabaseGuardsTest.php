@@ -80,7 +80,7 @@ it('não deixa o comprador registrar decisão em nome de aprovador nem mexer no 
         'id' => (string) Str::uuid7(), 'tenant_id' => $this->tenantId, 'buyer_company_id' => $this->company->id,
         'order_id' => $this->order->id, 'order_approval_step_id' => $this->step->id,
         'actor_membership_id' => $this->bruno->id, 'principal_membership_id' => $this->bruno->id,
-        'decision' => 'approved', 'created_at' => now(),
+        'decision' => 'approved', 'order_fingerprint' => str_repeat('a', 64), 'created_at' => now(),
     ];
     $movement = [
         'id' => (string) Str::uuid7(), 'tenant_id' => $this->tenantId, 'buyer_company_id' => $this->company->id,
@@ -159,13 +159,13 @@ it('não aceita orçamento, regra ou decisão apontando para registro de outra e
         'id' => (string) Str::uuid7(), 'tenant_id' => $this->tenantId, 'buyer_company_id' => $this->company->id,
         'order_id' => $this->order->id, 'order_approval_step_id' => $this->step->id,
         'actor_membership_id' => $otherAdmin->id, 'principal_membership_id' => $otherAdmin->id,
-        'decision' => 'approved', 'created_at' => now(),
+        'decision' => 'approved', 'order_fingerprint' => str_repeat('a', 64), 'created_at' => now(),
     ])))->toThrow(QueryException::class, '_membership_id_company_fk')
         ->and(fn () => $this->scenario->system(fn () => DB::table('order_approval_decisions')->insert([
             'id' => (string) Str::uuid7(), 'tenant_id' => $this->tenantId, 'buyer_company_id' => $this->company->id,
             'order_id' => $this->order->id, 'order_approval_step_id' => $this->step->id,
             'actor_membership_id' => $this->ana->id, 'principal_membership_id' => $this->bruno->id,
-            'decision' => 'approved', 'created_at' => now(),
+            'decision' => 'approved', 'order_fingerprint' => str_repeat('a', 64), 'created_at' => now(),
         ])))->toThrow(QueryException::class, 'order_approval_decisions_delegation_check');
 
     $carla = $this->scenario->tenant->addBuyerUser($this->company, SystemRole::Approver);
@@ -175,7 +175,7 @@ it('não aceita orçamento, regra ou decisão apontando para registro de outra e
         'id' => (string) Str::uuid7(), 'tenant_id' => $this->tenantId, 'buyer_company_id' => $this->company->id,
         'order_id' => $this->order->id, 'order_approval_step_id' => $this->step->id,
         'actor_membership_id' => $this->ana->id, 'principal_membership_id' => $this->bruno->id,
-        'delegation_id' => $otherPair->id, 'decision' => 'approved', 'created_at' => now(),
+        'delegation_id' => $otherPair->id, 'decision' => 'approved', 'order_fingerprint' => str_repeat('a', 64), 'created_at' => now(),
     ])))->toThrow(QueryException::class, 'order_approval_decisions_delegation_pair_fk');
 });
 

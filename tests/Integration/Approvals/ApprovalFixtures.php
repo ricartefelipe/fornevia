@@ -6,13 +6,16 @@ namespace Tests\Integration\Approvals;
 
 use App\Actions\Approvals\DecideOrderApproval;
 use App\Actions\Ordering\PlaceOrder;
+use App\Data\Approvals\ReviewedApproval;
 use App\Data\Ordering\PlaceOrderData;
 use App\Enums\Approvals\ApprovalDecision;
 use App\Enums\Approvals\ApprovalOutcome;
+use App\Enums\Approvals\ApprovalStepStatus;
 use App\Models\Approvals\ApprovalDelegation;
 use App\Models\Approvals\ApprovalRule;
 use App\Models\Approvals\ApprovalRuleLevel;
 use App\Models\Approvals\ApprovalRuleLevelApprover;
+use App\Models\Approvals\OrderApprovalStep;
 use App\Models\Buyers\BuyerCompany;
 use App\Models\Buyers\CostCenter;
 use App\Models\Identity\Membership;
@@ -101,7 +104,8 @@ final class ApprovalFixtures
                 'tenant_id' => $center->tenant_id,
                 'buyer_company_id' => $center->buyer_company_id,
                 'cost_center_id' => $center->id,
-                'period_start' => CarbonImmutable::parse($month ?? 'now')->startOfMonth()->toDateString(),
+                // Mês no fuso comercial, como o BudgetLedger procura.
+                'period_start' => ($month !== null ? CarbonImmutable::parse($month) : CarbonImmutable::now((string) config('app.business_timezone')))->startOfMonth()->toDateString(),
                 'amount_cents' => $amountCents,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -129,9 +133,33 @@ final class ApprovalFixtures
         return $scenario->tenant->actingAs($buyer['membership'], static fn (): Order => app(PlaceOrder::class)->handle($data));
     }
 
-    public static function decide(OrderingScenario $scenario, Membership $approver, Order $order, ApprovalDecision $decision = ApprovalDecision::Approved, ?string $comment = null): ApprovalOutcome
+    /**
+     * Decide vendo a versão atual do pedido (ou a informada, para simular
+     * uma tela aberta antes de uma mudança).
+     */
+    public static function decide(OrderingScenario $scenario, Membership $approver, Order $order, ApprovalDecision $decision = ApprovalDecision::Approved, ?string $comment = null, ?ReviewedApproval $reviewed = null): ApprovalOutcome
     {
-        return $scenario->tenant->actingAs($approver, static fn (): ApprovalOutcome => app(DecideOrderApproval::class)->handle($order, $decision, $comment));
+        $reviewed ??= self::reviewed($scenario, $order);
+
+        return $scenario->tenant->actingAs($approver, static fn (): ApprovalOutcome => app(DecideOrderApproval::class)->handle($order, $decision, $comment, $reviewed));
+    }
+
+    /**
+     * Versão atual do pedido como a tela do aprovador a exibe: nível pendente
+     * e impressão.
+     */
+    public static function reviewed(OrderingScenario $scenario, Order $order): ReviewedApproval
+    {
+        return $scenario->system(static function () use ($order): ReviewedApproval {
+            $stored = Order::query()->findOrFail($order->id);
+            $current = OrderApprovalStep::query()
+                ->where('order_id', $order->id)
+                ->where('status', ApprovalStepStatus::Pending->value)
+                ->orderBy('level_number')
+                ->first();
+
+            return ReviewedApproval::of($stored, $current);
+        });
     }
 
     public static function fresh(OrderingScenario $scenario, Order $order): Order
