@@ -11,9 +11,11 @@ use App\Enums\Identity\Permission;
 use App\Enums\Ordering\CommercialStatus;
 use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderItem;
+use App\Services\Approvals\BudgetLedger;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Credit\CreditLedger;
 use App\Services\Inventory\StockLedger;
+use App\Services\Ordering\OrderConfirmation;
 use App\Support\Auth\Access;
 use App\Support\Clock\Clock;
 use App\Support\Http\UntrustedId;
@@ -32,7 +34,9 @@ use Illuminate\Support\Str;
  * Libera primeiro a parte encomendada (sem estoque) e depois as reservas;
  * libera o comprometimento de crédito proporcional ao valor cancelado e,
  * ao cancelar tudo, o saldo comprometido restante (sem resíduos de
- * arredondamento). Itens expedidos exigem devolução.
+ * arredondamento). Itens expedidos exigem devolução. Pedido aguardando
+ * aprovação, ou aprovado sem confirmação, é cancelado por inteiro, liberando
+ * a reserva de orçamento.
  */
 final readonly class CancelOrderItems
 {
@@ -43,6 +47,8 @@ final readonly class CancelOrderItems
         private StockLedger $stock,
         private CreditLedger $credit,
         private Outbox $outbox,
+        private BudgetLedger $budgets,
+        private OrderConfirmation $confirmation,
         private AuditRecorder $audit,
         private Clock $clock,
     ) {}
@@ -62,6 +68,10 @@ final readonly class CancelOrderItems
 
         return DB::transaction(function () use ($order, $quantities, $reason): Order {
             $locked = Order::query()->lockForUpdate()->findOrFail($order->id);
+
+            if (in_array($locked->commercial_status, [CommercialStatus::PendingApproval, CommercialStatus::Approved], true)) {
+                return $this->cancelUnconfirmed($locked, $quantities, $reason);
+            }
 
             if (! in_array($locked->commercial_status, [CommercialStatus::Confirmed, CommercialStatus::PartiallyCancelled], true)) {
                 throw new OrderNotCancellable('O pedido não está em situação que permita cancelamento.');
@@ -139,6 +149,33 @@ final readonly class CancelOrderItems
 
             return $locked;
         });
+    }
+
+    /**
+     * Pedido aguardando aprovação ou aprovado sem confirmação: não há
+     * reserva de estoque nem crédito comprometido; o cancelamento é total e
+     * libera a reserva de orçamento (RN-055).
+     *
+     * @param  array<string, Quantity>|null  $quantities
+     */
+    private function cancelUnconfirmed(Order $order, ?array $quantities, string $reason): Order
+    {
+        if ($quantities !== null) {
+            throw new OrderNotCancellable('Pedido ainda não confirmado só pode ser cancelado por inteiro.', ['field' => 'items']);
+        }
+
+        $this->budgets->release($order);
+
+        $order->forceFill([
+            'commercial_status' => CommercialStatus::Cancelled,
+            'cancelled_at' => $this->clock->now(),
+            'cancel_reason' => $reason,
+        ])->save();
+
+        $this->confirmation->event($order, 'order.cancelled', ['reason' => $reason, 'confirmed' => false]);
+        $this->audit->record('order.items_cancelled', $order, ['items' => [], 'value_cents' => 0, 'confirmed' => false], $reason);
+
+        return $order;
     }
 
     /**
