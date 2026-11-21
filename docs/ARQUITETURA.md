@@ -444,3 +444,35 @@ no cancelamento total).
 - Reservas, movimentações de estoque e dados de crédito não são legíveis no
   contexto de comprador, nem os da própria empresa (ADR-020).
 
+## 10. Aprovação de compras e orçamento
+
+```mermaid
+stateDiagram-v2
+    [*] --> AguardandoAprovacao: checkout com regra aplicável
+    [*] --> Confirmado: checkout sem regra
+    AguardandoAprovacao --> AguardandoAprovacao: aprovação parcial / reavaliação
+    AguardandoAprovacao --> Rejeitado: rejeição em qualquer nível
+    AguardandoAprovacao --> Cancelado: cancelamento
+    AguardandoAprovacao --> Confirmado: último nível aprovado e confirmação aceita
+    AguardandoAprovacao --> AprovadoSemConfirmacao: confirmação recusada (estoque, crédito, orçamento)
+    AprovadoSemConfirmacao --> Confirmado: nova tentativa aceita
+    AprovadoSemConfirmacao --> Cancelado: cancelamento
+```
+
+| Etapa | Orçamento | Estoque e crédito |
+|---|---|---|
+| Submissão para aprovação | reserva do total | não reservados |
+| Rejeição ou cancelamento | liberação da reserva | — |
+| Confirmação | consumo (reserva convertida; diferença precisa caber) | reservados e comprometidos |
+| Checkout sem aprovação | consumo direto | reservados e comprometidos |
+
+- Regra aplicável, níveis, quórum, delegação, perda de acesso e
+  reavaliação: ADR-023.
+- A decisão bloqueia o pedido antes de ler níveis e decisões: aprovações
+  simultâneas que completam o quórum geram uma única confirmação
+  (verificado com processos concorrentes); submissões simultâneas não
+  ultrapassam o orçamento (bloqueio do orçamento antes da reserva).
+- Tabelas da aprovação usam RLS `required` (a empresa compradora vê e
+  administra apenas as suas); decisões são append-only, com a invalidação
+  registrada em coluna própria.
+

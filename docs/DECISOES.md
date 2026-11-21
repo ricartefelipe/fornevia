@@ -174,7 +174,14 @@ Toda operação que bloqueia mais de um recurso segue a ordem:
 2. chave de idempotência;
 3. saldos de estoque, ordenados por `(warehouse_id, sku_id)`;
 4. conta de crédito da empresa compradora;
-5. orçamento do centro de custo.
+5. orçamento do centro de custo;
+6. contador de uso do plano;
+7. contador de numeração de pedidos do tenant.
+
+Operações que tocam saldos de vários itens (reserva, cancelamento) bloqueiam
+todos os saldos envolvidos de uma vez, na ordem do item 3, antes de
+percorrer os itens. A decisão de aprovação bloqueia o pedido (item 1) antes
+dos níveis e decisões.
 
 Ordem consistente evita deadlocks entre confirmações concorrentes. O
 teste de concorrência `LastOwnerRaceTest` reproduziu um deadlock quando a
@@ -439,4 +446,39 @@ número provisório único.
 pedidos dos demais. Incrementar o contador no fim mantém o lock por tenant
 apenas no trecho final, que já é serializado pelo contador de uso do plano,
 sem nova contenção nas etapas de estoque e crédito.
+
+---
+
+## ADR-023 — Aprovação interna de compras e orçamento por centro de custo
+
+**Status:** aceita
+
+**Decisão.**
+- A regra aplicável é a regra ativa de maior prioridade (empate: a criada
+  primeiro) cujos critérios informados são todos atendidos: valor mínimo,
+  centro de custo, unidade, categoria de algum item e perfil do solicitante.
+- Com regra aplicável, o checkout grava o pedido aguardando aprovação, com
+  os níveis e aprovadores retratados (editar a regra não muda pedidos já
+  submetidos), reserva o orçamento do centro de custo e atribui o número.
+  Estoque e crédito só são reservados na confirmação, porque a aprovação
+  interna não os garante (RN-056).
+- Níveis são decididos em sequência; cada um exige quórum de titulares
+  distintos; o solicitante nunca conta, nem como delegado; rejeição em
+  qualquer nível encerra o pedido e libera o orçamento.
+- Delegação com prazo: o delegado decide em nome do titular, registrando
+  ator e titular. Aprovador revogado ou sem permissão deixa de ser
+  elegível; nível sem aprovadores elegíveis suficientes é reatribuído pela
+  administração da empresa (`portal.approval_rules`).
+- Na aprovação final, preços e condições são reavaliados (RN-054): preço
+  diferente reprecifica o pedido e invalida as aprovações (histórico
+  preservado); recusa de estoque, crédito, orçamento ou cota deixa o pedido
+  aprovado, sem confirmação, com o motivo registrado e nova tentativa.
+- Orçamento mensal por centro de custo mantido por movimentos (reserva,
+  liberação, consumo) com projeção por trigger e reservado + consumido <=
+  valor garantido no banco.
+
+**Motivo.** Separar a aprovação interna da confirmação com o distribuidor
+evita reservar estoque e crédito por dias à espera de aprovadores e deixa
+claro ao comprador o que a aprovação garante. O retrato dos níveis e a
+reavaliação tornam o aceite rastreável e vinculado ao que foi aprovado.
 
