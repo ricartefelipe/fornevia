@@ -24,11 +24,10 @@ use Illuminate\Support\Facades\Schema;
  *
  * Todas as tabelas são da empresa compradora (RLS required) e as chaves
  * estrangeiras incluem a empresa: nenhuma linha aponta para registro de outra
- * empresa do mesmo distribuidor. O comprador administra regras, delegações e
- * valores de orçamento da própria empresa; níveis do pedido, decisões e
- * movimentos de orçamento são somente leitura no contexto de comprador e
- * gravados pelas Actions no contexto de sistema do mesmo usuário (ADR-014),
- * como estoque e crédito.
+ * empresa do mesmo distribuidor. Todas são somente leitura no contexto de
+ * comprador: as Actions autorizam a administração da empresa (regras,
+ * delegações, orçamentos) ou o aprovador (decisões) e gravam no contexto de
+ * sistema do mesmo usuário (ADR-014, ADR-024), como estoque e crédito.
  */
 return new class extends Migration
 {
@@ -59,6 +58,7 @@ return new class extends Migration
             coalesce(min_total_cents, 0) >= 0 and priority between -1000 and 1000)');
         TenantSchema::companyKey('approval_rules');
         TenantSchema::enableRowLevelSecurity('approval_rules', 'required');
+        TenantSchema::buyerReadOnly('approval_rules');
 
         Schema::create('approval_rule_levels', function (Blueprint $table): void {
             $table->uuid('id')->primary();
@@ -75,6 +75,7 @@ return new class extends Migration
             level_number between 1 and 10 and required_approvals between 1 and 10)');
         TenantSchema::companyKey('approval_rule_levels');
         TenantSchema::enableRowLevelSecurity('approval_rule_levels', 'required');
+        TenantSchema::buyerReadOnly('approval_rule_levels');
 
         Schema::create('approval_rule_level_approvers', function (Blueprint $table): void {
             $table->uuid('id')->primary();
@@ -87,6 +88,7 @@ return new class extends Migration
             $table->unique(['tenant_id', 'approval_rule_level_id', 'membership_id'], 'approval_level_approvers_unique');
         });
         TenantSchema::enableRowLevelSecurity('approval_rule_level_approvers', 'required');
+        TenantSchema::buyerReadOnly('approval_rule_level_approvers');
 
         Schema::create('approval_delegations', function (Blueprint $table): void {
             $table->uuid('id')->primary();
@@ -106,7 +108,14 @@ return new class extends Migration
         DB::statement('alter table approval_delegations add constraint approval_delegations_values_check check (
             delegator_membership_id <> delegate_membership_id and valid_until > valid_from)');
         TenantSchema::companyKey('approval_delegations');
+        // Alvo da chave da decisão: a delegação usada é do par titular → ator.
+        DB::statement('alter table approval_delegations add constraint approval_delegations_pair_unique
+            unique (tenant_id, id, delegator_membership_id, delegate_membership_id)');
         TenantSchema::enableRowLevelSecurity('approval_delegations', 'required');
+        TenantSchema::buyerReadOnly('approval_delegations');
+        // Titular, delegado e prazo não mudam; a revogação só é registrada.
+        DB::statement(sprintf('revoke update, delete, truncate on approval_delegations from %s', TenantSchema::appRole()));
+        DB::statement(sprintf('grant update (revoked_at, updated_at) on approval_delegations to %s', TenantSchema::appRole()));
 
         Schema::table('orders', function (Blueprint $table): void {
             $table->uuid('approval_rule_id')->nullable();
@@ -163,9 +172,13 @@ return new class extends Migration
             foreign key (tenant_id, order_approval_step_id, order_id, buyer_company_id)
             references order_approval_steps (tenant_id, id, order_id, buyer_company_id) on delete restrict');
         DB::statement("alter table order_approval_decisions add constraint order_approval_decisions_decision_check check (decision in ('approved', 'rejected'))");
-        // Decisão em nome de outro titular só por delegação.
+        // Decisão em nome de outro titular só por delegação, e da delegação
+        // desse titular para esse ator.
         DB::statement('alter table order_approval_decisions add constraint order_approval_decisions_delegation_check
             check ((actor_membership_id = principal_membership_id) = (delegation_id is null))');
+        DB::statement('alter table order_approval_decisions add constraint order_approval_decisions_delegation_pair_fk
+            foreign key (tenant_id, delegation_id, principal_membership_id, actor_membership_id)
+            references approval_delegations (tenant_id, id, delegator_membership_id, delegate_membership_id) on delete restrict');
         // Uma decisão válida por pessoa (e por titular, na delegação) em cada nível.
         DB::statement('create unique index order_approval_decisions_one_actor on order_approval_decisions
             (tenant_id, order_approval_step_id, actor_membership_id) where invalidated_at is null');
@@ -196,6 +209,7 @@ return new class extends Migration
             and period_start = date_trunc('month', period_start)::date)");
         TenantSchema::companyKey('cost_center_budgets');
         TenantSchema::enableRowLevelSecurity('cost_center_budgets', 'required');
+        TenantSchema::buyerReadOnly('cost_center_budgets');
         // Valor por Action; saldos apenas por movimentos.
         TenantSchema::projection('cost_center_budgets', ['amount_cents', 'updated_at']);
         DB::statement(sprintf(
@@ -292,6 +306,23 @@ return new class extends Migration
 
             create trigger order_approval_steps_guard before update on order_approval_steps
                 for each row execute function approval_step_guard();
+
+            -- Revogação definitiva: delegação revogada não volta a valer.
+            create or replace function approval_delegation_guard() returns trigger
+                language plpgsql
+                as $$
+                begin
+                    if old.revoked_at is not null and new.revoked_at is distinct from old.revoked_at then
+                        raise exception 'delegação % já revogada', old.id
+                            using errcode = 'check_violation';
+                    end if;
+
+                    return new;
+                end
+                $$;
+
+            create trigger approval_delegations_guard before update on approval_delegations
+                for each row execute function approval_delegation_guard();
             SQL);
     }
 
@@ -304,6 +335,8 @@ return new class extends Migration
             drop function if exists approval_decision_guard();
             drop trigger if exists order_approval_steps_guard on order_approval_steps;
             drop function if exists approval_step_guard();
+            drop trigger if exists approval_delegations_guard on approval_delegations;
+            drop function if exists approval_delegation_guard();
             SQL);
         Schema::dropIfExists('budget_movements');
         Schema::dropIfExists('cost_center_budgets');

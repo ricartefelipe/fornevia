@@ -6,12 +6,15 @@ namespace App\Actions\Approvals;
 
 use App\Actions\Ordering\Portal\Support\PortalBuyer;
 use App\Data\Approvals\DelegationPeriod;
+use App\Data\Ordering\Portal\BuyerActor;
 use App\Domain\Approvals\Exceptions\ApprovalNotAllowed;
 use App\Enums\Identity\Permission;
 use App\Models\Approvals\ApprovalDelegation;
 use App\Services\Audit\AuditRecorder;
 use App\Support\Clock\Clock;
 use App\Support\Http\UntrustedId;
+use App\Support\Tenancy\TenantDatabase;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +32,7 @@ final readonly class RevokeApprovalDelegation
     public function __construct(
         private PortalBuyer $buyer,
         private AuditRecorder $audit,
+        private TenantDatabase $db,
         private Clock $clock,
     ) {}
 
@@ -54,27 +58,10 @@ final readonly class RevokeApprovalDelegation
         }
 
         return DB::transaction(function () use ($actor, $manages, $delegationId, $reason): ApprovalDelegation {
-            $delegation = ApprovalDelegation::query()
-                ->where('buyer_company_id', $actor->company->id)
-                ->whereKey($delegationId)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            if (! $manages && $delegation->delegator_membership_id !== $actor->membership->id) {
-                throw new AuthorizationException('Somente o titular ou o administrador da empresa revoga esta delegação.');
-            }
-
-            $now = $this->clock->now();
-
-            if ($delegation->revoked_at !== null) {
-                throw new ApprovalNotAllowed('Esta delegação já foi revogada.');
-            }
-
-            if ($delegation->valid_until->lessThanOrEqualTo($now)) {
-                throw new ApprovalNotAllowed('Esta delegação já terminou; não há o que revogar.');
-            }
-
-            $delegation->forceFill(['revoked_at' => $now])->save();
+            // Delegações são somente leitura no contexto de comprador
+            // (ADR-024): bloqueia e grava no contexto de sistema do mesmo
+            // usuário; a auditoria fica no contexto de quem revogou.
+            [$delegation, $now] = $this->db->asSystem(fn (): array => $this->revoke($actor, $manages, $delegationId));
             $period = DelegationPeriod::fromInstants($delegation->valid_from, $delegation->valid_until);
 
             $this->audit->record('approval_delegation.revoked', $delegation, [
@@ -88,5 +75,35 @@ final readonly class RevokeApprovalDelegation
 
             return $delegation;
         });
+    }
+
+    /**
+     * @return array{0: ApprovalDelegation, 1: CarbonImmutable}
+     */
+    private function revoke(BuyerActor $actor, bool $manages, string $delegationId): array
+    {
+        $delegation = ApprovalDelegation::query()
+            ->where('buyer_company_id', $actor->company->id)
+            ->whereKey($delegationId)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        if (! $manages && $delegation->delegator_membership_id !== $actor->membership->id) {
+            throw new AuthorizationException('Somente o titular ou o administrador da empresa revoga esta delegação.');
+        }
+
+        $now = $this->clock->now();
+
+        if ($delegation->revoked_at !== null) {
+            throw new ApprovalNotAllowed('Esta delegação já foi revogada.');
+        }
+
+        if ($delegation->valid_until->lessThanOrEqualTo($now)) {
+            throw new ApprovalNotAllowed('Esta delegação já terminou; não há o que revogar.');
+        }
+
+        $delegation->forceFill(['revoked_at' => $now])->save();
+
+        return [$delegation, $now];
     }
 }

@@ -7,9 +7,10 @@ namespace App\Actions\Approvals;
 use App\Actions\Ordering\Portal\Support\PortalBuyer;
 use App\Enums\Identity\Permission;
 use App\Models\Approvals\ApprovalRule;
+use App\Services\Approvals\ApprovalRuleLock;
 use App\Services\Audit\AuditRecorder;
 use App\Support\Http\UntrustedId;
-use App\Support\Tenancy\CurrentContext;
+use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -18,14 +19,16 @@ use Illuminate\Support\Facades\DB;
  * Exclui uma regra de aprovação da empresa (com níveis e aprovadores, em
  * cascata). Pedidos já submetidos não são afetados: guardam o nome da
  * regra e o retrato dos níveis. O estado excluído fica na auditoria.
- * Exige portal.approval_rules no contexto de comprador da própria empresa.
+ * Exige portal.approval_rules no contexto de comprador da própria empresa;
+ * a exclusão roda no contexto de sistema do mesmo usuário (ADR-024).
  */
 final readonly class DeleteApprovalRule
 {
     public function __construct(
         private PortalBuyer $buyer,
         private AuditRecorder $audit,
-        private CurrentContext $context,
+        private ApprovalRuleLock $lock,
+        private TenantDatabase $db,
     ) {}
 
     /**
@@ -40,19 +43,22 @@ final readonly class DeleteApprovalRule
         $ruleId = UntrustedId::uuid($ruleId, ApprovalRule::class);
 
         return DB::transaction(function () use ($actor, $ruleId): string {
-            // Mesma ordem de SaveApprovalRule: empresa (advisory) e depois a regra.
-            DB::select('select pg_advisory_xact_lock(hashtextextended(?, 0))', [
-                implode('|', ['approval_rules', $this->context->tenantId(), $actor->company->id]),
-            ]);
+            // Regras são somente leitura no contexto de comprador (ADR-024).
+            [$rule, $snapshot] = $this->db->asSystem(function () use ($actor, $ruleId): array {
+                // Mesma ordem de SaveApprovalRule: regras da empresa e depois a regra.
+                $this->lock->exclusive($actor->company->id);
 
-            $rule = ApprovalRule::query()
-                ->where('buyer_company_id', $actor->company->id)
-                ->whereKey($ruleId)
-                ->lockForUpdate()
-                ->firstOrFail();
+                $rule = ApprovalRule::query()
+                    ->where('buyer_company_id', $actor->company->id)
+                    ->whereKey($ruleId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            $snapshot = SaveApprovalRule::snapshot($rule->load('levels.approvers'));
-            $rule->delete();
+                $snapshot = SaveApprovalRule::snapshot($rule->load('levels.approvers'));
+                $rule->delete();
+
+                return [$rule, $snapshot];
+            });
 
             $this->audit->record('approval_rule.deleted', $rule, [
                 'buyer_company_id' => $actor->company->id,

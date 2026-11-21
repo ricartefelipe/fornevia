@@ -21,9 +21,10 @@ use App\Models\Catalog\Category;
 use App\Models\Identity\Membership;
 use App\Models\Identity\Role;
 use App\Services\Approvals\ApprovalEligibility;
+use App\Services\Approvals\ApprovalRuleLock;
 use App\Services\Audit\AuditRecorder;
 use App\Support\Http\UntrustedId;
-use App\Support\Tenancy\CurrentContext;
+use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -31,7 +32,9 @@ use Illuminate\Support\Facades\DB;
 /**
  * Cria ou altera uma regra de aprovação da empresa compradora (RF-050) e
  * ativa ou desativa regras existentes. Exige portal.approval_rules no
- * contexto de comprador da própria empresa.
+ * contexto de comprador da própria empresa; a gravação roda no contexto de
+ * sistema do mesmo usuário, pois as regras são somente leitura no contexto
+ * de comprador (ADR-024).
  *
  * - critérios opcionais: valor mínimo, centro de custo e unidade da
  *   empresa, categoria do catálogo e perfil (papel de comprador) do
@@ -42,9 +45,12 @@ use Illuminate\Support\Facades\DB;
  *   o número de aprovadores do nível;
  * - os níveis são regravados a cada alteração: pedidos já submetidos não
  *   mudam, porque guardam o retrato dos níveis e aprovadores
- *   (order_approval_steps);
+ *   (order_approval_steps); só a reavaliação que muda o total escolhe a
+ *   regra de novo (ADR-023);
  * - gravações da mesma empresa são serializadas (nome único, limite de
- *   regras) e auditadas com o estado anterior e o novo.
+ *   regras) pelo lock exclusivo das regras, que a escolha da regra de um
+ *   pedido toma em modo compartilhado (ApprovalRuleLock), e auditadas com
+ *   o estado anterior e o novo.
  */
 final readonly class SaveApprovalRule
 {
@@ -66,7 +72,8 @@ final readonly class SaveApprovalRule
         private PortalBuyer $buyer,
         private ApprovalEligibility $eligibility,
         private AuditRecorder $audit,
-        private CurrentContext $context,
+        private ApprovalRuleLock $lock,
+        private TenantDatabase $db,
     ) {}
 
     /**
@@ -89,63 +96,10 @@ final readonly class SaveApprovalRule
         $levels = self::levels($data->levels);
 
         return DB::transaction(function () use ($actor, $ruleId, $data, $name, $minTotal, $costCenterId, $unitId, $categoryId, $roleKey, $levels): ApprovalRule {
-            $this->lockCompanyRules($actor);
-            $rule = $ruleId === null ? null : self::lockedRule($actor, $ruleId);
-
-            if ($rule === null && ApprovalRule::query()->where('buyer_company_id', $actor->company->id)->count() >= self::MAX_RULES_PER_COMPANY) {
-                throw new InvalidApprovalRule(
-                    'A empresa atingiu o limite de '.self::MAX_RULES_PER_COMPANY.' regras de aprovação. Exclua regras que não usa mais.',
-                    ['field' => 'name'],
-                );
-            }
-
-            self::assertCostCenter($actor, $costCenterId, $rule?->cost_center_id);
-            self::assertUnit($actor, $unitId, $rule?->buyer_unit_id);
-            self::assertCategory($categoryId);
-            self::assertRequesterRole($roleKey);
-            $this->assertApprovers($actor, $levels);
-            self::assertUniqueName($actor, $name, $rule?->id);
-
-            $before = $rule === null ? null : self::snapshot($rule->load('levels.approvers'));
-            $rule ??= new ApprovalRule;
-
-            $rule->forceFill([
-                'buyer_company_id' => $actor->company->id,
-                'name' => $name,
-                'priority' => $data->priority,
-                'is_active' => $data->isActive,
-                'min_total_cents' => $minTotal,
-                'cost_center_id' => $costCenterId,
-                'buyer_unit_id' => $unitId,
-                'category_id' => $categoryId,
-                'requester_role_key' => $roleKey,
-            ])->save();
-
-            if ($before !== null) {
-                // Aprovadores saem em cascata; os pedidos submetidos guardam o retrato.
-                ApprovalRuleLevel::query()->where('approval_rule_id', $rule->id)->delete();
-            }
-
-            foreach ($levels as $index => $level) {
-                $saved = new ApprovalRuleLevel;
-                $saved->forceFill([
-                    'buyer_company_id' => $actor->company->id,
-                    'approval_rule_id' => $rule->id,
-                    'level_number' => $index + 1,
-                    'required_approvals' => $level['required'],
-                ])->save();
-
-                foreach ($level['approvers'] as $membershipId) {
-                    (new ApprovalRuleLevelApprover)->forceFill([
-                        'buyer_company_id' => $actor->company->id,
-                        'approval_rule_level_id' => $saved->id,
-                        'membership_id' => $membershipId,
-                    ])->save();
-                }
-            }
-
-            $rule->load('levels.approvers');
-            $after = self::snapshot($rule);
+            // Regras são somente leitura no contexto de comprador (ADR-024):
+            // grava no contexto de sistema do mesmo usuário; a auditoria fica
+            // no contexto de quem alterou.
+            [$rule, $before, $after] = $this->db->asSystem(fn (): array => $this->persist($actor, $ruleId, $data, $name, $minTotal, $costCenterId, $unitId, $categoryId, $roleKey, $levels));
 
             $this->audit->record(
                 $before === null ? 'approval_rule.created' : 'approval_rule.updated',
@@ -157,6 +111,72 @@ final readonly class SaveApprovalRule
 
             return $rule;
         });
+    }
+
+    /**
+     * @param  list<array{required: int, approvers: list<string>}>  $levels
+     * @return array{0: ApprovalRule, 1: array<string, mixed>|null, 2: array<string, mixed>}
+     */
+    private function persist(BuyerActor $actor, ?string $ruleId, ApprovalRuleData $data, string $name, ?Money $minTotal, ?string $costCenterId, ?string $unitId, ?string $categoryId, ?string $roleKey, array $levels): array
+    {
+        $this->lock->exclusive($actor->company->id);
+        $rule = $ruleId === null ? null : self::lockedRule($actor, $ruleId);
+
+        if ($rule === null && ApprovalRule::query()->where('buyer_company_id', $actor->company->id)->count() >= self::MAX_RULES_PER_COMPANY) {
+            throw new InvalidApprovalRule(
+                'A empresa atingiu o limite de '.self::MAX_RULES_PER_COMPANY.' regras de aprovação. Exclua regras que não usa mais.',
+                ['field' => 'name'],
+            );
+        }
+
+        self::assertCostCenter($actor, $costCenterId, $rule?->cost_center_id);
+        self::assertUnit($actor, $unitId, $rule?->buyer_unit_id);
+        self::assertCategory($categoryId);
+        self::assertRequesterRole($roleKey);
+        $this->assertApprovers($actor, $levels);
+        self::assertUniqueName($actor, $name, $rule?->id);
+
+        $before = $rule === null ? null : self::snapshot($rule->load('levels.approvers'));
+        $rule ??= new ApprovalRule;
+
+        $rule->forceFill([
+            'buyer_company_id' => $actor->company->id,
+            'name' => $name,
+            'priority' => $data->priority,
+            'is_active' => $data->isActive,
+            'min_total_cents' => $minTotal,
+            'cost_center_id' => $costCenterId,
+            'buyer_unit_id' => $unitId,
+            'category_id' => $categoryId,
+            'requester_role_key' => $roleKey,
+        ])->save();
+
+        if ($before !== null) {
+            // Aprovadores saem em cascata; os pedidos submetidos guardam o retrato.
+            ApprovalRuleLevel::query()->where('approval_rule_id', $rule->id)->delete();
+        }
+
+        foreach ($levels as $index => $level) {
+            $saved = new ApprovalRuleLevel;
+            $saved->forceFill([
+                'buyer_company_id' => $actor->company->id,
+                'approval_rule_id' => $rule->id,
+                'level_number' => $index + 1,
+                'required_approvals' => $level['required'],
+            ])->save();
+
+            foreach ($level['approvers'] as $membershipId) {
+                (new ApprovalRuleLevelApprover)->forceFill([
+                    'buyer_company_id' => $actor->company->id,
+                    'approval_rule_level_id' => $saved->id,
+                    'membership_id' => $membershipId,
+                ])->save();
+            }
+        }
+
+        $rule->load('levels.approvers');
+
+        return [$rule, $before, self::snapshot($rule)];
     }
 
     /**
@@ -172,14 +192,22 @@ final readonly class SaveApprovalRule
         $ruleId = UntrustedId::uuid($ruleId, ApprovalRule::class);
 
         return DB::transaction(function () use ($actor, $ruleId, $active): ApprovalRule {
-            $this->lockCompanyRules($actor);
-            $rule = self::lockedRule($actor, $ruleId);
+            [$rule, $changed] = $this->db->asSystem(function () use ($actor, $ruleId, $active): array {
+                $this->lock->exclusive($actor->company->id);
+                $rule = self::lockedRule($actor, $ruleId);
 
-            if ($rule->is_active === $active) {
+                if ($rule->is_active === $active) {
+                    return [$rule, false];
+                }
+
+                $rule->forceFill(['is_active' => $active])->save();
+
+                return [$rule, true];
+            });
+
+            if (! $changed) {
                 return $rule;
             }
-
-            $rule->forceFill(['is_active' => $active])->save();
 
             $this->audit->record($active ? 'approval_rule.activated' : 'approval_rule.deactivated', $rule, [
                 'buyer_company_id' => $actor->company->id,
@@ -218,13 +246,6 @@ final readonly class SaveApprovalRule
      * Serializa as gravações de regras da mesma empresa (nome único e limite
      * de regras conferidos sem corrida), antes do bloqueio da regra.
      */
-    private function lockCompanyRules(BuyerActor $actor): void
-    {
-        DB::select('select pg_advisory_xact_lock(hashtextextended(?, 0))', [
-            implode('|', ['approval_rules', $this->context->tenantId(), $actor->company->id]),
-        ]);
-    }
-
     private static function lockedRule(BuyerActor $actor, string $ruleId): ApprovalRule
     {
         return ApprovalRule::query()

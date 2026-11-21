@@ -15,10 +15,13 @@ use Illuminate\Support\Facades\DB;
  * Regra de aprovação aplicável a um pedido: a regra ativa de maior
  * prioridade (empate: a criada primeiro) cujos critérios são atendidos.
  * As consultas filtram a empresa explicitamente: também rodam no contexto
- * de sistema.
+ * de sistema. Exige transação aberta (lock consultivo compartilhado das
+ * regras da empresa, ApprovalRuleLock).
  */
-final class ApprovalRuleResolver
+final readonly class ApprovalRuleResolver
 {
+    public function __construct(private ApprovalRuleLock $lock) {}
+
     /**
      * Regra para o pedido gravado: total, centro de custo, unidade,
      * categorias dos itens e perfil atual do solicitante. Usada na
@@ -48,6 +51,9 @@ final class ApprovalRuleResolver
 
     public function resolve(string $buyerCompanyId, ApprovalContext $context): ?ApprovalRule
     {
+        // Regras, níveis e aprovadores lidos sem regravação concorrente.
+        $this->lock->shared($buyerCompanyId);
+
         $rules = ApprovalRule::query()
             ->with('levels.approvers')
             ->where('buyer_company_id', $buyerCompanyId)

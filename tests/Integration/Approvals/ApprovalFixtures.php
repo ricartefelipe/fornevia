@@ -9,6 +9,7 @@ use App\Actions\Ordering\PlaceOrder;
 use App\Data\Ordering\PlaceOrderData;
 use App\Enums\Approvals\ApprovalDecision;
 use App\Enums\Approvals\ApprovalOutcome;
+use App\Models\Approvals\ApprovalDelegation;
 use App\Models\Approvals\ApprovalRule;
 use App\Models\Approvals\ApprovalRuleLevel;
 use App\Models\Approvals\ApprovalRuleLevelApprover;
@@ -56,6 +57,28 @@ final class ApprovalFixtures
             }
 
             return $rule;
+        });
+    }
+
+    /**
+     * Delegação vigente (de ontem até daqui a cinco dias), gravada no
+     * contexto de sistema.
+     */
+    public static function delegation(OrderingScenario $scenario, Membership $delegator, Membership $delegate): ApprovalDelegation
+    {
+        return $scenario->system(static function () use ($delegator, $delegate): ApprovalDelegation {
+            $delegation = new ApprovalDelegation;
+            $delegation->forceFill([
+                'buyer_company_id' => $delegator->buyer_company_id,
+                'delegator_membership_id' => $delegator->id,
+                'delegate_membership_id' => $delegate->id,
+                'valid_from' => now()->subDay(),
+                'valid_until' => now()->addDays(5),
+                'reason' => 'Férias do titular',
+                'created_by_user_id' => $delegator->user_id,
+            ])->save();
+
+            return $delegation;
         });
     }
 

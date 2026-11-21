@@ -17,6 +17,7 @@ use App\Services\Audit\AuditRecorder;
 use App\Support\Clock\Clock;
 use App\Support\Http\UntrustedId;
 use App\Support\Tenancy\CurrentContext;
+use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +52,7 @@ final readonly class SaveApprovalDelegation
         private ApprovalEligibility $eligibility,
         private AuditRecorder $audit,
         private CurrentContext $context,
+        private TenantDatabase $db,
         private Clock $clock,
     ) {}
 
@@ -101,16 +103,22 @@ final readonly class SaveApprovalDelegation
 
             $this->assertNoOverlap($actor, $delegatorId, $delegateId, $period);
 
-            $delegation = new ApprovalDelegation;
-            $delegation->forceFill([
-                'buyer_company_id' => $actor->company->id,
-                'delegator_membership_id' => $delegatorId,
-                'delegate_membership_id' => $delegateId,
-                'valid_from' => $period->validFrom(),
-                'valid_until' => $period->validUntil(),
-                'reason' => $reason,
-                'created_by_user_id' => $actor->membership->user_id,
-            ])->save();
+            // Delegações são somente leitura no contexto de comprador
+            // (ADR-024): grava no contexto de sistema do mesmo usuário.
+            $delegation = $this->db->asSystem(static function () use ($actor, $delegatorId, $delegateId, $period, $reason): ApprovalDelegation {
+                $delegation = new ApprovalDelegation;
+                $delegation->forceFill([
+                    'buyer_company_id' => $actor->company->id,
+                    'delegator_membership_id' => $delegatorId,
+                    'delegate_membership_id' => $delegateId,
+                    'valid_from' => $period->validFrom(),
+                    'valid_until' => $period->validUntil(),
+                    'reason' => $reason,
+                    'created_by_user_id' => $actor->membership->user_id,
+                ])->save();
+
+                return $delegation;
+            });
 
             $this->audit->record('approval_delegation.created', $delegation, [
                 'buyer_company_id' => $actor->company->id,
