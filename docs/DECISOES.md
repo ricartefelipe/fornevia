@@ -172,16 +172,22 @@ Toda operação que bloqueia mais de um recurso segue a ordem:
    inserir convites ou filiais;
 1. chave de idempotência, quando a operação tem uma (o checkout grava e
    bloqueia a chave antes de bloquear o carrinho);
-2. documento de origem (carrinho, cotação, pedido) e, depois dele, as
-   linhas do próprio documento (itens, níveis de aprovação);
+2. documento de origem e, depois dele, as linhas do próprio documento
+   (itens, níveis de aprovação, versões e revisão comercial da cotação):
+   carrinho → cotação → versões da cotação (numa única consulta ordenada
+   por `id`). Operações que partem de um pedido gerado de cotação bloqueiam
+   o pedido e, logo depois, a cotação e a versão de origem; nenhuma
+   operação que parte da cotação bloqueia um pedido existente;
 3. regras de aprovação da empresa: lock consultivo compartilhado na
    escolha da regra (submissão e reavaliação), exclusivo na alteração;
    delegações do aprovador, em modo compartilhado, na decisão;
-4. saldos de estoque, ordenados por `(warehouse_id, sku_id)`;
+4. saldos de estoque, ordenados por `(warehouse_id, sku_id)`, incluindo
+   numa mesma consulta os saldos das reservas liberadas na operação (troca
+   ou transferência da reserva de uma cotação); depois, as reservas;
 5. conta de crédito da empresa compradora;
 6. orçamento do centro de custo;
 7. contador de uso do plano;
-8. contador de numeração de pedidos do tenant.
+8. contadores de numeração do tenant (pedidos e cotações).
 
 Operações que tocam saldos de vários itens (reserva, cancelamento) bloqueiam
 todos os saldos envolvidos de uma vez, na ordem do item 4, antes de
@@ -203,7 +209,9 @@ acima corrigiu o problema.
 
 Chave por `(tenant_id, escopo, chave)`, com fingerprint SHA-256 do corpo
 canônico, status e resposta armazenada. Reutilização com fingerprint
-diferente gera `409 idempotency_key_reused`. A chave é gravada na mesma
+diferente gera `409 idempotency_key_reused`. Escopos em uso:
+`order.place`, `quote.request`, `quote.version`, `quote.counteroffer` e
+`quote.accept`. A chave é gravada na mesma
 transação do efeito. Proteções independentes de expiração permanecem:
 `unique` em `orders.source_cart_id`, `orders.source_quote_version_id`,
 estados terminais verificados sob lock.
@@ -544,5 +552,54 @@ crédito (ADR-020), o banco é a segunda barreira.
 
 **Consequência.** As associações da empresa compradora continuam
 graváveis no contexto de comprador (gestão de usuários do portal); a
-mesma restrição para elas fica para a revisão de identidade e acesso.
+mesma restrição para elas fica para a revisão de identidade e acesso. As
+tabelas de cotação (ADR-025) seguem a mesma regra.
+
+---
+
+## ADR-025 — Cotações com versões imutáveis, aceite que gera o pedido, aprovação comercial e reserva com prazo
+
+**Status:** aceita
+
+**Decisão.**
+- A proposta é uma versão da equipe, imutável desde a inserção: os
+  privilégios de coluna permitem alterar apenas a situação, e os itens são
+  append-only e conferidos com os totais no COMMIT.
+- Por cotação há no máximo uma versão em preparo, uma com o comprador e
+  uma aceita. A numeração (v1, v2...) só é atribuída no envio, sem lacunas.
+- Mudança relevante só acontece por nova versão, que substitui a vigente
+  e encerra a reserva dela.
+- Solicitação e contraproposta são registros append-only do comprador,
+  com itens e quantidades, nunca preço. O preço vem do `PricingService`
+  mais o desconto informado pela equipe, recalculado no servidor.
+- Aceitar é converter: na mesma transação, a versão exibida (id,
+  impressão e situação da reserva, conferidos sob o lock da cotação) fica
+  aceita e o pedido nasce pelo caminho do checkout, com aprovação interna,
+  orçamento, estoque, crédito, cota e numeração.
+- O pedido guarda `source_quote_version_id` (único, com chave por empresa
+  e trigger) e os preços da versão. A aprovação interna não reprecifica
+  pedidos de cotação. A cláusula "invalida aceite anterior" da RN-040 é
+  atendida porque a versão aceita encerra a cotação e uma versão
+  substituída não pode ser aceita.
+- A aprovação comercial é exigida por qualquer violação da política de
+  desconto (limite do papel do autor, preço mínimo, custo, margem). Fica em
+  registro interno 1:1 com a versão. Decide quem tem `pricing.approve` com
+  limite maior ou igual ao maior desconto. A autoaprovação, só na
+  submissão e com justificativa, fica registrada.
+- A reserva de estoque é opcional, tudo ou nada, com prazo até a validade
+  e no máximo 7 dias, no ledger (`stock_reservations.quote_item_id`,
+  `expires_at`). É liberada por prazo, substituição, contraproposta,
+  recusa, encerramento ou fim do pedido sem confirmação, e transferida na
+  confirmação sob o mesmo lock dos saldos.
+- As tabelas de cotação são somente leitura no contexto de comprador
+  (ADR-024). A validade é conferida sob lock em toda ação; o job de
+  expiração só registra o vencimento e libera reservas, com `SKIP LOCKED`.
+
+**Motivo.** RN-040 a RN-044 exigem rastrear exatamente o que foi aceito e
+aprovado mesmo com o catálogo mudando. Versões mutáveis permitiriam
+aceitar uma coisa e converter outra; a reprecificação na aprovação final
+apagaria o desconto negociado. Aceitar convertendo elimina o estado
+"aceita sem pedido" e reaproveita a atomicidade do checkout (RF-061,
+RN-060). Política e custo ficam fora do alcance do comprador (ADR-020), e o
+ledger mantém um só saldo verdadeiro (ADR-005).
 

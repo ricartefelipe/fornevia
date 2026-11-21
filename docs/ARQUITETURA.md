@@ -403,7 +403,7 @@ sequenceDiagram
     A-->>P: pedido (ou recusa sem efeito parcial)
 ```
 
-Ordem de locks (ADR-006): carrinho → chave de idempotência → saldos de
+Ordem de locks (ADR-006): chave de idempotência → carrinho → saldos de
 estoque (depósito, SKU) → conta de crédito → contador do plano. Gravações
 em estoque, crédito, custos, contador e outbox usam o contexto de sistema do
 mesmo usuário (ADR-014), porque o contexto de comprador só lê essas tabelas.

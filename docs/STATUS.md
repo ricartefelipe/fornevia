@@ -282,3 +282,6 @@ Limitações registradas: associações da empresa compradora ainda graváveis
 no contexto de comprador (revisão de identidade e acesso); sem notificação
 aos aprovadores (incremento de processamento da outbox).
 
+## Incremento 6 — Cotações e negociação (`feature/cotacoes`)
+
+Em andamento: RF-040 e RN-040 a RN-044, conforme a ADR-025.
