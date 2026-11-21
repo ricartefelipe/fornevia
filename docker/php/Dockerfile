@@ -12,14 +12,17 @@ ARG PHP_IMAGE=php:8.5.12-fpm-alpine3.24
 ARG NODE_IMAGE=node:26.13.1-alpine3.24
 ARG COMPOSER_IMAGE=composer:2.11.2
 ARG EXT_INSTALLER_IMAGE=mlocati/php-extension-installer:2.13.2
-ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.30.6-alpine3.24
+ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.31.7-alpine3.24
 
 FROM ${COMPOSER_IMAGE} AS composer-bin
 FROM ${EXT_INSTALLER_IMAGE} AS ext-installer
 
 FROM ${PHP_IMAGE} AS base
 COPY --from=ext-installer /usr/bin/install-php-extensions /usr/local/bin/
-RUN install-php-extensions pdo_pgsql pgsql intl bcmath zip pcntl redis-6.3.0 \
+# A imagem base pode estar atrás das correções do Alpine: aplica as
+# atualizações de segurança disponíveis antes de instalar as extensões.
+RUN apk upgrade --no-cache \
+    && install-php-extensions pdo_pgsql pgsql intl bcmath zip pcntl redis-6.3.0 \
     && apk add --no-cache fcgi tini
 COPY docker/php/conf.d/app.ini /usr/local/etc/php/conf.d/zz-app.ini
 COPY docker/php/php-fpm.d/zz-app.conf /usr/local/etc/php-fpm.d/zz-app.conf

@@ -5,6 +5,8 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.1.0] - 2026-11-21
+
 ### Adicionado
 
 - Fundação da plataforma: Laravel 13, PHP 8.5, Docker multi-estágio,
@@ -59,3 +61,6 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   contexto de comprador; numeração de pedidos por distribuidor.
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
+
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.1.0...develop
+[0.1.0]: https://github.com/ricartefelipe/fornevia/releases/tag/v0.1.0
