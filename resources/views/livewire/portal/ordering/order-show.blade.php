@@ -16,7 +16,7 @@
 
     <div aria-live="polite" class="mb-4 space-y-2">
         @if ($message)
-            <x-ui.alert type="success">{{ $message }}</x-ui.alert>
+            <x-ui.alert :type="$messageType">{{ $message }}</x-ui.alert>
         @endif
         @if ($failure)
             <x-ui.alert type="error">{{ $failure }}</x-ui.alert>
@@ -54,9 +54,55 @@
             </div>
         </dl>
         @if ($order->cancel_reason)
-            <p class="mt-3 text-sm text-slate-700">Motivo do último cancelamento: {{ $order->cancel_reason }}</p>
+            <p class="mt-3 text-sm text-slate-700">
+                {{ $order->commercial_status === \App\Enums\Ordering\CommercialStatus::Rejected ? 'Motivo da rejeição' : 'Motivo do último cancelamento' }}: {{ $order->cancel_reason }}
+            </p>
+        @endif
+
+        @if ($order->commercial_status === \App\Enums\Ordering\CommercialStatus::PendingApproval)
+            <x-ui.alert type="info" class="mt-4">
+                Este pedido aguarda a aprovação interna da sua empresa. Estoque e crédito ainda não foram reservados: a aprovação interna não garante
+                estoque nem crédito no distribuidor, que são conferidos somente na confirmação, depois da aprovação.
+                @if ($pendingIssue = \App\Actions\Approvals\Support\OrderApprovalSummary::pendingIssue($order))
+                    <span class="mt-1 block">Na reavaliação, o novo total não coube no orçamento do centro de custo: {{ $pendingIssue }}</span>
+                @endif
+            </x-ui.alert>
+        @endif
+
+        @if (\App\Actions\Approvals\Support\OrderApprovalSummary::awaitsConfirmation($order))
+            <x-ui.alert type="warning" class="mt-4">
+                <p class="font-semibold">Aprovado internamente, mas ainda não confirmado com o distribuidor.</p>
+                @if ($order->confirmation_issue)
+                    <p class="mt-1">Motivo: {{ $order->confirmation_issue }}</p>
+                @endif
+                <p class="mt-1">A aprovação interna não garante estoque nem crédito no distribuidor. Resolvido o motivo, tente confirmar de novo; preços e condições são conferidos outra vez.</p>
+                @if ($canRetry)
+                    <div class="mt-3">
+                        <x-ui.button wire:click="retryConfirmation" wire:loading.attr="disabled" wire:target="retryConfirmation">Tentar confirmar novamente</x-ui.button>
+                        <span wire:loading wire:target="retryConfirmation" class="ml-2 text-sm" role="status">Confirmando com o distribuidor…</span>
+                    </div>
+                @endif
+            </x-ui.alert>
         @endif
     </section>
+
+    @if ($approvalLevels !== [])
+        <section class="fv-card mb-6 p-5" aria-labelledby="pedido-aprovacao">
+            <h2 id="pedido-aprovacao" class="text-lg font-semibold">Aprovação interna</h2>
+            <dl class="mt-2 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+                @if ($order->approval_rule_name)
+                    <div><dt class="text-slate-600">Regra aplicada</dt><dd>{{ $order->approval_rule_name }}</dd></div>
+                @endif
+                @if ($order->submitted_at)
+                    <div><dt class="text-slate-600">Enviado para aprovação em</dt><dd>{{ $order->submitted_at->setTimezone($timezone)->format('d/m/Y H:i') }}</dd></div>
+                @endif
+                @if ($order->approved_at)
+                    <div><dt class="text-slate-600">Aprovado em</dt><dd>{{ $order->approved_at->setTimezone($timezone)->format('d/m/Y H:i') }}</dd></div>
+                @endif
+            </dl>
+            @include('livewire.portal.ordering.partials.approval-levels', ['levels' => $approvalLevels, 'levelsLabel' => 'Níveis de aprovação do pedido '.$order->number])
+        </section>
+    @endif
 
     <div class="grid gap-6 lg:grid-cols-3">
         <div class="space-y-6 lg:col-span-2">
@@ -157,6 +203,21 @@
                     @endif
                 </form>
             </section>
+
+            @if ($canCancelUnconfirmed)
+                <section class="fv-card p-5" aria-labelledby="pedido-cancelamento">
+                    <h2 id="pedido-cancelamento" class="text-lg font-semibold">Cancelamento</h2>
+                    <p class="mt-1 text-sm text-slate-600">
+                        O pedido ainda não foi confirmado com o distribuidor e só pode ser cancelado por inteiro. A reserva de orçamento do centro de custo é liberada.
+                    </p>
+                    <form wire:submit="cancelAll" class="mt-3 space-y-3">
+                        <x-ui.textarea label="Motivo do cancelamento" name="cancelReason" rows="2" maxlength="500" wire:model="cancelReason" />
+                        <x-ui.button type="submit" variant="danger" wire:confirm="Cancelar o pedido {{ $order->number }} por inteiro?" wire:loading.attr="disabled" wire:target="cancelAll">
+                            Cancelar o pedido
+                        </x-ui.button>
+                    </form>
+                </section>
+            @endif
 
             <section class="fv-card p-5" aria-labelledby="pedido-historico">
                 <h2 id="pedido-historico" class="text-lg font-semibold">Histórico</h2>

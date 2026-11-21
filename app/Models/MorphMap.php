@@ -41,6 +41,9 @@ final class MorphMap
         'shopping_list' => Ordering\ShoppingList::class,
         'order' => Ordering\Order::class,
         'order_item' => Ordering\OrderItem::class,
+        'approval_rule' => Approvals\ApprovalRule::class,
+        'approval_delegation' => Approvals\ApprovalDelegation::class,
+        'cost_center_budget' => Approvals\CostCenterBudget::class,
         'plan' => Platform\Plan::class,
         'subscription' => Platform\Subscription::class,
     ];

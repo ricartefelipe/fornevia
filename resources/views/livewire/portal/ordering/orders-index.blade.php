@@ -31,7 +31,7 @@
         @if ($orders->isEmpty())
             <x-ui.empty-state
                 :title="$filtered ? 'Nenhum pedido encontrado' : 'Nenhum pedido ainda'"
-                :description="$filtered ? 'Revise a situação ou o período selecionado.' : 'Os pedidos confirmados aparecem aqui.'">
+                :description="$filtered ? 'Revise a situação ou o período selecionado.' : 'Os pedidos enviados, inclusive os que aguardam aprovação interna, aparecem aqui.'">
                 @if ($filtered)
                     <x-ui.button variant="secondary" wire:click="clearFilters">Limpar filtros</x-ui.button>
                 @else
@@ -54,6 +54,7 @@
                                 <th scope="col">Sua OC</th>
                                 <th scope="col" class="text-right">Total</th>
                                 <th scope="col">Situação</th>
+                                <th scope="col">Aprovação interna</th>
                                 <th scope="col">Atendimento</th>
                                 <th scope="col">Financeiro</th>
                             </tr>
@@ -70,7 +71,21 @@
                                     @endif
                                     <td class="text-sm">{{ $order->purchase_order_reference ?? '—' }}</td>
                                     <td class="text-right font-medium">{{ $order->total_cents->format() }}</td>
-                                    <td>@include('livewire.portal.ordering.partials.status-badge', ['status' => $order->commercial_status])</td>
+                                    <td>
+                                        @include('livewire.portal.ordering.partials.status-badge', ['status' => $order->commercial_status])
+                                        @if (\App\Actions\Approvals\Support\OrderApprovalSummary::awaitsConfirmation($order))
+                                            <span class="mt-1 block text-xs text-amber-800">Confirmação com o distribuidor pendente</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @include('livewire.portal.ordering.partials.status-badge', ['status' => $order->approval_status])
+                                        @if ($order->approval_status === \App\Enums\Ordering\ApprovalStatus::Pending && $order->approvalSteps->isNotEmpty())
+                                            @php($currentLevel = $order->approvalSteps->first(static fn ($step) => $step->status === \App\Enums\Approvals\ApprovalStepStatus::Pending))
+                                            @if ($currentLevel)
+                                                <span class="mt-1 block text-xs text-slate-600">Nível {{ $currentLevel->level_number }} de {{ $order->approvalSteps->count() }}</span>
+                                            @endif
+                                        @endif
+                                    </td>
                                     <td>@include('livewire.portal.ordering.partials.status-badge', ['status' => $order->fulfillment_status])</td>
                                     <td>@include('livewire.portal.ordering.partials.status-badge', ['status' => $order->financial_status])</td>
                                 </tr>

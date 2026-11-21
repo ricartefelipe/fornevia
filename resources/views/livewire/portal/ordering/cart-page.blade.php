@@ -167,7 +167,18 @@
                 @endif
 
                 @if ($choices->costCenters !== [])
-                    <x-ui.select label="Centro de custo" name="costCenterId" :options="$choices->costCenters" placeholder="Sem centro de custo" wire:model="costCenterId" />
+                    <div>
+                        <x-ui.select label="Centro de custo" name="costCenterId" :options="$choices->costCenters" placeholder="Sem centro de custo" wire:model.live="costCenterId"
+                            :aria-describedby="$budget && ! $errors->has('costCenterId') ? 'centro-custo-orcamento' : null" />
+                        @if ($budget && ! $errors->has('costCenterId'))
+                            <p id="centro-custo-orcamento" class="mt-1 text-xs text-slate-600">
+                                Orçamento do centro de custo no mês: {{ $budget->available()->format() }} disponíveis de {{ $budget->amount->format() }}.
+                                @if ($cart->totals && $cart->isReady() && ! $budget->fits($cart->totals->total))
+                                    <span class="block font-medium text-red-700">O total do carrinho excede o disponível: o pedido será recusado com este centro de custo.</span>
+                                @endif
+                            </p>
+                        @endif
+                    </div>
                 @endif
 
                 <x-ui.select label="Condição de pagamento" name="paymentTermId" :options="$choices->paymentTerms" placeholder="Selecione a condição" wire:model="paymentTermId" required />
@@ -183,6 +194,19 @@
                     <x-ui.alert type="warning" class="sm:col-span-2">Sua empresa não tem endereço de entrega ativo. Fale com o seu representante para cadastrá-lo.</x-ui.alert>
                 @endif
 
+                @if ($approval)
+                    <x-ui.alert type="info" class="sm:col-span-2">
+                        <p class="font-semibold">Este pedido seguirá para aprovação interna da sua empresa.</p>
+                        <p class="mt-1">
+                            Regra aplicável: {{ $approval['rule'] }} ({{ $approval['levels'] === 1 ? '1 nível de aprovação' : $approval['levels'].' níveis de aprovação' }}).
+                            O orçamento do centro de custo, quando houver, é reservado no envio.
+                        </p>
+                        <p class="mt-1">
+                            A aprovação interna não garante estoque nem crédito no distribuidor: eles são conferidos e reservados somente na confirmação, depois da aprovação.
+                        </p>
+                    </x-ui.alert>
+                @endif
+
                 @error('checkout')
                     <x-ui.alert type="error" class="sm:col-span-2">{{ $message }}</x-ui.alert>
                 @enderror
@@ -190,12 +214,12 @@
                 <div class="flex flex-wrap items-center gap-3 sm:col-span-2">
                     <x-ui.button type="submit" wire:loading.attr="disabled" wire:target="placeOrder"
                         :disabled="! $canPlace || ! $cart->isReady() || ! $cart->companyCanPurchase || $shippingAddressMissing">
-                        Confirmar pedido
+                        {{ $approval ? 'Enviar para aprovação' : 'Confirmar pedido' }}
                     </x-ui.button>
                     @if ($cart->totals && $cart->isReady())
-                        <span class="text-sm text-slate-700">Total a confirmar: <strong>{{ $cart->totals->total->format() }}</strong></span>
+                        <span class="text-sm text-slate-700">{{ $approval ? 'Total a enviar' : 'Total a confirmar' }}: <strong>{{ $cart->totals->total->format() }}</strong></span>
                     @endif
-                    <span wire:loading wire:target="placeOrder" class="text-sm text-slate-600" role="status">Confirmando o pedido…</span>
+                    <span wire:loading wire:target="placeOrder" class="text-sm text-slate-600" role="status">{{ $approval ? 'Enviando o pedido…' : 'Confirmando o pedido…' }}</span>
                 </div>
             </form>
         </section>

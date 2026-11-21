@@ -1,7 +1,7 @@
 @php($timezone = (string) config('app.business_timezone'))
 <div>
     <x-ui.page-header title="Pedidos"
-        description="Pedidos confirmados pelas empresas compradoras, com situação comercial, aprovação, atendimento e financeiro acompanhados separadamente." />
+        description="Pedidos das empresas compradoras, com situação comercial, aprovação interna do comprador, atendimento e financeiro acompanhados separadamente." />
 
     @if ($portfolioOnly)
         <x-ui.alert type="info" class="mb-4">Você vê os pedidos das empresas da sua carteira.</x-ui.alert>
@@ -41,7 +41,7 @@
                 @if ($filtered)
                     <x-ui.empty-state title="Nenhum pedido encontrado" description="Nenhum pedido atende aos filtros informados." />
                 @else
-                    <x-ui.empty-state title="Nenhum pedido registrado" description="Os pedidos confirmados no portal do comprador aparecem aqui." />
+                    <x-ui.empty-state title="Nenhum pedido registrado" description="Os pedidos enviados pelo portal do comprador aparecem aqui." />
                 @endif
             </div>
         @else
@@ -74,8 +74,21 @@
                             <td class="whitespace-nowrap">{{ $order->created_at->setTimezone($timezone)->format('d/m/Y H:i') }}</td>
                             <td>{{ $order->buyerCompany->trade_name }}</td>
                             <td>{{ $order->purchase_order_reference ?? '—' }}</td>
-                            <td>@include('livewire.staff.orders.partials.status-badge', ['status' => $order->commercial_status])</td>
-                            <td>@include('livewire.staff.orders.partials.status-badge', ['status' => $order->approval_status])</td>
+                            <td>
+                                @include('livewire.staff.orders.partials.status-badge', ['status' => $order->commercial_status])
+                                @if (\App\Actions\Approvals\Support\OrderApprovalSummary::awaitsConfirmation($order))
+                                    <span class="mt-1 block text-xs text-amber-800">Confirmação pendente</span>
+                                @endif
+                            </td>
+                            <td>
+                                @include('livewire.staff.orders.partials.status-badge', ['status' => $order->approval_status])
+                                @if ($order->approval_status === \App\Enums\Ordering\ApprovalStatus::Pending && $order->approvalSteps->isNotEmpty())
+                                    @php($currentLevel = $order->approvalSteps->first(static fn ($step) => $step->status === \App\Enums\Approvals\ApprovalStepStatus::Pending))
+                                    @if ($currentLevel)
+                                        <span class="mt-1 block text-xs text-slate-600">Nível {{ $currentLevel->level_number }} de {{ $order->approvalSteps->count() }}</span>
+                                    @endif
+                                @endif
+                            </td>
                             <td>@include('livewire.staff.orders.partials.status-badge', ['status' => $order->fulfillment_status])</td>
                             <td>@include('livewire.staff.orders.partials.status-badge', ['status' => $order->financial_status])</td>
                             <td class="whitespace-nowrap text-right font-medium">{{ $order->total_cents->format() }}</td>

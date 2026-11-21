@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Database;
 
+use Closure;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -46,6 +47,48 @@ final class TenantSchema
         $cascade ? $foreign->cascadeOnDelete() : $foreign->restrictOnDelete();
 
         $table->index(['tenant_id', $column]);
+    }
+
+    /**
+     * Chave estrangeira composta que amarra também a empresa compradora:
+     * (tenant_id, coluna, buyer_company_id) → (tenant_id, id, buyer_company_id).
+     * As checagens de FK ignoram o RLS; sem a empresa na chave, uma linha da
+     * empresa A poderia apontar para registro da empresa B do mesmo tenant.
+     * A tabela referenciada precisa de companyKey().
+     */
+    public static function companyReference(
+        Blueprint $table,
+        string $column,
+        string $on,
+        bool $nullable = false,
+        bool $cascade = false,
+    ): void {
+        $definition = $table->uuid($column);
+
+        if ($nullable) {
+            $definition->nullable();
+        }
+
+        $foreign = $table->foreign(['tenant_id', $column, 'buyer_company_id'], self::constraintName($table->getTable(), $column, 'company_fk'))
+            ->references(['tenant_id', 'id', 'buyer_company_id'])
+            ->on($on);
+        $cascade ? $foreign->cascadeOnDelete() : $foreign->restrictOnDelete();
+
+        $table->index(['tenant_id', $column]);
+    }
+
+    /**
+     * unique (tenant_id, id, buyer_company_id): alvo de companyReference().
+     */
+    public static function companyKey(string $table): void
+    {
+        self::assertIdentifier($table);
+
+        DB::statement(sprintf(
+            'alter table %s add constraint %s unique (tenant_id, id, buyer_company_id)',
+            $table,
+            self::constraintName($table, 'buyer', 'unique'),
+        ));
     }
 
     /**
@@ -137,6 +180,32 @@ final class TenantSchema
         }
     }
 
+    /**
+     * Executa o callback no contexto de sistema de cada tenant, em
+     * migrations de dados: o papel de manutenção não ignora o RLS e as
+     * tabelas o forçam. O contexto é desfeito ao final de cada tenant.
+     *
+     * @param  Closure(string): void  $callback  recebe o id do tenant
+     */
+    public static function forEachTenant(Closure $callback): void
+    {
+        foreach (DB::table('organizations')->orderBy('id')->pluck('id') as $tenantId) {
+            DB::transaction(static function () use ($tenantId, $callback): void {
+                DB::select(
+                    "select set_config('app.context_kind', 'system', true), set_config('app.tenant_id', ?, true),
+                            set_config('app.user_id', '', true), set_config('app.buyer_company_id', '', true)",
+                    [(string) $tenantId],
+                );
+
+                $callback((string) $tenantId);
+
+                // Na falha, o rollback do savepoint já desfaz as configurações
+                // (e um comando a mais esconderia o erro original).
+                DB::select("select set_config('app.context_kind', '', true), set_config('app.tenant_id', '', true)");
+            });
+        }
+    }
+
     public static function appRole(): string
     {
         $role = (string) config('database.roles.app');
@@ -151,6 +220,22 @@ final class TenantSchema
         self::assertIdentifier($role);
 
         return $role;
+    }
+
+    /**
+     * Nome explícito de restrição: o PostgreSQL truncaria nomes acima de 63
+     * caracteres, e nomes truncados podem colidir.
+     */
+    private static function constraintName(string $table, string $column, string $suffix): string
+    {
+        $name = "{$table}_{$column}_{$suffix}";
+        self::assertIdentifier($name);
+
+        if (strlen($name) > 63) {
+            throw new InvalidArgumentException("Nome de restrição acima de 63 caracteres: {$name}");
+        }
+
+        return $name;
     }
 
     private static function assertIdentifier(string $identifier): void

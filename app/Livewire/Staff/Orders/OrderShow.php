@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Staff\Orders;
 
+use App\Actions\Approvals\Support\OrderApprovalSummary;
 use App\Actions\Ordering\Staff\CancelStaffOrderItems;
 use App\Actions\Ordering\Staff\LoadStaffOrderDetail;
 use App\Actions\Ordering\Staff\StaffOrderDetail;
@@ -12,6 +13,7 @@ use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Quantity;
 use App\Enums\Identity\Permission;
+use App\Models\Ordering\OrderEvent;
 use App\Models\Ordering\OrderItem;
 use App\Support\Auth\Access;
 use App\Support\Http\UntrustedId;
@@ -34,6 +36,10 @@ use Livewire\Component;
  * por propriedade bloqueada e recarregado pelo escopo da equipe a cada
  * ação; identificadores de itens recebidos do cliente que não pertencem ao
  * pedido equivalem a registro inexistente.
+ *
+ * A aprovação interna do comprador (níveis, aprovadores e decisões) é
+ * exibida somente para leitura: quem decide são os aprovadores da empresa
+ * compradora, no portal.
  */
 #[Layout('layouts.app')]
 #[Title('Pedido')]
@@ -124,6 +130,13 @@ final class OrderShow extends Component
             'order' => $detail->order,
             'canManage' => $access->can(Permission::OrdersManage),
             'canViewBuyer' => $access->can(Permission::BuyersView),
+            'approvalLevels' => OrderApprovalSummary::levels($detail->order),
+            'approvalEventLabels' => OrderApprovalSummary::EVENT_LABELS,
+            'eventDetails' => $detail->events->mapWithKeys(static fn (OrderEvent $event): array => [
+                $event->id => isset(OrderApprovalSummary::EVENT_LABELS[$event->type])
+                    ? [...$detail->eventDetails($event), ...OrderApprovalSummary::eventDetails($event->data, withTotal: true)]
+                    : $detail->eventDetails($event),
+            ])->all(),
         ])->title('Pedido '.$detail->order->number);
     }
 

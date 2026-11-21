@@ -83,6 +83,27 @@ final class ConcurrencyHarness
         );
     }
 
+    /**
+     * Espera o worker ficar bloqueado aguardando o lock de uma linha da
+     * tabela informada (o processo em espera detém o lock "tuple" da linha
+     * e aguarda a transação que a bloqueou). Distingue, por exemplo, a
+     * espera pelo pedido da espera por um nível de aprovação.
+     */
+    public function waitUntilBlockedOnRow(string $workerName, string $table, float $timeoutSeconds = 20.0): void
+    {
+        $this->until(
+            fn (): bool => (int) $this->control->selectOne(
+                "select count(*) as total
+                   from pg_stat_activity a
+                   join pg_locks l on l.pid = a.pid and l.locktype = 'tuple' and l.relation = to_regclass(?)
+                  where a.application_name = ? and a.wait_event_type = 'Lock'",
+                [$table, self::applicationName($workerName)],
+            )->total > 0,
+            "worker {$workerName} bloqueado por linha de {$table}",
+            $timeoutSeconds,
+        );
+    }
+
     public function shutdown(): void
     {
         foreach ($this->gates as $gate) {

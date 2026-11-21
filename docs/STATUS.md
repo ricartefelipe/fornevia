@@ -241,3 +241,44 @@ fim; a evidência da suíte completa é a CI do PR.
   local após as correções.
 - Fluxo de aprovação interna do comprador (os pedidos saem confirmados).
 - Recorte de carteira do representante apenas em pedidos.
+
+## Incremento 5 — Aprovação de compras e orçamento (`feature/aprovacoes-de-compra`)
+
+### Implementado
+
+- Regras de aprovação da empresa compradora (critérios, prioridade, níveis
+  com quórum e aprovadores), delegações com prazo e reatribuição de nível
+  bloqueado (RF-050, RN-050 a RN-053).
+- Checkout com submissão para aprovação: níveis retratados, orçamento
+  reservado, número atribuído; estoque e crédito apenas na confirmação
+  (RN-055, RN-056).
+- Decisão por nível sob lock do pedido, vinculada à versão exibida ao
+  aprovador; confirmação após a aprovação final com reavaliação de preços,
+  condição de pagamento e itens, e nova escolha da regra pelo novo total
+  (RN-054, RF-061); nova tentativa quando estoque, crédito ou orçamento
+  recusam; cancelamento do pedido não confirmado, que encerra a aprovação.
+- Orçamento mensal por centro de custo (ledger e projeção no banco), com
+  reserva, consumo, liberação e estorno do consumo no cancelamento de
+  pedido confirmado; telas do portal: fila de aprovação, regras,
+  delegações e orçamentos; telas de pedido do portal e da equipe com a
+  aprovação interna.
+- Defesa no banco (ADR-024): pedidos e todas as tabelas da aprovação
+  somente leitura no contexto de comprador, com gravação no contexto de
+  sistema do mesmo usuário; chaves estrangeiras compostas por empresa;
+  histórico de decisões e retrato dos níveis protegidos por triggers.
+
+### Verificado localmente
+
+| Verificação | Resultado |
+|---|---|
+| Suíte completa com cobertura (PCOV), esquema recriado, commit `3c8ecd7` | 2.023 testes e 9.778 asserções aprovados (46 min); cobertura de linhas total 95,6%, núcleo 98,17%, caminhos críticos 100% |
+| Testes depois das últimas correções da revisão | unitários, concorrência, aprovação, orçamento e telas do portal aprovados (esquema recriado) |
+| Testes de concorrência | 20 cenários aprovados; a remoção do lock do pedido na decisão e do lock das delegações faz os testes correspondentes falharem |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+| Revisão | revisão independente e revisão em cinco frentes com verificação adversarial; achados confirmados corrigidos com teste de regressão |
+
+Limitações registradas: associações da empresa compradora ainda graváveis
+no contexto de comprador (revisão de identidade e acesso); sem notificação
+aos aprovadores (incremento de processamento da outbox).
+

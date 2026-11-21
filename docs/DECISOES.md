@@ -170,11 +170,25 @@ Toda operação que bloqueia mais de um recurso segue a ordem:
 0. gestão de acessos: associações de proprietário ativas (por `id`) antes
    da associação alvo; assinatura do tenant (limites do plano) antes de
    inserir convites ou filiais;
-1. documento de origem (carrinho, cotação, pedido);
-2. chave de idempotência;
-3. saldos de estoque, ordenados por `(warehouse_id, sku_id)`;
-4. conta de crédito da empresa compradora;
-5. orçamento do centro de custo.
+1. chave de idempotência, quando a operação tem uma (o checkout grava e
+   bloqueia a chave antes de bloquear o carrinho);
+2. documento de origem (carrinho, cotação, pedido) e, depois dele, as
+   linhas do próprio documento (itens, níveis de aprovação);
+3. regras de aprovação da empresa: lock consultivo compartilhado na
+   escolha da regra (submissão e reavaliação), exclusivo na alteração;
+   delegações do aprovador, em modo compartilhado, na decisão;
+4. saldos de estoque, ordenados por `(warehouse_id, sku_id)`;
+5. conta de crédito da empresa compradora;
+6. orçamento do centro de custo;
+7. contador de uso do plano;
+8. contador de numeração de pedidos do tenant.
+
+Operações que tocam saldos de vários itens (reserva, cancelamento) bloqueiam
+todos os saldos envolvidos de uma vez, na ordem do item 4, antes de
+percorrer os itens. A decisão de aprovação, o cancelamento, a nova
+tentativa e a reatribuição bloqueiam o pedido (item 2) antes dos níveis e
+decisões. A alteração de regras e a revogação de delegações não bloqueiam
+pedidos, estoque, crédito nem orçamento.
 
 Ordem consistente evita deadlocks entre confirmações concorrentes. O
 teste de concorrência `LastOwnerRaceTest` reproduziu um deadlock quando a
@@ -439,4 +453,96 @@ número provisório único.
 pedidos dos demais. Incrementar o contador no fim mantém o lock por tenant
 apenas no trecho final, que já é serializado pelo contador de uso do plano,
 sem nova contenção nas etapas de estoque e crédito.
+
+---
+
+## ADR-023 — Aprovação interna de compras e orçamento por centro de custo
+
+**Status:** aceita
+
+**Decisão.**
+- A regra aplicável é a regra ativa de maior prioridade (empate: a criada
+  primeiro) cujos critérios informados são todos atendidos: valor mínimo,
+  centro de custo, unidade, categoria de algum item e perfil do solicitante.
+- Com regra aplicável, o checkout grava o pedido aguardando aprovação, com
+  os níveis e aprovadores retratados (editar a regra não muda pedidos já
+  submetidos), reserva o orçamento do centro de custo e atribui o número.
+  Estoque e crédito só são reservados na confirmação, porque a aprovação
+  interna não os garante (RN-056).
+- Níveis são decididos em sequência; cada um exige quórum de titulares
+  distintos; o solicitante nunca conta, nem como delegado; rejeição em
+  qualquer nível encerra o pedido e libera o orçamento.
+- Delegação com prazo: o delegado decide em nome do titular, registrando
+  ator e titular. Aprovador revogado ou sem permissão deixa de ser
+  elegível; nível sem aprovadores elegíveis suficientes é reatribuído pela
+  administração da empresa (`portal.approval_rules`).
+- Na aprovação final o pedido é reavaliado (RN-054, RF-061). Empresa sem
+  permissão de compra, condição de pagamento não mais permitida, endereço
+  inativo, item invisível para a empresa, inativo ou fora das regras de
+  compra, ou item sem preço vigente deixam o pedido aprovado aguardando
+  confirmação, com o motivo. Preço vigente diferente do aprovado, definição
+  da condição de pagamento alterada (prazos ou exigência de crédito) ou
+  pedido diferente da impressão gravada na submissão invalidam as
+  aprovações (histórico preservado): o pedido é reprecificado, a regra é
+  escolhida de novo pelo novo total e, se outra regra passar a valer, os
+  níveis são substituídos pelos dela (o retrato anterior fica marcado como
+  substituído). Se nenhuma regra valer, os níveis retratados continuam
+  exigidos: a reavaliação não dispensa aprovação.
+- A decisão e a reatribuição valem para a versão do pedido exibida a
+  quem decide (nível em análise e impressão do pedido): se o pedido foi
+  reavaliado ou outro nível entrou em análise desde a exibição, são
+  recusadas e exigem nova revisão. A impressão decidida fica registrada em
+  cada decisão.
+- Recusa de estoque, crédito, orçamento ou cota na confirmação deixa o
+  pedido aprovado, sem confirmação, com o motivo registrado e nova
+  tentativa (auditada).
+- Cancelamento durante a aprovação encerra a aprovação (situação
+  "encerrada") e os níveis sem decisão; cancelamento de pedido confirmado
+  estorna o consumo do orçamento, proporcional ao valor cancelado.
+- Orçamento mensal por centro de custo mantido por movimentos (reserva,
+  liberação, consumo, estorno de consumo) com projeção por trigger e
+  reservado + consumido <= valor garantido no banco.
+- Integridade no banco: chaves estrangeiras compostas incluem a empresa
+  (nenhuma regra, nível, decisão, orçamento ou movimento aponta para
+  registro de outra empresa do mesmo distribuidor); decisão em nome de
+  outro titular só com delegação; a invalidação de uma decisão é definitiva
+  e única; o nível retratado não muda de pedido, número nem quórum, e
+  situações encerradas não voltam.
+
+**Motivo.** Separar a aprovação interna da confirmação com o distribuidor
+evita reservar estoque e crédito por dias à espera de aprovadores e deixa
+claro ao comprador o que a aprovação garante. O retrato dos níveis e a
+reavaliação tornam o aceite rastreável e vinculado ao que foi aprovado.
+
+---
+
+## ADR-024 — Pedidos e aprovação somente leitura no contexto de comprador
+
+**Status:** aceita
+
+**Decisão.** Pedidos, itens e eventos, e todas as tabelas da aprovação
+interna (regras, níveis e aprovadores das regras, delegações, níveis e
+decisões do pedido, orçamentos e movimentos de orçamento), são somente
+leitura nos contextos de comprador e de usuário (políticas restritivas de
+inserção, alteração e exclusão). As Actions do portal autorizam no
+contexto de comprador (aprovador, solicitante ou administração da empresa,
+conforme a permissão) e gravam no contexto de sistema do mesmo usuário
+(`TenantDatabase::asSystem`, ADR-014); dentro dele as consultas filtram a
+empresa explicitamente. O `SELECT ... FOR UPDATE` dessas tabelas também
+acontece no contexto de sistema, porque a política de alteração se aplica
+ao bloqueio. A auditoria continua no contexto de quem agiu, com a
+associação do comprador.
+
+**Motivo.** A aprovação interna e a confirmação decidem pela situação do
+pedido, pelo solicitante, pelos níveis e pelas decisões; regras,
+delegações e orçamentos decidem quem aprova, inclusive pedidos já
+submetidos (delegação vigente e nova escolha de regra na reavaliação), e
+quanto cabe no mês. Com essas tabelas graváveis pela conexão do portal, um
+único defeito de autorização bastaria para autoaprovar, aprovar no lugar
+de outro, liberar orçamento ou confirmar sem aprovação. Como em estoque e
+crédito (ADR-020), o banco é a segunda barreira.
+
+**Consequência.** As associações da empresa compradora continuam
+graváveis no contexto de comprador (gestão de usuários do portal); a
+mesma restrição para elas fica para a revisão de identidade e acesso.
 

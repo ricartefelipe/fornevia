@@ -31,6 +31,7 @@ return [
                 idempotencyKey: (string) $args['idempotency_key'],
                 shippingAddressId: (string) $args['shipping_address_id'],
                 paymentTermId: (string) $args['payment_term_id'],
+                costCenterId: isset($args['cost_center_id']) ? (string) $args['cost_center_id'] : null,
             ));
 
             $gate->pass($args['hold'] ?? null);
@@ -55,6 +56,8 @@ return [
                 null,
                 'Pedido duplicado pelo cliente',
             );
+
+            $gate->pass($args['hold'] ?? null);
 
             return ['status' => $order->commercial_status->value];
         });
