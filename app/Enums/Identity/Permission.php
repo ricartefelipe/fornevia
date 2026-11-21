@@ -49,6 +49,7 @@ enum Permission: string
     case PortalQuotes = 'portal.quotes';
     case PortalApprovals = 'portal.approvals';
     case PortalBudgets = 'portal.budgets';
+    case PortalApprovalRules = 'portal.approval_rules';
     case PortalUsers = 'portal.users';
 
     public function isBuyerPermission(): bool
@@ -120,6 +121,7 @@ enum Permission: string
             self::PortalQuotes => 'Solicitar cotações',
             self::PortalApprovals => 'Aprovar compras',
             self::PortalBudgets => 'Gerenciar orçamentos',
+            self::PortalApprovalRules => 'Gerenciar regras e delegações de aprovação',
             self::PortalUsers => 'Gerenciar usuários da empresa',
         };
     }

@@ -254,6 +254,7 @@ Gerada a partir de `App\Enums\Identity\SystemRole`. Permissões marcadas com
 | `portal.quotes` Solicitar cotações | ✓ | ✓ | ✓ |  |
 | `portal.approvals` Aprovar compras | ✓ |  |  | ✓ |
 | `portal.budgets` Gerenciar orçamentos | ✓ |  |  |  |
+| `portal.approval_rules` Gerenciar regras e delegações de aprovação | ✓ |  |  |  |
 | `portal.users` Gerenciar usuários da empresa | ✓ |  |  |  |
 
 Regras adicionais:

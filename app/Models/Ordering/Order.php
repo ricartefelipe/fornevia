@@ -48,6 +48,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property FinancialStatus $financial_status
  * @property \Carbon\CarbonImmutable|null $confirmed_at
  * @property \Carbon\CarbonImmutable|null $cancelled_at
+ * @property string|null $approval_rule_id
+ * @property string|null $approval_rule_name
+ * @property string|null $approval_fingerprint
+ * @property \Carbon\CarbonImmutable|null $submitted_at
+ * @property \Carbon\CarbonImmutable|null $approved_at
+ * @property string|null $confirmation_issue
  * @property string|null $cancel_reason
  * @property string|null $notes
  * @property \Carbon\CarbonImmutable $created_at
@@ -80,6 +86,8 @@ class Order extends Model
             'financial_status' => FinancialStatus::class,
             'confirmed_at' => 'immutable_datetime',
             'cancelled_at' => 'immutable_datetime',
+            'submitted_at' => 'immutable_datetime',
+            'approved_at' => 'immutable_datetime',
         ];
     }
 
@@ -89,6 +97,14 @@ class Order extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    /**
+     * @return HasMany<\App\Models\Approvals\OrderApprovalStep, $this>
+     */
+    public function approvalSteps(): HasMany
+    {
+        return $this->hasMany(\App\Models\Approvals\OrderApprovalStep::class)->orderBy('level_number');
     }
 
     /**
