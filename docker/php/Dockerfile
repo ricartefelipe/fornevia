@@ -19,7 +19,10 @@ FROM ${EXT_INSTALLER_IMAGE} AS ext-installer
 
 FROM ${PHP_IMAGE} AS base
 COPY --from=ext-installer /usr/bin/install-php-extensions /usr/local/bin/
-RUN install-php-extensions pdo_pgsql pgsql intl bcmath zip pcntl redis-6.3.0 \
+# A imagem base pode estar atrás das correções do Alpine: aplica as
+# atualizações de segurança disponíveis antes de instalar as extensões.
+RUN apk upgrade --no-cache \
+    && install-php-extensions pdo_pgsql pgsql intl bcmath zip pcntl redis-6.3.0 \
     && apk add --no-cache fcgi tini
 COPY docker/php/conf.d/app.ini /usr/local/etc/php/conf.d/zz-app.ini
 COPY docker/php/php-fpm.d/zz-app.conf /usr/local/etc/php-fpm.d/zz-app.conf
