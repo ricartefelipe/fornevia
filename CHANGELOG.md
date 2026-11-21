@@ -21,9 +21,10 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ### Segurança
 
 - Comprador só cancela ou confirma novamente pedidos que pode ver.
-- Pedidos, itens, eventos, níveis e decisões de aprovação e movimentos de
-  orçamento passam a ser somente leitura na conexão do portal; a gravação
-  ocorre no contexto de sistema do mesmo usuário, após a autorização.
+- Pedidos, itens, eventos e todas as tabelas da aprovação interna (regras,
+  delegações, níveis, decisões, orçamentos e movimentos) passam a ser
+  somente leitura na conexão do portal; a gravação ocorre no contexto de
+  sistema do mesmo usuário, após a autorização.
 - Submissão para aprovação exige assinatura ativa do distribuidor.
 
 ## [0.1.0] - 2026-11-21

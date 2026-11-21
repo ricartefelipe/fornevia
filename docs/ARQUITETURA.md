@@ -480,11 +480,16 @@ stateDiagram-v2
   linha do pedido); submissões simultâneas não ultrapassam o orçamento
   (bloqueio do orçamento antes da reserva).
 - Tabelas da aprovação usam RLS `required` (a empresa compradora vê apenas
-  as suas) e chaves estrangeiras compostas que incluem a empresa. Regras,
-  delegações e valores de orçamento são administrados pela empresa; pedidos,
-  níveis, decisões e movimentos de orçamento são somente leitura no
-  contexto de comprador e gravados no contexto de sistema do mesmo usuário
-  (ADR-024). Decisões são append-only, com invalidação definitiva em
-  coluna própria; o nível retratado não muda de quórum e situações
-  encerradas não voltam (triggers).
+  as suas) e chaves estrangeiras compostas que incluem a empresa. Todas,
+  como pedidos, itens e eventos, são somente leitura no contexto de
+  comprador: as Actions autorizam a administração da empresa (regras,
+  delegações, orçamentos), o aprovador ou o solicitante e gravam no
+  contexto de sistema do mesmo usuário (ADR-024). Decisões são append-only,
+  com invalidação definitiva em coluna própria e delegação conferida pelo
+  par titular e delegado; o nível retratado não muda de quórum, situações
+  encerradas não voltam e delegação revogada não volta a valer (triggers).
+- A escolha da regra (submissão e reavaliação) toma o lock consultivo das
+  regras da empresa em modo compartilhado; a alteração de regras, em modo
+  exclusivo (ADR-006). A decisão por delegação bloqueia a delegação em
+  modo compartilhado: a revogação concorrente termina antes ou espera.
 

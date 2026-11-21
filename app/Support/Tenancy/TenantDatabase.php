@@ -77,7 +77,8 @@ final readonly class TenantDatabase
      * crédito, pedidos, níveis e decisões de aprovação, orçamento). Quem
      * chama já autorizou a operação no contexto original; dentro do
      * callback as consultas enxergam todas as empresas do tenant e precisam
-     * filtrar a empresa explicitamente.
+     * filtrar a empresa explicitamente. Contextos sem usuário (integração)
+     * não elevam: a API precisará de regra própria.
      *
      * @template T
      *

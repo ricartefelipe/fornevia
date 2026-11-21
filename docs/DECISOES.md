@@ -170,18 +170,25 @@ Toda operação que bloqueia mais de um recurso segue a ordem:
 0. gestão de acessos: associações de proprietário ativas (por `id`) antes
    da associação alvo; assinatura do tenant (limites do plano) antes de
    inserir convites ou filiais;
-1. documento de origem (carrinho, cotação, pedido);
-2. chave de idempotência;
-3. saldos de estoque, ordenados por `(warehouse_id, sku_id)`;
-4. conta de crédito da empresa compradora;
-5. orçamento do centro de custo;
-6. contador de uso do plano;
-7. contador de numeração de pedidos do tenant.
+1. chave de idempotência, quando a operação tem uma (o checkout grava e
+   bloqueia a chave antes de bloquear o carrinho);
+2. documento de origem (carrinho, cotação, pedido) e, depois dele, as
+   linhas do próprio documento (itens, níveis de aprovação);
+3. regras de aprovação da empresa: lock consultivo compartilhado na
+   escolha da regra (submissão e reavaliação), exclusivo na alteração;
+   delegações do aprovador, em modo compartilhado, na decisão;
+4. saldos de estoque, ordenados por `(warehouse_id, sku_id)`;
+5. conta de crédito da empresa compradora;
+6. orçamento do centro de custo;
+7. contador de uso do plano;
+8. contador de numeração de pedidos do tenant.
 
 Operações que tocam saldos de vários itens (reserva, cancelamento) bloqueiam
-todos os saldos envolvidos de uma vez, na ordem do item 3, antes de
-percorrer os itens. A decisão de aprovação bloqueia o pedido (item 1) antes
-dos níveis e decisões.
+todos os saldos envolvidos de uma vez, na ordem do item 4, antes de
+percorrer os itens. A decisão de aprovação, o cancelamento, a nova
+tentativa e a reatribuição bloqueiam o pedido (item 2) antes dos níveis e
+decisões. A alteração de regras e a revogação de delegações não bloqueiam
+pedidos, estoque, crédito nem orçamento.
 
 Ordem consistente evita deadlocks entre confirmações concorrentes. O
 teste de concorrência `LastOwnerRaceTest` reproduziu um deadlock quando a
@@ -508,21 +515,29 @@ reavaliação tornam o aceite rastreável e vinculado ao que foi aprovado.
 
 **Status:** aceita
 
-**Decisão.** Pedidos, itens, eventos, níveis e decisões de aprovação e
-movimentos de orçamento são somente leitura nos contextos de comprador e
-de usuário (políticas restritivas de inserção, alteração e exclusão). As
-Actions do portal autorizam no contexto de comprador e gravam no contexto
-de sistema do mesmo usuário (`TenantDatabase::asSystem`, ADR-014); dentro
-dele as consultas filtram a empresa explicitamente. O `SELECT ... FOR
-UPDATE` dessas tabelas também acontece no contexto de sistema, porque a
-política de alteração se aplica ao bloqueio. A auditoria continua no
-contexto de quem agiu, com a associação do comprador. Regras, delegações e
-valores de orçamento seguem editáveis pela administração da empresa: são a
-configuração da própria empresa, não o registro do que foi aprovado.
+**Decisão.** Pedidos, itens e eventos, e todas as tabelas da aprovação
+interna (regras, níveis e aprovadores das regras, delegações, níveis e
+decisões do pedido, orçamentos e movimentos de orçamento), são somente
+leitura nos contextos de comprador e de usuário (políticas restritivas de
+inserção, alteração e exclusão). As Actions do portal autorizam no
+contexto de comprador (aprovador, solicitante ou administração da empresa,
+conforme a permissão) e gravam no contexto de sistema do mesmo usuário
+(`TenantDatabase::asSystem`, ADR-014); dentro dele as consultas filtram a
+empresa explicitamente. O `SELECT ... FOR UPDATE` dessas tabelas também
+acontece no contexto de sistema, porque a política de alteração se aplica
+ao bloqueio. A auditoria continua no contexto de quem agiu, com a
+associação do comprador.
 
 **Motivo.** A aprovação interna e a confirmação decidem pela situação do
-pedido, pelo solicitante, pelos níveis e pelas decisões. Com essas colunas
-graváveis pela conexão do portal, um único defeito de autorização bastaria
-para autoaprovar, liberar orçamento ou confirmar sem aprovação. Como em
-estoque e crédito (ADR-020), o banco é a segunda barreira.
+pedido, pelo solicitante, pelos níveis e pelas decisões; regras,
+delegações e orçamentos decidem quem aprova, inclusive pedidos já
+submetidos (delegação vigente e nova escolha de regra na reavaliação), e
+quanto cabe no mês. Com essas tabelas graváveis pela conexão do portal, um
+único defeito de autorização bastaria para autoaprovar, aprovar no lugar
+de outro, liberar orçamento ou confirmar sem aprovação. Como em estoque e
+crédito (ADR-020), o banco é a segunda barreira.
+
+**Consequência.** As associações da empresa compradora continuam
+graváveis no contexto de comprador (gestão de usuários do portal); a
+mesma restrição para elas fica para a revisão de identidade e acesso.
 

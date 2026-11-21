@@ -57,9 +57,10 @@ use Illuminate\Support\Facades\Context;
  * aguardando aprovação: o orçamento do centro de custo é reservado e
  * estoque e crédito só são reservados na confirmação (RN-055, RN-056).
  *
- * Ordem de locks (ADR-006): carrinho → chave de idempotência → saldos de
- * estoque (depósito, SKU) → conta de crédito → orçamento → contador do
- * plano → contador de numeração do tenant.
+ * Ordem de locks (ADR-006): chave de idempotência → carrinho → regras de
+ * aprovação da empresa (compartilhado) → saldos de estoque (depósito, SKU)
+ * → conta de crédito → orçamento → contador do plano → contador de
+ * numeração do tenant.
  * Pedido, itens, níveis, estoque, crédito, orçamento, custos e contadores
  * são gravados no contexto de sistema do mesmo usuário (ADR-014), pois o
  * contexto de comprador só lê essas tabelas.
