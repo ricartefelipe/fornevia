@@ -197,11 +197,11 @@ final class TenantSchema
                     [(string) $tenantId],
                 );
 
-                try {
-                    $callback((string) $tenantId);
-                } finally {
-                    DB::select("select set_config('app.context_kind', '', true), set_config('app.tenant_id', '', true)");
-                }
+                $callback((string) $tenantId);
+
+                // Na falha, o rollback do savepoint já desfaz as configurações
+                // (e um comando a mais esconderia o erro original).
+                DB::select("select set_config('app.context_kind', '', true), set_config('app.tenant_id', '', true)");
             });
         }
     }

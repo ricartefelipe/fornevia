@@ -60,13 +60,13 @@ final readonly class ApprovalReviewData
     }
 
     /**
-     * Versão exibida: nível pendente e impressão do pedido. A decisão e a
-     * reatribuição só valem se o pedido ainda estiver nessa versão.
+     * Versão exibida: o nível do formulário de decisão e reatribuição
+     * ($current, a mesma leitura que define o que a tela oferece) e a
+     * impressão do pedido exibido. A decisão e a reatribuição só valem se o
+     * pedido ainda estiver nessa versão.
      */
     public function reviewed(): ReviewedApproval
     {
-        $pending = array_values(array_filter($this->steps, static fn (StepReview $s): bool => $s->step->status === ApprovalStepStatus::Pending));
-
-        return ReviewedApproval::of($this->order, $pending[0]->step ?? null);
+        return ReviewedApproval::of($this->order, $this->current?->step);
     }
 }
