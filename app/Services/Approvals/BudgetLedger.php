@@ -18,9 +18,13 @@ use LogicException;
 
 /**
  * Orçamento por centro de custo (RN-055): reserva na submissão para
- * aprovação, consumo na confirmação e liberação na rejeição ou no
- * cancelamento. Só há controle quando o centro de custo tem orçamento
+ * aprovação, consumo na confirmação, liberação da reserva na rejeição ou no
+ * cancelamento antes da confirmação e estorno do consumo no cancelamento
+ * depois dela. Só há controle quando o centro de custo tem orçamento
  * cadastrado para o mês do pedido.
+ *
+ * Os movimentos são somente leitura no contexto de comprador: os métodos
+ * rodam no contexto de sistema do mesmo usuário (ADR-014).
  *
  * O orçamento é bloqueado (FOR UPDATE) antes de decidir; os saldos mudam
  * apenas por movimentos (trigger), e o banco garante
@@ -100,6 +104,27 @@ final readonly class BudgetLedger
         }
     }
 
+    /**
+     * Estorna o consumo de pedido confirmado e depois cancelado: o valor
+     * cancelado, limitado ao consumo restante do pedido, ou todo o consumo
+     * restante (cancelamento total, sem resíduo de arredondamento).
+     */
+    public function reverse(Order $order, ?Money $amount = null): void
+    {
+        $budget = $this->lockedBudget($order);
+
+        if ($budget === null) {
+            return;
+        }
+
+        $consumed = $this->sumFor($order, $budget, 'consumed_delta');
+        $reversal = $amount === null ? $consumed : min($amount->cents, $consumed);
+
+        if ($reversal > 0) {
+            $this->movement($budget, $order, BudgetMovementType::Reversal, 0, -$reversal);
+        }
+    }
+
     private function lockedBudget(Order $order): ?CostCenterBudget
     {
         if (DB::transactionLevel() === 0) {
@@ -115,10 +140,18 @@ final readonly class BudgetLedger
 
     private function reservedFor(Order $order, CostCenterBudget $budget): int
     {
+        return $this->sumFor($order, $budget, 'reserved_delta');
+    }
+
+    /**
+     * @param  'reserved_delta'|'consumed_delta'  $column
+     */
+    private function sumFor(Order $order, CostCenterBudget $budget, string $column): int
+    {
         return (int) DB::table('budget_movements')
             ->where('cost_center_budget_id', $budget->id)
             ->where('order_id', $order->id)
-            ->sum('reserved_delta');
+            ->sum($column);
     }
 
     private function assertFits(CostCenterBudget $budget, Money $amount): void

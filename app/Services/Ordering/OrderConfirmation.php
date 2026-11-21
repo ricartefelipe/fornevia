@@ -16,7 +16,6 @@ use App\Services\Platform\PlanLimits;
 use App\Support\Clock\Clock;
 use App\Support\Outbox\Outbox;
 use App\Support\Tenancy\CurrentContext;
-use App\Support\Tenancy\ExecutionContext;
 use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Context;
@@ -33,8 +32,8 @@ use LogicException;
  *
  * Ordem de locks (ADR-006): saldos de estoque (depósito, SKU) → conta de
  * crédito → orçamento → contador de uso do plano → contador de numeração.
- * Estoque, crédito, custos, contadores e outbox são gravados no contexto de
- * sistema do mesmo usuário (ADR-014).
+ * Tudo é gravado no contexto de sistema do mesmo usuário (ADR-014): o
+ * contexto de comprador só lê pedidos, estoque, crédito e orçamento.
  */
 final readonly class OrderConfirmation
 {
@@ -56,10 +55,9 @@ final readonly class OrderConfirmation
             throw new LogicException('A confirmação do pedido exige transação aberta.');
         }
 
-        $items = OrderItem::query()->where('order_id', $order->id)->orderBy('line_number')->get();
-        $execution = $this->context->require();
+        $this->db->asSystem(function () use ($order): void {
+            $items = OrderItem::query()->where('order_id', $order->id)->orderBy('line_number')->get();
 
-        $this->db->run(ExecutionContext::system($execution->requireTenantId(), $execution->userId), function () use ($order, $items): void {
             $this->snapshotCosts($items);
 
             $backorder = DB::table('skus')
@@ -111,12 +109,16 @@ final readonly class OrderConfirmation
                     'unit_net_price_cents' => $item->unit_net_price_cents->cents,
                 ])->all()),
             ]);
-        });
 
-        $this->event($order, 'order.confirmed', ['total_cents' => $order->total_cents->cents, 'items' => $items->count()]);
+            $this->event($order, 'order.confirmed', ['total_cents' => $order->total_cents->cents, 'items' => $items->count()]);
+        });
     }
 
     /**
+     * Evento do histórico do pedido. Pedidos e eventos são somente leitura
+     * no contexto de comprador: o chamador já está no contexto de sistema
+     * do mesmo usuário (ou da equipe).
+     *
      * @param  array<string, mixed>  $data
      */
     public function event(Order $order, string $type, array $data): void

@@ -24,8 +24,11 @@ use Illuminate\Support\Facades\Schema;
  *
  * Todas as tabelas são da empresa compradora (RLS required) e as chaves
  * estrangeiras incluem a empresa: nenhuma linha aponta para registro de outra
- * empresa do mesmo distribuidor. O comprador administra as da própria
- * empresa; a equipe do distribuidor lê.
+ * empresa do mesmo distribuidor. O comprador administra regras, delegações e
+ * valores de orçamento da própria empresa; níveis do pedido, decisões e
+ * movimentos de orçamento são somente leitura no contexto de comprador e
+ * gravados pelas Actions no contexto de sistema do mesmo usuário (ADR-014),
+ * como estoque e crédito.
  */
 return new class extends Migration
 {
@@ -136,6 +139,7 @@ return new class extends Migration
         DB::statement("create unique index order_approval_steps_unique on order_approval_steps
             (tenant_id, order_id, level_number) where status <> 'superseded'");
         TenantSchema::enableRowLevelSecurity('order_approval_steps', 'required');
+        TenantSchema::buyerReadOnly('order_approval_steps');
         DB::statement(sprintf('revoke delete, truncate on order_approval_steps from %s', TenantSchema::appRole()));
 
         Schema::create('order_approval_decisions', function (Blueprint $table): void {
@@ -168,6 +172,7 @@ return new class extends Migration
         DB::statement('create unique index order_approval_decisions_one_principal on order_approval_decisions
             (tenant_id, order_approval_step_id, principal_membership_id) where invalidated_at is null');
         TenantSchema::enableRowLevelSecurity('order_approval_decisions', 'required');
+        TenantSchema::buyerReadOnly('order_approval_decisions');
         // Histórico: apenas inserção e marcação de invalidação, uma única vez.
         DB::statement(sprintf('revoke update, delete, truncate on order_approval_decisions from %s', TenantSchema::appRole()));
         DB::statement(sprintf('grant update (invalidated_at) on order_approval_decisions to %s', TenantSchema::appRole()));
@@ -219,6 +224,7 @@ return new class extends Migration
             when 'reversal' then reserved_delta = 0 and consumed_delta < 0
             else false end)");
         TenantSchema::enableRowLevelSecurity('budget_movements', 'required');
+        TenantSchema::buyerReadOnly('budget_movements');
         TenantSchema::appendOnly('budget_movements');
 
         DB::unprepared(<<<'SQL'

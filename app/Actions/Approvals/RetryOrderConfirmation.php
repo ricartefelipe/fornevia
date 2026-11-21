@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Approvals;
 
+use App\Actions\Approvals\Support\ApprovalSteps;
 use App\Domain\Approvals\Exceptions\OrderNotAwaitingApproval;
 use App\Enums\Approvals\ApprovalOutcome;
 use App\Enums\Identity\Permission;
@@ -12,8 +13,8 @@ use App\Enums\Ordering\CommercialStatus;
 use App\Models\Ordering\Order;
 use App\Services\Approvals\ApprovedOrderFinalizer;
 use App\Support\Auth\Access;
+use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Nova tentativa de confirmar um pedido aprovado que não pôde ser
@@ -25,6 +26,7 @@ final readonly class RetryOrderConfirmation
     public function __construct(
         private Access $access,
         private ApprovedOrderFinalizer $finalizer,
+        private TenantDatabase $db,
     ) {}
 
     public function handle(Order $order): ApprovalOutcome
@@ -36,10 +38,15 @@ final readonly class RetryOrderConfirmation
             throw new AuthorizationException('Sem permissão para confirmar este pedido.');
         }
 
-        return DB::transaction(function () use ($order): ApprovalOutcome {
-            $locked = Order::query()->lockForUpdate()->findOrFail($order->id);
+        // Pedidos são somente leitura no contexto de comprador (ADR-014).
+        return $this->db->asSystem(function () use ($order): ApprovalOutcome {
+            $locked = Order::query()
+                ->where('buyer_company_id', $order->buyer_company_id)
+                ->lockForUpdate()
+                ->findOrFail($order->id);
 
-            if ($locked->commercial_status !== CommercialStatus::Approved || $locked->approval_status !== ApprovalStatus::Approved) {
+            if ($locked->commercial_status !== CommercialStatus::Approved || $locked->approval_status !== ApprovalStatus::Approved
+                || ApprovalSteps::current($locked) !== null) {
                 throw new OrderNotAwaitingApproval('Somente pedidos aprovados e ainda não confirmados podem ser confirmados novamente.');
             }
 

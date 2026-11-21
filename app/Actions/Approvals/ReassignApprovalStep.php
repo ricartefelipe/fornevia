@@ -18,6 +18,7 @@ use App\Services\Audit\AuditRecorder;
 use App\Services\Ordering\OrderConfirmation;
 use App\Support\Auth\Access;
 use App\Support\Http\UntrustedId;
+use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
@@ -34,6 +35,7 @@ final readonly class ReassignApprovalStep
         private ApprovalEligibility $eligibility,
         private OrderConfirmation $confirmation,
         private AuditRecorder $audit,
+        private TenantDatabase $db,
     ) {}
 
     /**
@@ -56,45 +58,57 @@ final readonly class ReassignApprovalStep
         $ids = array_values(array_unique(array_map(static fn (mixed $id): string => UntrustedId::uuid($id, Membership::class), $approverIds)));
 
         DB::transaction(function () use ($order, $ids, $reason): void {
-            $locked = Order::query()->lockForUpdate()->findOrFail($order->id);
+            // Níveis e eventos são somente leitura no contexto de comprador
+            // (ADR-014); a auditoria fica no contexto de quem reatribuiu.
+            $audit = $this->db->asSystem(fn (): array => $this->reassign($order, $ids));
 
-            if ($locked->commercial_status !== CommercialStatus::PendingApproval || $locked->approval_status !== ApprovalStatus::Pending) {
-                throw new OrderNotAwaitingApproval('Este pedido não está aguardando aprovação.');
-            }
-
-            $step = ApprovalSteps::current($locked) ?? throw new OrderNotAwaitingApproval('Este pedido não tem nível de aprovação pendente.');
-            $requesterId = (string) $locked->placed_by_membership_id;
-
-            // Só níveis bloqueados (RN-052): com quórum alcançável, os
-            // aprovadores retratados na submissão continuam valendo.
-            if (! ApprovalFlow::isBlocked(ApprovalSteps::view($step), $requesterId, $this->eligibility->eligible($locked->buyer_company_id, $step->approver_membership_ids))) {
-                throw new ApprovalNotAllowed('O nível pendente ainda tem aprovadores suficientes; a reatribuição é apenas para níveis bloqueados.', ['field' => 'approvers']);
-            }
-
-            $eligible = $this->eligibility->eligible($locked->buyer_company_id, $ids);
-
-            if (count($eligible) !== count($ids) || in_array($requesterId, $ids, true)) {
-                throw new ApprovalNotAllowed('Escolha aprovadores ativos da empresa, com permissão de aprovar, diferentes do solicitante.', ['field' => 'approvers']);
-            }
-
-            $view = ApprovalSteps::view($step);
-            $approved = $view->approvedPrincipals($requesterId);
-            $newApprovers = array_values(array_unique([...$approved, ...$ids]));
-            $remaining = count(array_filter($ids, static fn (string $id): bool => ! $view->hasDecided($id)));
-
-            if (count($approved) + $remaining < $step->required_approvals) {
-                throw new ApprovalNotAllowed("O nível exige {$step->required_approvals} aprovações: escolha aprovadores suficientes.", ['field' => 'approvers']);
-            }
-
-            $previous = $step->approver_membership_ids;
-            $step->forceFill(['approver_membership_ids' => $newApprovers])->save();
-
-            $this->audit->record('order.approval_step_reassigned', $locked, [
-                'level' => $step->level_number,
-                'before' => $previous,
-                'after' => $newApprovers,
-            ], $reason);
-            $this->confirmation->event($locked, 'order.approval_step_reassigned', ['level' => $step->level_number]);
+            $this->audit->record('order.approval_step_reassigned', $order, $audit, $reason);
         });
+    }
+
+    /**
+     * @param  list<string>  $ids
+     * @return array{level: int, before: list<string>, after: list<string>}
+     */
+    private function reassign(Order $order, array $ids): array
+    {
+        $locked = Order::query()
+            ->where('buyer_company_id', $order->buyer_company_id)
+            ->lockForUpdate()
+            ->findOrFail($order->id);
+
+        if ($locked->commercial_status !== CommercialStatus::PendingApproval || $locked->approval_status !== ApprovalStatus::Pending) {
+            throw new OrderNotAwaitingApproval('Este pedido não está aguardando aprovação.');
+        }
+
+        $step = ApprovalSteps::current($locked) ?? throw new OrderNotAwaitingApproval('Este pedido não tem nível de aprovação pendente.');
+        $requesterId = (string) $locked->placed_by_membership_id;
+
+        // Só níveis bloqueados (RN-052): com quórum alcançável, os
+        // aprovadores retratados na submissão continuam valendo.
+        if (! ApprovalFlow::isBlocked(ApprovalSteps::view($step), $requesterId, $this->eligibility->eligible($locked->buyer_company_id, $step->approver_membership_ids))) {
+            throw new ApprovalNotAllowed('O nível pendente ainda tem aprovadores suficientes; a reatribuição é apenas para níveis bloqueados.', ['field' => 'approvers']);
+        }
+
+        $eligible = $this->eligibility->eligible($locked->buyer_company_id, $ids);
+
+        if (count($eligible) !== count($ids) || in_array($requesterId, $ids, true)) {
+            throw new ApprovalNotAllowed('Escolha aprovadores ativos da empresa, com permissão de aprovar, diferentes do solicitante.', ['field' => 'approvers']);
+        }
+
+        $view = ApprovalSteps::view($step);
+        $approved = $view->approvedPrincipals($requesterId);
+        $newApprovers = array_values(array_unique([...$approved, ...$ids]));
+        $remaining = count(array_filter($ids, static fn (string $id): bool => ! $view->hasDecided($id)));
+
+        if (count($approved) + $remaining < $step->required_approvals) {
+            throw new ApprovalNotAllowed("O nível exige {$step->required_approvals} aprovações: escolha aprovadores suficientes.", ['field' => 'approvers']);
+        }
+
+        $previous = array_values($step->approver_membership_ids);
+        $step->forceFill(['approver_membership_ids' => $newApprovers])->save();
+        $this->confirmation->event($locked, 'order.approval_step_reassigned', ['level' => $step->level_number]);
+
+        return ['level' => $step->level_number, 'before' => $previous, 'after' => $newApprovers];
     }
 }

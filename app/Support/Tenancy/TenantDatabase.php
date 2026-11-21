@@ -72,6 +72,26 @@ final readonly class TenantDatabase
     }
 
     /**
+     * Executa no contexto de sistema do MESMO usuário (ADR-014): gravação em
+     * tabelas que os contextos de comprador e de usuário só leem (estoque,
+     * crédito, pedidos, níveis e decisões de aprovação, orçamento). Quem
+     * chama já autorizou a operação no contexto original; dentro do
+     * callback as consultas enxergam todas as empresas do tenant e precisam
+     * filtrar a empresa explicitamente.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    public function asSystem(Closure $callback): mixed
+    {
+        $active = $this->current->require();
+
+        return $this->run(ExecutionContext::system($active->requireTenantId(), $active->userId), $callback);
+    }
+
+    /**
      * Valores efetivamente ativos na sessão do banco (diagnóstico e testes).
      *
      * @return array<string, string>

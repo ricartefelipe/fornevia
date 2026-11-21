@@ -6,13 +6,11 @@ namespace App\Actions\Ordering;
 
 use App\Data\Ordering\CartLineQuote;
 use App\Data\Ordering\PlaceOrderData;
-use App\Domain\Approvals\ApprovalContext;
 use App\Domain\Ordering\Exceptions\CartAlreadyConverted;
 use App\Domain\Ordering\Exceptions\CartNotReady;
 use App\Domain\Ordering\Exceptions\InvalidCheckout;
 use App\Domain\Ordering\Exceptions\PricesChanged;
 use App\Domain\Shared\Quantity;
-use App\Enums\Approvals\ApprovalStepStatus;
 use App\Enums\Buyers\AddressKind;
 use App\Enums\Identity\Permission;
 use App\Enums\Ordering\ApprovalStatus;
@@ -20,7 +18,6 @@ use App\Enums\Ordering\CartStatus;
 use App\Enums\Ordering\CommercialStatus;
 use App\Enums\Ordering\OrderSource;
 use App\Models\Approvals\ApprovalRule;
-use App\Models\Approvals\OrderApprovalStep;
 use App\Models\Buyers\BuyerAddress;
 use App\Models\Buyers\BuyerCompany;
 use App\Models\Buyers\BuyerUnit;
@@ -30,23 +27,21 @@ use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderItem;
 use App\Models\Pricing\BuyerPaymentTerm;
 use App\Models\Pricing\PaymentTerm;
-use App\Services\Approvals\ApprovalFingerprint;
 use App\Services\Approvals\ApprovalRuleResolver;
+use App\Services\Approvals\ApprovalSnapshot;
 use App\Services\Approvals\BudgetLedger;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Ordering\CartPricing;
 use App\Services\Ordering\OrderConfirmation;
 use App\Services\Ordering\OrderNumbering;
+use App\Services\Platform\PlanLimits;
 use App\Support\Auth\Access;
 use App\Support\Clock\Clock;
 use App\Support\Http\UntrustedId;
 use App\Support\Idempotency\IdempotencyGuard;
 use App\Support\Outbox\Outbox;
-use App\Support\Tenancy\CurrentContext;
-use App\Support\Tenancy\ExecutionContext;
 use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Support\Facades\Context;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Confirmação transacional do pedido a partir do carrinho (RF-061, RN-060).
@@ -65,15 +60,14 @@ use Illuminate\Support\Facades\DB;
  * Ordem de locks (ADR-006): carrinho → chave de idempotência → saldos de
  * estoque (depósito, SKU) → conta de crédito → orçamento → contador do
  * plano → contador de numeração do tenant.
- * Estoque, crédito, custos e contador são gravados no contexto de sistema
- * do mesmo usuário (ADR-014), pois o contexto de comprador só lê essas
- * tabelas.
+ * Pedido, itens, níveis, estoque, crédito, orçamento, custos e contadores
+ * são gravados no contexto de sistema do mesmo usuário (ADR-014), pois o
+ * contexto de comprador só lê essas tabelas.
  */
 final readonly class PlaceOrder
 {
     public function __construct(
         private Access $access,
-        private CurrentContext $context,
         private TenantDatabase $db,
         private IdempotencyGuard $idempotency,
         private CartPricing $cartPricing,
@@ -81,6 +75,7 @@ final readonly class PlaceOrder
         private BudgetLedger $budgets,
         private OrderConfirmation $confirmation,
         private OrderNumbering $numbering,
+        private PlanLimits $limits,
         private AuditRecorder $audit,
         private Clock $clock,
     ) {}
@@ -142,24 +137,26 @@ final readonly class PlaceOrder
             ]);
         }
 
-        $order = $this->createOrder($cart, $buyer, $data, $shipping, $billing, $term, $unitId, $costCenterId, $quote->totals);
-        $items = $this->createItems($order, $quote->lines);
+        // Pedidos são somente leitura no contexto de comprador: a gravação
+        // roda no contexto de sistema do mesmo usuário, depois de todas as
+        // validações acima (ADR-014).
+        [$order, $rule] = $this->db->asSystem(function () use ($cart, $buyer, $data, $shipping, $billing, $term, $unitId, $costCenterId, $quote): array {
+            // Assinatura ativa antes de gravar, com ou sem aprovação (a
+            // confirmação volta a verificar ao consumir a cota do plano).
+            $this->limits->assertWritable();
 
-        $rule = $this->rules->resolve($buyer->id, new ApprovalContext(
-            total: $order->total_cents,
-            costCenterId: $costCenterId,
-            buyerUnitId: $unitId,
-            categoryIds: $this->categoryIds($items),
-            requesterRoleKey: $membership->role->key,
-        ));
+            $order = $this->createOrder($cart, $buyer, $data, $shipping, $billing, $term, $unitId, $costCenterId, $quote->totals);
+            $this->createItems($order, $quote->lines);
+            $rule = $this->rules->forOrder($order);
 
-        if ($rule !== null) {
-            $this->submitForApproval($order, $rule);
-            $this->audit->record('order.submitted_for_approval', $order, ['number' => $order->number, 'total_cents' => $order->total_cents->cents, 'rule' => $rule->name]);
-        } else {
-            $this->confirmation->confirm($order);
-            $this->audit->record('order.placed', $order, ['number' => $order->number, 'total_cents' => $order->total_cents->cents]);
-        }
+            $rule !== null ? $this->submitForApproval($order, $rule) : $this->confirmation->confirm($order);
+
+            return [$order, $rule];
+        });
+
+        $rule !== null
+            ? $this->audit->record('order.submitted_for_approval', $order, ['number' => $order->number, 'total_cents' => $order->total_cents->cents, 'rule' => $rule->name])
+            : $this->audit->record('order.placed', $order, ['number' => $order->number, 'total_cents' => $order->total_cents->cents]);
 
         $cart->forceFill(['status' => CartStatus::Converted, 'converted_order_id' => $order->id])->save();
 
@@ -178,50 +175,15 @@ final readonly class PlaceOrder
      */
     private function submitForApproval(Order $order, ApprovalRule $rule): void
     {
-        $order->forceFill([
-            'approval_status' => ApprovalStatus::Pending,
-            'approval_rule_id' => $rule->id,
-            'approval_rule_name' => $rule->name,
-            'approval_fingerprint' => ApprovalFingerprint::of($order),
-        ])->save();
-
-        foreach ($rule->levels as $level) {
-            (new OrderApprovalStep)->forceFill([
-                'buyer_company_id' => $order->buyer_company_id,
-                'order_id' => $order->id,
-                'level_number' => $level->level_number,
-                'required_approvals' => $level->required_approvals,
-                // Ordem determinística: o retrato não depende da ordem de leitura.
-                'approver_membership_ids' => $level->approvers->pluck('membership_id')->map(static fn (mixed $id): string => (string) $id)->sort()->values()->all(),
-                'status' => ApprovalStepStatus::Pending,
-            ])->save();
-        }
-
+        ApprovalSnapshot::take($order, $rule);
         $this->budgets->reserve($order);
-
-        $execution = $this->context->require();
-        $this->db->run(ExecutionContext::system($execution->requireTenantId(), $execution->userId), fn () => $this->numbering->assign($order));
+        $this->numbering->assign($order);
 
         $this->confirmation->event($order, 'order.submitted_for_approval', [
             'total_cents' => $order->total_cents->cents,
             'rule' => $rule->name,
             'levels' => $rule->levels->count(),
         ]);
-    }
-
-    /**
-     * @param  list<array{item: OrderItem, line: CartLineQuote}>  $items
-     * @return list<string>
-     */
-    private function categoryIds(array $items): array
-    {
-        return array_values(array_unique(DB::table('skus')
-            ->join('products', 'products.id', '=', 'skus.product_id')
-            ->whereIn('skus.id', array_map(static fn (array $pair): string => $pair['item']->sku_id, $items))
-            ->whereNotNull('products.category_id')
-            ->pluck('products.category_id')
-            ->map(static fn (mixed $id): string => (string) $id)
-            ->all()));
     }
 
     /**
@@ -321,12 +283,9 @@ final readonly class PlaceOrder
 
     /**
      * @param  list<CartLineQuote>  $lines
-     * @return list<array{item: OrderItem, line: CartLineQuote}>
      */
-    private function createItems(Order $order, array $lines): array
+    private function createItems(Order $order, array $lines): void
     {
-        $items = [];
-
         foreach (array_values($lines) as $index => $line) {
             $amounts = $line->amounts ?? throw new CartNotReady('Item sem preço.');
             $item = new OrderItem;
@@ -352,11 +311,7 @@ final readonly class PlaceOrder
                 'quantity_reserved' => Quantity::zero(),
                 'quantity_backordered' => Quantity::zero(),
             ])->save();
-
-            $items[] = ['item' => $item, 'line' => $line];
         }
-
-        return $items;
     }
 
     /**
