@@ -29,7 +29,7 @@ ecossistema maduro para autenticação, filas e testes.
 | PostgreSQL | 18.7 | RLS, exclusion constraints, `NULLS NOT DISTINCT` |
 | Redis | 8.8.4 | Filas, cache e locks |
 | Node (build) | 26.13.1 LTS | Vite 8.3, Tailwind 4.3 |
-| Nginx | 1.30.6 (unprivileged) | Linha estável |
+| Nginx | 1.31.7 (unprivileged) | Linha mainline: correções de segurança (HTTP/2, HTTP/3, TLS) sem versão estável equivalente publicada na imagem sem privilégios |
 
 Imagens Docker e GitHub Actions são fixadas por versão exata (actions por
 SHA de commit). Nenhuma tag `latest`.

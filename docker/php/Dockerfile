@@ -12,7 +12,7 @@ ARG PHP_IMAGE=php:8.5.12-fpm-alpine3.24
 ARG NODE_IMAGE=node:26.13.1-alpine3.24
 ARG COMPOSER_IMAGE=composer:2.11.2
 ARG EXT_INSTALLER_IMAGE=mlocati/php-extension-installer:2.13.2
-ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.30.6-alpine3.24
+ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.31.7-alpine3.24
 
 FROM ${COMPOSER_IMAGE} AS composer-bin
 FROM ${EXT_INSTALLER_IMAGE} AS ext-installer
