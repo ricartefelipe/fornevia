@@ -57,6 +57,8 @@ return [
                 'Pedido duplicado pelo cliente',
             );
 
+            $gate->pass($args['hold'] ?? null);
+
             return ['status' => $order->commercial_status->value];
         });
     },

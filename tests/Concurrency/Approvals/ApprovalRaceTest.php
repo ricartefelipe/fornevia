@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Approvals\Exceptions\BudgetExceeded;
+use App\Domain\Approvals\Exceptions\OrderNotAwaitingApproval;
 use App\Enums\Identity\SystemRole;
 use Illuminate\Support\Facades\DB;
 use Tests\Integration\Approvals\ApprovalFixtures as Fx;
@@ -13,7 +14,8 @@ use Tests\Support\Concurrency\ConcurrencyHarness;
  * Aprovação sob concorrência, com processos separados.
  *
  * O pedido é bloqueado antes de cada decisão: o segundo aprovador espera o
- * primeiro e enxerga a decisão dele. O orçamento é bloqueado antes da
+ * primeiro e enxerga a decisão dele, e a aprovação final que concorre com o
+ * cancelamento enxerga o pedido cancelado. O orçamento é bloqueado antes da
  * reserva: a segunda submissão enxerga a reserva da primeira (RN-055).
  */
 it('confirma uma única vez quando duas aprovações simultâneas completam o quórum', function (): void {
@@ -35,7 +37,9 @@ it('confirma uma única vez quando duas aprovações simultâneas completam o qu
         $first = $harness->start('decide-approval', $args($ana, ['hold' => 'ana-segura-commit']), 'aprovadora-ana');
         $harness->waitUntilWaitingAt('ana-segura-commit', 1);
         $second = $harness->start('decide-approval', $args($bruno), 'aprovador-bruno');
-        $harness->waitUntilBlockedOnLock('aprovador-bruno');
+        // Espera no pedido, e não apenas no nível: o lock do pedido é o que
+        // serializa decisão, cancelamento, nova tentativa e reatribuição.
+        $harness->waitUntilBlockedOnRow('aprovador-bruno', 'orders');
         $hold->release();
         [$ra, $rb] = [$first->result(), $second->result()];
     } finally {
@@ -46,6 +50,42 @@ it('confirma uma única vez quando duas aprovações simultâneas completam o qu
         ->and($rb)->toBe(['ok' => true, 'data' => ['outcome' => 'confirmed']])
         ->and(Fx::reservations($scenario, $order))->toBe(1)
         ->and(array_count_values(Fx::events($scenario, $order))['order.confirmed'] ?? 0)->toBe(1);
+});
+
+it('não confirma pedido cancelado enquanto a aprovação final esperava o lock', function (): void {
+    $scenario = OrderingScenario::create(stock: '50', unitPriceCents: 10_000);
+    $buyer = $scenario->buyerWithCart(quantity: '2', sameCompany: true);
+    $ana = $scenario->tenant->addBuyerUser($buyer['company'], SystemRole::Approver);
+    Fx::rule($scenario, $buyer['company'], [[1, [$ana]]]);
+    $center = Fx::costCenter($scenario, $buyer['company']);
+    $budget = Fx::budget($scenario, $center, 100_000);
+    $order = Fx::place($scenario, $buyer, ['costCenterId' => $center->id]);
+    $args = static fn ($member, array $extra = []): array => [
+        'tenant_id' => $scenario->tenant->organization->id, 'user_id' => $member->user_id, 'membership_id' => $member->id,
+        'buyer_company_id' => $buyer['company']->id, 'order_id' => $order->id, ...$extra,
+    ];
+
+    $harness = new ConcurrencyHarness;
+    $hold = $harness->gate('cancelamento-segura-commit');
+
+    try {
+        $cancel = $harness->start('cancel-order', $args($buyer['membership'], ['hold' => 'cancelamento-segura-commit']), 'solicitante-cancela');
+        $harness->waitUntilWaitingAt('cancelamento-segura-commit', 1);
+        $approve = $harness->start('decide-approval', $args($ana), 'aprovadora-ana');
+        $harness->waitUntilBlockedOnRow('aprovadora-ana', 'orders');
+        $hold->release();
+        [$rc, $ra] = [$cancel->result(), $approve->result()];
+    } finally {
+        $harness->shutdown();
+    }
+
+    expect($rc)->toBe(['ok' => true, 'data' => ['status' => 'cancelled']])
+        ->and($ra['ok'])->toBeFalse()
+        ->and($ra['error'])->toBe(OrderNotAwaitingApproval::class)
+        ->and(Fx::reservations($scenario, $order))->toBe(0)
+        ->and(Fx::budgetState($scenario, $budget))->toBe(['reserved' => 0, 'consumed' => 0])
+        ->and(Fx::events($scenario, $order))->not->toContain('order.confirmed')
+        ->and($scenario->system(static fn (): int => DB::table('order_approval_decisions')->count()))->toBe(0);
 });
 
 it('não deixa duas submissões simultâneas ultrapassarem o orçamento do centro de custo', function (): void {
