@@ -73,7 +73,7 @@
                                     <td class="text-right font-medium">{{ $order->total_cents->format() }}</td>
                                     <td>
                                         @include('livewire.portal.ordering.partials.status-badge', ['status' => $order->commercial_status])
-                                        @if (\App\Livewire\Portal\Ordering\OrderShow::awaitsConfirmation($order))
+                                        @if (\App\Actions\Approvals\Support\OrderApprovalSummary::awaitsConfirmation($order))
                                             <span class="mt-1 block text-xs text-amber-800">Confirmação com o distribuidor pendente</span>
                                         @endif
                                     </td>

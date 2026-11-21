@@ -66,7 +66,7 @@
             </x-ui.alert>
         @endif
 
-        @if (\App\Livewire\Portal\Ordering\OrderShow::awaitsConfirmation($order))
+        @if (\App\Actions\Approvals\Support\OrderApprovalSummary::awaitsConfirmation($order))
             <x-ui.alert type="warning" class="mt-4">
                 <p class="font-semibold">Aprovado internamente, mas ainda não confirmado com o distribuidor.</p>
                 @if ($order->confirmation_issue)

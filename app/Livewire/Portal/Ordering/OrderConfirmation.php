@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Portal\Ordering;
 
+use App\Actions\Approvals\Support\OrderApprovalSummary;
 use App\Actions\Ordering\Portal\BuyerOrders;
 use App\Enums\Ordering\CommercialStatus;
 use App\Models\Ordering\Order;
@@ -57,7 +58,7 @@ final class OrderConfirmation extends Component
             },
             'pendingApproval' => $pendingApproval,
             'confirmed' => $confirmed,
-            'approvalLevels' => OrderShow::approvalLevels($order),
+            'approvalLevels' => OrderApprovalSummary::levels($order),
         ])->title($title);
     }
 }

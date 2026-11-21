@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Staff\Orders;
 
+use App\Actions\Approvals\Support\OrderApprovalSummary;
 use App\Actions\Ordering\Staff\CancelStaffOrderItems;
 use App\Actions\Ordering\Staff\LoadStaffOrderDetail;
 use App\Actions\Ordering\Staff\StaffOrderDetail;
@@ -12,7 +13,6 @@ use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Quantity;
 use App\Enums\Identity\Permission;
-use App\Livewire\Portal\Ordering\OrderShow as PortalOrderShow;
 use App\Models\Ordering\OrderEvent;
 use App\Models\Ordering\OrderItem;
 use App\Support\Auth\Access;
@@ -130,11 +130,11 @@ final class OrderShow extends Component
             'order' => $detail->order,
             'canManage' => $access->can(Permission::OrdersManage),
             'canViewBuyer' => $access->can(Permission::BuyersView),
-            'approvalLevels' => PortalOrderShow::approvalLevels($detail->order),
-            'approvalEventLabels' => PortalOrderShow::APPROVAL_EVENT_LABELS,
+            'approvalLevels' => OrderApprovalSummary::levels($detail->order),
+            'approvalEventLabels' => OrderApprovalSummary::EVENT_LABELS,
             'eventDetails' => $detail->events->mapWithKeys(static fn (OrderEvent $event): array => [
-                $event->id => isset(PortalOrderShow::APPROVAL_EVENT_LABELS[$event->type])
-                    ? [...$detail->eventDetails($event), ...PortalOrderShow::approvalEventDetails($event->data, withTotal: true)]
+                $event->id => isset(OrderApprovalSummary::EVENT_LABELS[$event->type])
+                    ? [...$detail->eventDetails($event), ...OrderApprovalSummary::eventDetails($event->data, withTotal: true)]
                     : $detail->eventDetails($event),
             ])->all(),
         ])->title('Pedido '.$detail->order->number);

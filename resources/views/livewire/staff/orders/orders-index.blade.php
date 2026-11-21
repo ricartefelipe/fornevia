@@ -76,7 +76,7 @@
                             <td>{{ $order->purchase_order_reference ?? '—' }}</td>
                             <td>
                                 @include('livewire.staff.orders.partials.status-badge', ['status' => $order->commercial_status])
-                                @if (\App\Livewire\Portal\Ordering\OrderShow::awaitsConfirmation($order))
+                                @if (\App\Actions\Approvals\Support\OrderApprovalSummary::awaitsConfirmation($order))
                                     <span class="mt-1 block text-xs text-amber-800">Confirmação pendente</span>
                                 @endif
                             </td>

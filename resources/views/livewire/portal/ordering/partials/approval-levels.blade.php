@@ -1,7 +1,7 @@
 {{--
     Níveis da aprovação interna do pedido (somente leitura): quórum,
     situação, aprovadores retratados na submissão e decisões, inclusive as
-    invalidadas pela reavaliação. Parâmetros: $levels (OrderShow::approvalLevels),
+    invalidadas pela reavaliação. Parâmetros: $levels (OrderApprovalSummary::levels),
     $timezone e $levelsLabel (nome acessível da lista).
 --}}
 <ol class="mt-3 space-y-4" aria-label="{{ $levelsLabel ?? 'Níveis de aprovação' }}">
