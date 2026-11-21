@@ -34,6 +34,13 @@ final class MorphMap
         'price_list' => Pricing\PriceList::class,
         'price_list_item' => Pricing\PriceListItem::class,
         'negotiated_price' => Pricing\NegotiatedPrice::class,
+        'warehouse' => Inventory\Warehouse::class,
+        'credit_account' => Credit\CreditAccount::class,
+        'credit_exception' => Credit\CreditException::class,
+        'cart' => Ordering\Cart::class,
+        'shopping_list' => Ordering\ShoppingList::class,
+        'order' => Ordering\Order::class,
+        'order_item' => Ordering\OrderItem::class,
         'plan' => Platform\Plan::class,
         'subscription' => Platform\Subscription::class,
     ];

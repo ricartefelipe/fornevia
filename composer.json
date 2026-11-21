@@ -59,13 +59,11 @@
         "analyse": "phpstan analyse --memory-limit=1G --no-progress",
         "test": [
             "@php artisan config:clear --ansi",
-            "@php artisan fornevia:test-database --ansi",
             "pest --colors=always"
         ],
         "test:unit": "pest --testsuite=Unit",
         "test:coverage": [
             "@php artisan config:clear --ansi",
-            "@php artisan fornevia:test-database --ansi",
             "pest --coverage --min=0 --coverage-clover=build/coverage/clover.xml --log-junit=build/junit.xml"
         ]
     },

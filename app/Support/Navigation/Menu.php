@@ -43,6 +43,7 @@ final readonly class Menu
         'portal.home' => ['Início', null],
         'portal.catalog' => ['Catálogo', Permission::PortalCatalog],
         'portal.cart' => ['Carrinho', Permission::PortalCart],
+        'portal.quick-order' => ['Pedido rápido', Permission::PortalCart],
         'portal.lists' => ['Listas de compra', Permission::PortalCart],
         'portal.quotes' => ['Cotações', Permission::PortalQuotes],
         'portal.approvals' => ['Aprovações', Permission::PortalApprovals],
@@ -52,6 +53,20 @@ final readonly class Menu
     ];
 
     public function __construct(private Access $access) {}
+
+    /**
+     * Padrão de rota que marca o item como ativo: o módulo inteiro na equipe
+     * ("inventory.*" destaca Estoque em todas as subtelas) e a própria
+     * seção no portal, cujas rotas compartilham o prefixo "portal.".
+     */
+    public static function activePattern(string $route): string
+    {
+        if (str_starts_with($route, 'portal.') || ! str_contains($route, '.')) {
+            return $route.'*';
+        }
+
+        return strstr($route, '.', true).'.*';
+    }
 
     /**
      * @return list<array{route: string, label: string}>

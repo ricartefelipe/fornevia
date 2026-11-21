@@ -1,7 +1,7 @@
 <ul class="space-y-1 px-3 py-4">
     @foreach ($items as $item)
         <li>
-            <a href="{{ route($item['route']) }}" class="fv-nav-link" @if (request()->routeIs($item['route'].'*')) aria-current="page" @endif>
+            <a href="{{ route($item['route']) }}" class="fv-nav-link" @if (request()->routeIs(\App\Support\Navigation\Menu::activePattern($item['route']))) aria-current="page" @endif>
                 {{ $item['label'] }}
             </a>
         </li>

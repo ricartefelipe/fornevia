@@ -424,3 +424,19 @@ imagem de produção, que contém apenas os assets compilados. A exceção é
 pontual, justificada e revista periodicamente; qualquer outro alerta
 continua reprovando a CI.
 
+---
+
+## ADR-022 — Numeração de pedidos por distribuidor
+
+**Status:** aceita
+
+**Decisão.** O número do pedido (`PED-0000001`) vem de um contador por
+tenant (`order_number_counters`), incrementado no fim da confirmação, depois
+de estoque, crédito e contador de uso do plano. Até lá o pedido usa um
+número provisório único.
+
+**Motivo.** Uma sequência global revelaria a cada distribuidor o volume de
+pedidos dos demais. Incrementar o contador no fim mantém o lock por tenant
+apenas no trecho final, que já é serializado pelo contador de uso do plano,
+sem nova contenção nas etapas de estoque e crédito.
+

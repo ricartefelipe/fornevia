@@ -31,6 +31,18 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   simulador que explica a precedência; cache invalidado por versão.
 - Entrada de quantidades em português nas telas de preço e limites de
   magnitude para valores e quantidades.
+- Estoque por depósito com ledger de movimentações e saldo projetado no
+  banco: entradas, ajustes, transferências, reservas e histórico.
+- Crédito comercial: contas, limites, bloqueio, tolerância de vencidos,
+  exceções temporárias e posição calculada pela mesma fórmula do checkout.
+- Pedidos: confirmação transacional com reserva, crédito, cota do plano,
+  eventos, outbox e idempotência; cancelamento total ou parcial; estados
+  comercial, de aprovação, financeiro e de atendimento separados.
+- Portal do comprador: carrinho, pedido rápido por SKU, listas de compra,
+  recompra, checkout e meus pedidos.
+- Pedidos da equipe com filtros, detalhe, custos restritos e carteira do
+  representante.
+- Gate da auditoria npm com exceções justificadas e revisadas.
 
 ### Alterado
 
@@ -43,5 +55,7 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   grupos, de registros de auditoria de terceiros e sem escrita nas
   configurações de preço do tenant (RLS).
 - Envio temporário de mídias restrito a quem altera o catálogo.
+- Reservas, movimentações de estoque e dados de crédito fora da leitura do
+  contexto de comprador; numeração de pedidos por distribuidor.
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.

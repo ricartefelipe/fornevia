@@ -23,6 +23,14 @@
                         Informe a quantidade na unidade de venda para conferir a regra de compra e o preço. Preços por volume valem para todas as unidades do item.
                     </p>
                     <p wire:loading.delay class="mt-2 text-sm text-slate-600" role="status">Atualizando preços…</p>
+                    <div aria-live="polite" class="mt-2">
+                        @if ($cartMessage)
+                            <x-ui.alert type="success">
+                                {{ $cartMessage }}
+                                <a href="{{ route('portal.cart') }}" class="ml-1 font-medium underline">Ver carrinho</a>
+                            </x-ui.alert>
+                        @endif
+                    </div>
                 </div>
 
                 <div class="mt-4 overflow-x-auto" wire:loading.class="opacity-60">
@@ -87,6 +95,16 @@
                                                 @endif
                                             @endif
                                         </div>
+                                        @if ($canAddToCart)
+                                            @php($cartError = $errors->first('cart.'.$sku->id))
+                                            <x-ui.button variant="secondary" class="mt-2" wire:click="addToCart('{{ $sku->id }}')" wire:loading.attr="disabled"
+                                                :aria-describedby="$cartError ? $inputId.'-carrinho' : null">
+                                                Adicionar ao carrinho<span class="sr-only"> {{ $sku->code }}</span>
+                                            </x-ui.button>
+                                            @if ($cartError)
+                                                <p id="{{ $inputId }}-carrinho" class="mt-1 text-xs text-red-700" role="alert">{{ $cartError }}</p>
+                                            @endif
+                                        @endif
                                     </td>
                                     <td class="text-right">
                                         @if ($sku->price)
