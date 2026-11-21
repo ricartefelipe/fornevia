@@ -54,6 +54,7 @@ it('mantém os códigos de erro das regras de negócio', function (): void {
         'App\Domain\Approvals\Exceptions\ApprovalNotAllowed' => 'approval_not_allowed',
         'App\Domain\Approvals\Exceptions\BudgetExceeded' => 'budget_exceeded',
         'App\Domain\Approvals\Exceptions\InvalidApprovalRule' => 'invalid_approval_rule',
+        'App\Domain\Approvals\Exceptions\InvalidBudget' => 'invalid_budget',
         'App\Domain\Approvals\Exceptions\OrderNotAwaitingApproval' => 'order_not_awaiting_approval',
         'App\Domain\Buyers\Exceptions\BuyerCompanyAlreadyRegistered' => 'buyer_company_already_registered',
         'App\Domain\Buyers\Exceptions\BuyerCompanyStatusUnchanged' => 'buyer_company_status_unchanged',

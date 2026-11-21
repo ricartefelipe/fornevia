@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Approvals\SaveCostCenterBudget;
 use App\Domain\Approvals\Exceptions\BudgetExceeded;
-use App\Domain\Buyers\Exceptions\InvalidRecordField;
+use App\Domain\Approvals\Exceptions\InvalidBudget;
 use App\Domain\Shared\Money;
 use App\Enums\Identity\SystemRole;
 use App\Models\Approvals\CostCenterBudget;
@@ -122,7 +122,7 @@ it('valida o mês e o valor antes de gravar', function (string $month, int $cent
     try {
         ($this->save)($this->center->id, $month, $cents);
         $this->fail('Entrada inválida deveria ser recusada.');
-    } catch (InvalidRecordField $e) {
+    } catch (InvalidBudget $e) {
         expect($e->details()['field'] ?? null)->toBe($field)
             ->and($e->getMessage())->toBe($message);
     }
@@ -141,7 +141,7 @@ it('não cria orçamento para centro de custo inativo, mas permite ajustar o exi
     ($this->save)($this->center->id, '2026-11', 100_000);
     $this->scenario->system(fn () => CostCenter::query()->whereKey($this->center->id)->update(['is_active' => false]));
 
-    expect(fn () => ($this->save)($this->center->id, '2026-12', 100_000))->toThrow(InvalidRecordField::class, 'inativo');
+    expect(fn () => ($this->save)($this->center->id, '2026-12', 100_000))->toThrow(InvalidBudget::class, 'inativo');
 
     ($this->save)($this->center->id, '2026-11', 120_000);
 

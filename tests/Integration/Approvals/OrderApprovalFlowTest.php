@@ -222,3 +222,62 @@ it('usa a regra de maior prioridade e restringe a decisão à própria empresa',
         ->and(fn () => Fx::decide($this->scenario, $outsider, $order))->toThrow(AuthorizationException::class)
         ->and(fn () => Fx::decide($this->scenario, $this->ana, $order))->toThrow(ApprovalNotAllowed::class);
 });
+
+it('não deixa comprador sem visão de todos os pedidos cancelar ou confirmar o pedido de um colega', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->ana]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+    $colleague = $this->scenario->tenant->addBuyerUser($this->company, SystemRole::Purchaser);
+    $this->scenario->system(function () use ($colleague): void {
+        $role = new App\Models\Identity\Role;
+        $role->forceFill([
+            'key' => 'comprador_restrito', 'name' => 'Comprador restrito', 'kind' => App\Enums\Identity\MembershipKind::Buyer,
+            'permissions' => [App\Enums\Identity\Permission::PortalCart->value, App\Enums\Identity\Permission::PortalOrdersPlace->value],
+            'max_discount_bps' => 0, 'is_system' => false,
+        ])->save();
+        Membership::query()->whereKey($colleague->id)->update(['role_id' => $role->id]);
+    });
+
+    expect(fn () => $this->scenario->tenant->actingAs($colleague, fn () => app(CancelOrderItems::class)->handle($order, null, 'Cancelamento indevido')))
+        ->toThrow(AuthorizationException::class)
+        ->and(fn () => $this->scenario->tenant->actingAs($colleague, fn () => app(RetryOrderConfirmation::class)->handle($order)))
+        ->toThrow(AuthorizationException::class);
+});
+
+it('reserva no orçamento do mês no fuso comercial', function (): void {
+    app()->instance(App\Support\Clock\Clock::class, App\Support\Clock\FrozenClock::at('2026-12-01T02:30:00Z'));
+    Fx::rule($this->scenario, $this->company, [[1, [$this->ana]]]);
+    $november = Fx::budget($this->scenario, $this->center, 100_000, '2026-11-15');
+    $december = Fx::budget($this->scenario, $this->center, 100_000, '2026-12-15');
+
+    Fx::place($this->scenario, $this->buyer, ['costCenterId' => $this->center->id]);
+
+    expect(Fx::budgetState($this->scenario, $november))->toBe(['reserved' => 30_000, 'consumed' => 0])
+        ->and(Fx::budgetState($this->scenario, $december))->toBe(['reserved' => 0, 'consumed' => 0]);
+});
+
+it('volta para aprovação sem reserva quando o novo total não cabe no orçamento', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->ana]]]);
+    $budget = Fx::budget($this->scenario, $this->center, 32_000);
+    $order = Fx::place($this->scenario, $this->buyer, ['costCenterId' => $this->center->id]);
+
+    $this->scenario->system(fn () => DB::table('price_list_items')->where('sku_id', $this->scenario->sku->id)->update(['unit_price_cents' => 12_000]));
+    $this->scenario->system(static fn () => app(App\Services\Pricing\PriceVersion::class)->bump());
+
+    expect(Fx::decide($this->scenario, $this->ana, $order))->toBe(ApprovalOutcome::Invalidated);
+
+    $stored = Fx::fresh($this->scenario, $order);
+    expect($stored->commercial_status)->toBe(CommercialStatus::PendingApproval)
+        ->and($stored->total_cents->cents)->toBe(36_000)
+        ->and($stored->confirmation_issue)->toContain('orçamento')
+        ->and(Fx::budgetState($this->scenario, $budget))->toBe(['reserved' => 0, 'consumed' => 0]);
+});
+
+it('permite à equipe cancelar pedido aguardando aprovação', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->ana]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+    $manager = $this->scenario->tenant->addStaff(SystemRole::SalesManager);
+
+    $this->scenario->tenant->actingAs($manager, fn () => app(CancelOrderItems::class)->handle($order, null, 'Solicitado pelo cliente por telefone'));
+
+    expect(Fx::fresh($this->scenario, $order)->commercial_status)->toBe(CommercialStatus::Cancelled);
+});

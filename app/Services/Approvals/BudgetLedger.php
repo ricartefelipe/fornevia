@@ -38,7 +38,8 @@ final readonly class BudgetLedger
     {
         return CostCenterBudget::query()
             ->where('cost_center_id', $costCenterId)
-            ->where('period_start', $date->startOfMonth()->toDateString())
+            // Mês no fuso comercial: pedido às 22h do último dia (Brasília) é do próprio mês.
+            ->where('period_start', $date->setTimezone((string) config('app.business_timezone', 'America/Sao_Paulo'))->startOfMonth()->toDateString())
             ->when($lock, static fn ($q) => $q->lockForUpdate())
             ->first();
     }

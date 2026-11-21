@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Approvals;
 
+use App\Domain\Approvals\Exceptions\BudgetExceeded;
 use App\Domain\Ordering\DocumentTotals;
 use App\Domain\Ordering\LineAmounts;
 use App\Domain\Shared\BusinessRuleViolation;
@@ -184,7 +185,13 @@ final readonly class ApprovedOrderFinalizer
         ])->save();
         $order->forceFill(['approval_fingerprint' => ApprovalFingerprint::of($order)])->save();
 
-        $this->budgets->reserve($order);
+        try {
+            DB::transaction(fn () => $this->budgets->reserve($order));
+        } catch (BudgetExceeded $e) {
+            // O pedido volta para aprovação sem reserva; a confirmação exigirá
+            // que o total inteiro caiba no orçamento.
+            $order->forceFill(['confirmation_issue' => mb_substr($e->getMessage(), 0, 500)])->save();
+        }
 
         $this->confirmation->event($order, 'order.approvals_invalidated', [
             'previous_total_cents' => $previousTotal->cents,

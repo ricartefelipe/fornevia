@@ -6,7 +6,7 @@ namespace App\Actions\Approvals;
 
 use App\Actions\Ordering\Portal\Support\PortalBuyer;
 use App\Domain\Approvals\Exceptions\BudgetExceeded;
-use App\Domain\Buyers\Exceptions\InvalidRecordField;
+use App\Domain\Approvals\Exceptions\InvalidBudget;
 use App\Domain\Shared\Money;
 use App\Enums\Identity\Permission;
 use App\Models\Approvals\CostCenterBudget;
@@ -58,7 +58,7 @@ final readonly class SaveCostCenterBudget
         $period = self::period($month);
 
         if ($amount->isNegative()) {
-            throw new InvalidRecordField('O valor do orçamento não pode ser negativo.', ['field' => 'amount']);
+            throw new InvalidBudget('O valor do orçamento não pode ser negativo.', ['field' => 'amount']);
         }
 
         return DB::transaction(function () use ($actor, $costCenterId, $period, $amount): CostCenterBudget {
@@ -70,7 +70,7 @@ final readonly class SaveCostCenterBudget
 
             if ($budget === null) {
                 if (! $center->is_active) {
-                    throw new InvalidRecordField('O centro de custo está inativo e não recebe orçamento novo.', ['field' => 'cost_center']);
+                    throw new InvalidBudget('O centro de custo está inativo e não recebe orçamento novo.', ['field' => 'cost_center']);
                 }
 
                 if ($this->insert($center, $period, $amount)) {
@@ -102,17 +102,17 @@ final readonly class SaveCostCenterBudget
         $month = trim($month);
 
         if (preg_match('/^(\d{4})-(\d{2})$/D', $month, $parts) !== 1 || (int) $parts[2] < 1 || (int) $parts[2] > 12) {
-            throw new InvalidRecordField('Informe o mês no formato AAAA-MM, por exemplo 2026-11.', ['field' => 'month']);
+            throw new InvalidBudget('Informe o mês no formato AAAA-MM, por exemplo 2026-11.', ['field' => 'month']);
         }
 
         $start = $month.'-01';
 
         if ($start < BusinessDate::EARLIEST || $start > BusinessDate::LATEST) {
-            throw new InvalidRecordField('Informe um mês entre 2000 e 2099.', ['field' => 'month']);
+            throw new InvalidBudget('Informe um mês entre 2000 e 2099.', ['field' => 'month']);
         }
 
         return CarbonImmutable::createFromFormat('!Y-m-d', $start, 'UTC')
-            ?: throw new InvalidRecordField('Informe o mês no formato AAAA-MM, por exemplo 2026-11.', ['field' => 'month']);
+            ?: throw new InvalidBudget('Informe o mês no formato AAAA-MM, por exemplo 2026-11.', ['field' => 'month']);
     }
 
     private function change(CostCenterBudget $budget, CostCenter $center, Money $amount): CostCenterBudget
