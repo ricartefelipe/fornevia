@@ -33,7 +33,7 @@ it('casa a regra apenas quando todos os critérios informados são atendidos', f
         ->and((new ApprovalCriteria(requesterRoleKey: 'requester'))->matches($context))->toBeFalse();
 });
 
-it('exige quórum de titulares distintos e ignora o solicitante', function (): void {
+it('exige quórum de titulares distintos, aprovadores do nível, e ignora o solicitante', function (): void {
     $partial = step(2, ['ana', 'bruno', 'carla'], [['actor' => 'ana', 'principal' => 'ana', 'approved' => true]]);
     $full = step(2, ['ana', 'bruno'], [
         ['actor' => 'ana', 'principal' => 'ana', 'approved' => true],
@@ -43,11 +43,18 @@ it('exige quórum de titulares distintos e ignora o solicitante', function (): v
         ['actor' => 'ana', 'principal' => 'ana', 'approved' => true],
         ['actor' => 'sol', 'principal' => 'sol', 'approved' => true],
     ]);
+    $withOutsider = step(2, ['ana', 'bruno'], [
+        ['actor' => 'ana', 'principal' => 'ana', 'approved' => true],
+        ['actor' => 'edu', 'principal' => 'edu', 'approved' => true],
+    ]);
 
     expect($partial->isApproved('sol'))->toBeFalse()
         ->and($full->isApproved('sol'))->toBeTrue()
         ->and($full->approvedPrincipals('sol'))->toBe(['ana', 'bruno'])
-        ->and($withRequester->isApproved('sol'))->toBeFalse();
+        ->and($withRequester->isApproved('sol'))->toBeFalse()
+        // Só contam titulares que são aprovadores do nível.
+        ->and($withOutsider->approvedPrincipals('sol'))->toBe(['ana'])
+        ->and($withOutsider->isApproved('sol'))->toBeFalse();
 });
 
 it('encerra o nível na primeira rejeição', function (): void {

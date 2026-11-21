@@ -22,7 +22,8 @@ final readonly class ApprovalStepView
     ) {}
 
     /**
-     * Titulares distintos que aprovaram (o solicitante nunca conta, RN-051).
+     * Titulares distintos, aprovadores do nível, que aprovaram (o
+     * solicitante nunca conta, RN-051).
      *
      * @return list<string>
      */
@@ -31,7 +32,8 @@ final readonly class ApprovalStepView
         $principals = [];
 
         foreach ($this->decisions as $decision) {
-            if ($decision['approved'] && $decision['principal'] !== $requesterId && $decision['actor'] !== $requesterId) {
+            if ($decision['approved'] && in_array($decision['principal'], $this->approverIds, true)
+                && $decision['principal'] !== $requesterId && $decision['actor'] !== $requesterId) {
                 $principals[$decision['principal']] = true;
             }
         }
