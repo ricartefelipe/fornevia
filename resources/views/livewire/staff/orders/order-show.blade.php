@@ -48,7 +48,7 @@
             <p class="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
                 Pedido aguardando a aprovação interna do comprador. Estoque e crédito só são reservados quando ele for aprovado e confirmado.
             </p>
-        @elseif (\App\Livewire\Portal\Ordering\OrderShow::awaitsConfirmation($order))
+        @elseif (\App\Actions\Approvals\Support\OrderApprovalSummary::awaitsConfirmation($order))
             <p class="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
                 <span class="font-medium">Aprovado pelo comprador, ainda não confirmado.</span>
                 @if ($order->confirmation_issue)
@@ -287,7 +287,23 @@
         </section>
     </div>
 
-    @if ($canManage && $detail->isCancellable())
+    @if ($canManage && $detail->isCancellable() && $detail->isUnconfirmed())
+        <section class="fv-card mt-6 p-6" aria-labelledby="order-cancel-title">
+            <h2 id="order-cancel-title" class="text-lg font-semibold">Cancelar pedido não confirmado</h2>
+            <p class="mt-1 text-sm text-slate-600">
+                O pedido ainda não foi confirmado: não há reserva de estoque nem crédito comprometido. O cancelamento é do pedido inteiro
+                e libera a reserva de orçamento do comprador.
+            </p>
+
+            <form wire:submit="cancelAll" class="mt-4 space-y-4" novalidate>
+                <x-ui.textarea label="Motivo do cancelamento" name="cancelReason" wire:model="cancelReason" rows="2" maxlength="500"></x-ui.textarea>
+                <x-ui.button type="submit" variant="danger" wire:loading.attr="disabled" wire:target="cancelAll"
+                    wire:confirm="Cancelar o pedido {{ $order->number }}?">
+                    Cancelar o pedido
+                </x-ui.button>
+            </form>
+        </section>
+    @elseif ($canManage && $detail->isCancellable())
         <section class="fv-card mt-6 p-6" aria-labelledby="order-cancel-title">
             <h2 id="order-cancel-title" class="text-lg font-semibold">Cancelar itens não expedidos</h2>
             <p class="mt-1 text-sm text-slate-600">

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Ordering\Staff;
 
+use App\Actions\Approvals\Support\OrderApprovalSummary;
 use App\Domain\Pricing\PriceSource;
 use App\Domain\Shared\Money;
 use App\Domain\Shared\Quantity;
@@ -28,7 +29,7 @@ use Illuminate\Database\Eloquent\Collection;
 final readonly class StaffOrderDetail
 {
     /** Situações em que CancelOrderItems aceita cancelamento. */
-    private const array CANCELLABLE = [CommercialStatus::Confirmed, CommercialStatus::PartiallyCancelled];
+    private const array CANCELLABLE = [CommercialStatus::Confirmed, CommercialStatus::PartiallyCancelled, CommercialStatus::PendingApproval, CommercialStatus::Approved];
 
     /**
      * @param  Collection<int, OrderItem>  $items  em ordem de linha
@@ -74,6 +75,15 @@ final readonly class StaffOrderDetail
     {
         return in_array($this->order->commercial_status, self::CANCELLABLE, true)
             && $this->items->contains(static fn (OrderItem $item): bool => self::openQuantity($item)->isPositive());
+    }
+
+    /**
+     * Aguardando aprovação interna ou aprovado sem confirmação: sem reservas
+     * nem crédito; só o cancelamento do pedido inteiro.
+     */
+    public function isUnconfirmed(): bool
+    {
+        return in_array($this->order->commercial_status, [CommercialStatus::PendingApproval, CommercialStatus::Approved], true);
     }
 
     public function baseUnit(OrderItem $item): string
@@ -134,7 +144,7 @@ final readonly class StaffOrderDetail
             'order.confirmed' => 'Pedido confirmado',
             'order.items_cancelled' => 'Itens cancelados',
             'order.cancelled' => 'Pedido cancelado',
-            default => $event->type,
+            default => OrderApprovalSummary::EVENT_LABELS[$event->type] ?? $event->type,
         };
     }
 

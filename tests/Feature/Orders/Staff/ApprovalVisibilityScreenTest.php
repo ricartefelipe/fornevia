@@ -65,7 +65,19 @@ it('mostra no detalhe os níveis, aprovadores e decisões, sem ações de aprova
         ->assertSeeInOrder(['Nível 2', 'Pendente', 'Em análise', ($this->name)($this->bruno)])
         ->assertSeeInOrder(['Pedido enviado para aprovação interna', 'Total: R$ 300,00', 'Regra: Compras de obra', 'Nível de aprovação concluído', 'Nível 1'])
         ->assertDontSee('order.submitted_for_approval')
-        ->assertDontSee('Cancelar itens não expedidos'));
+        ->assertDontSee('Cancelar itens não expedidos')
+        ->assertSee('Cancelar pedido não confirmado'));
+});
+
+it('permite à equipe cancelar o pedido não confirmado por inteiro', function (): void {
+    $order = Approvals::place($this->scenario, $this->buyer);
+
+    ($this->as)(null, fn () => Livewire::test(OrderShow::class, ['order' => $order->id])
+        ->set('cancelReason', 'Solicitado pelo cliente por telefone')
+        ->call('cancelAll')
+        ->assertHasNoErrors());
+
+    expect(Approvals::fresh($this->scenario, $order)->commercial_status)->toBe(App\Enums\Ordering\CommercialStatus::Cancelled);
 });
 
 it('mostra o motivo do pedido aprovado ainda não confirmado', function (): void {
