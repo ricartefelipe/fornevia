@@ -131,6 +131,11 @@ it('aceita decisão do delegado vigente em nome do titular', function (): void {
 it('não deixa aprovador revogado decidir e permite reatribuir o nível bloqueado', function (): void {
     Fx::rule($this->scenario, $this->company, [[1, [$this->ana]]]);
     $order = Fx::place($this->scenario, $this->buyer);
+    $earlyAdmin = $this->scenario->tenant->addBuyerUser($this->company, SystemRole::BuyerAdmin);
+
+    // Antes da revogação o nível não está bloqueado: a reatribuição é recusada.
+    expect(fn () => $this->scenario->tenant->actingAs($earlyAdmin, fn () => app(ReassignApprovalStep::class)->handle($order, [$this->bruno->id], 'Troca de aprovador')))
+        ->toThrow(ApprovalNotAllowed::class, 'apenas para níveis bloqueados');
     $this->scenario->system(fn () => Membership::query()->whereKey($this->ana->id)->update([
         'status' => MembershipStatus::Revoked->value, 'revoked_at' => now(),
     ]));

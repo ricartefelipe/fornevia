@@ -191,7 +191,8 @@ final readonly class PlaceOrder
                 'order_id' => $order->id,
                 'level_number' => $level->level_number,
                 'required_approvals' => $level->required_approvals,
-                'approver_membership_ids' => array_values($level->approvers->pluck('membership_id')->map(static fn (mixed $id): string => (string) $id)->all()),
+                // Ordem determinística: o retrato não depende da ordem de leitura.
+                'approver_membership_ids' => $level->approvers->pluck('membership_id')->map(static fn (mixed $id): string => (string) $id)->sort()->values()->all(),
                 'status' => ApprovalStepStatus::Pending,
             ])->save();
         }

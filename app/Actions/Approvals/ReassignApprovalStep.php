@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Approvals;
 
 use App\Actions\Approvals\Support\ApprovalSteps;
+use App\Domain\Approvals\ApprovalFlow;
 use App\Domain\Approvals\Exceptions\ApprovalNotAllowed;
 use App\Domain\Approvals\Exceptions\OrderNotAwaitingApproval;
 use App\Enums\Identity\Permission;
@@ -21,8 +22,8 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Reatribui os aprovadores do nível pendente de um pedido (RN-052): usado
- * quando aprovadores perderam o acesso e o quórum ficou inalcançável.
+ * Reatribui os aprovadores do nível pendente bloqueado de um pedido
+ * (RN-052): aprovadores perderam o acesso e o quórum ficou inalcançável.
  * Aprovações já registradas permanecem; os novos aprovadores precisam ser
  * elegíveis e diferentes do solicitante. Exige portal.approval_rules.
  */
@@ -48,8 +49,8 @@ final readonly class ReassignApprovalStep
 
         $reason = trim($reason);
 
-        if (mb_strlen($reason) < 5) {
-            throw new ApprovalNotAllowed('Informe o motivo da reatribuição (ao menos 5 caracteres).', ['field' => 'reason']);
+        if (mb_strlen($reason) < 5 || mb_strlen($reason) > 500) {
+            throw new ApprovalNotAllowed('Informe o motivo da reatribuição (de 5 a 500 caracteres).', ['field' => 'reason']);
         }
 
         $ids = array_values(array_unique(array_map(static fn (mixed $id): string => UntrustedId::uuid($id, Membership::class), $approverIds)));
@@ -63,6 +64,13 @@ final readonly class ReassignApprovalStep
 
             $step = ApprovalSteps::current($locked) ?? throw new OrderNotAwaitingApproval('Este pedido não tem nível de aprovação pendente.');
             $requesterId = (string) $locked->placed_by_membership_id;
+
+            // Só níveis bloqueados (RN-052): com quórum alcançável, os
+            // aprovadores retratados na submissão continuam valendo.
+            if (! ApprovalFlow::isBlocked(ApprovalSteps::view($step), $requesterId, $this->eligibility->eligible($locked->buyer_company_id, $step->approver_membership_ids))) {
+                throw new ApprovalNotAllowed('O nível pendente ainda tem aprovadores suficientes; a reatribuição é apenas para níveis bloqueados.', ['field' => 'approvers']);
+            }
+
             $eligible = $this->eligibility->eligible($locked->buyer_company_id, $ids);
 
             if (count($eligible) !== count($ids) || in_array($requesterId, $ids, true)) {
