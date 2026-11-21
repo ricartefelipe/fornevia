@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Approvals\Queries;
 
+use App\Actions\Approvals\Support\OrderApprovalSummary;
 use App\Actions\Ordering\Portal\Support\PortalBuyer;
 use App\Data\Ordering\Portal\BuyerActor;
 use App\Domain\Shared\Money;
@@ -46,7 +47,7 @@ final readonly class ApprovalReview
         'order.approval_level_approved' => 'Nível aprovado',
         'order.approval_rejected' => 'Rejeitado na aprovação interna',
         'order.approval_step_reassigned' => 'Aprovadores reatribuídos',
-        'order.approvals_invalidated' => 'Aprovações invalidadas por mudança de preço',
+        'order.approvals_invalidated' => 'Aprovações invalidadas na reavaliação do pedido',
         'order.approved' => 'Aprovação interna concluída',
         'order.confirmation_pending' => 'Aprovado, ainda sem confirmação do distribuidor',
         'order.confirmed' => 'Pedido confirmado com o distribuidor',
@@ -131,7 +132,7 @@ final readonly class ApprovalReview
     public function review(BuyerActor $actor, Order $order): ApprovalReviewData
     {
         $requesterId = (string) $order->placed_by_membership_id;
-        $steps = OrderApprovalStep::query()->where('order_id', $order->id)->orderBy('level_number')->get();
+        $steps = OrderApprovalSummary::orderedSteps($order);
         $decisions = OrderApprovalDecision::query()->where('order_id', $order->id)->orderBy('created_at')->orderBy('id')->get();
 
         $current = self::awaitingApproval($order) ? ($this->pending->evaluate($actor, [$order])[$order->id] ?? null) : null;
@@ -269,6 +270,8 @@ final readonly class ApprovalReview
 
         return match (true) {
             $id === $requesterId => ['Solicitante: não conta para o quórum', 'slate'],
+            $step->status === ApprovalStepStatus::Superseded => ['Nível substituído na reavaliação', 'slate'],
+            $step->status === ApprovalStepStatus::Cancelled => ['Nível encerrado sem decisão', 'slate'],
             ! $eligible => ['Sem acesso para aprovar', 'red'],
             $step->status === ApprovalStepStatus::Pending => ['Aguardando decisão', 'amber'],
             default => ['Não precisou decidir', 'slate'],
@@ -299,6 +302,12 @@ final readonly class ApprovalReview
 
         if (isset($data['reason']) && is_string($data['reason']) && $data['reason'] !== '') {
             $details[] = 'Motivo: '.$data['reason'];
+        }
+
+        $reasons = OrderApprovalSummary::invalidationReasons($data);
+
+        if ($reasons !== null) {
+            $details[] = $reasons;
         }
 
         return $details;

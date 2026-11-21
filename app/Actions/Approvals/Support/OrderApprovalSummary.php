@@ -51,6 +51,23 @@ final class OrderApprovalSummary
     ];
 
     /**
+     * Níveis vigentes em ordem e, depois, os retratos substituídos na
+     * reavaliação (histórico), do mais antigo ao mais recente.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, OrderApprovalStep>
+     */
+    public static function orderedSteps(Order $order): \Illuminate\Database\Eloquent\Collection
+    {
+        return OrderApprovalStep::query()
+            ->where('order_id', $order->id)
+            ->orderByRaw('status = ? asc', [ApprovalStepStatus::Superseded->value])
+            ->orderBy('created_at')
+            ->orderBy('level_number')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
      * Motivos da reavaliação que invalida as aprovações (RN-054).
      *
      * @var array<string, string>
@@ -79,7 +96,7 @@ final class OrderApprovalSummary
      */
     public static function levels(Order $order): array
     {
-        $steps = OrderApprovalStep::query()->where('order_id', $order->id)->orderBy('level_number')->get();
+        $steps = self::orderedSteps($order);
 
         if ($steps->isEmpty()) {
             return [];
@@ -181,15 +198,27 @@ final class OrderApprovalSummary
             $details[] = 'Total anterior: '.Money::ofCents($data['previous_total_cents'])->format();
         }
 
+        $reasons = self::invalidationReasons($data);
+
+        if ($reasons !== null) {
+            $details[] = $reasons;
+        }
+
+        return $details;
+    }
+
+    /**
+     * Motivos legíveis de uma reavaliação que invalidou as aprovações.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function invalidationReasons(array $data): ?string
+    {
         $reasons = array_values(array_filter(array_map(
             static fn (mixed $reason): ?string => is_string($reason) ? (self::INVALIDATION_REASONS[$reason] ?? null) : null,
             is_array($data['reasons'] ?? null) ? $data['reasons'] : [],
         )));
 
-        if ($reasons !== []) {
-            $details[] = 'Motivo: '.implode(', ', $reasons);
-        }
-
-        return $details;
+        return $reasons === [] ? null : 'Motivo: '.implode(', ', $reasons);
     }
 }
