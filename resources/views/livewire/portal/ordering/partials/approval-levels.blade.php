@@ -9,6 +9,7 @@
         @php($statusColor = match ($level['status']) {
             \App\Enums\Approvals\ApprovalStepStatus::Approved => 'green',
             \App\Enums\Approvals\ApprovalStepStatus::Rejected => 'red',
+            \App\Enums\Approvals\ApprovalStepStatus::Cancelled, \App\Enums\Approvals\ApprovalStepStatus::Superseded => 'slate',
             default => 'amber',
         })
         <li wire:key="nivel-{{ $level['id'] }}" class="rounded-md border border-slate-200 p-4">

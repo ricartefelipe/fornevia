@@ -7,6 +7,7 @@ namespace App\Actions\Approvals\Queries;
 use App\Actions\Ordering\Portal\Support\PortalBuyer;
 use App\Data\Ordering\Portal\BuyerActor;
 use App\Domain\Shared\Money;
+use App\Enums\Approvals\ApprovalStepStatus;
 use App\Enums\Identity\Permission;
 use App\Models\Approvals\OrderApprovalDecision;
 use App\Models\Approvals\OrderApprovalStep;
@@ -239,6 +240,7 @@ final readonly class ApprovalInbox
         /** @var array<string, int> $levels */
         $levels = OrderApprovalStep::query()
             ->whereIn('order_id', array_map(static fn (Order $order): string => $order->id, $orders))
+            ->where('status', '<>', ApprovalStepStatus::Superseded->value)
             ->selectRaw('order_id, count(*) as levels')
             ->groupBy('order_id')
             ->pluck('levels', 'order_id')

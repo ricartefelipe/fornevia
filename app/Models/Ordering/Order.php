@@ -100,11 +100,16 @@ class Order extends Model
     }
 
     /**
+     * Níveis vigentes da aprovação (sem os retratos substituídos na
+     * reavaliação).
+     *
      * @return HasMany<\App\Models\Approvals\OrderApprovalStep, $this>
      */
     public function approvalSteps(): HasMany
     {
-        return $this->hasMany(\App\Models\Approvals\OrderApprovalStep::class)->orderBy('level_number');
+        return $this->hasMany(\App\Models\Approvals\OrderApprovalStep::class)
+            ->where('status', '<>', \App\Enums\Approvals\ApprovalStepStatus::Superseded->value)
+            ->orderBy('level_number');
     }
 
     /**

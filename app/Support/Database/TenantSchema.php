@@ -49,6 +49,48 @@ final class TenantSchema
     }
 
     /**
+     * Chave estrangeira composta que amarra também a empresa compradora:
+     * (tenant_id, coluna, buyer_company_id) → (tenant_id, id, buyer_company_id).
+     * As checagens de FK ignoram o RLS; sem a empresa na chave, uma linha da
+     * empresa A poderia apontar para registro da empresa B do mesmo tenant.
+     * A tabela referenciada precisa de companyKey().
+     */
+    public static function companyReference(
+        Blueprint $table,
+        string $column,
+        string $on,
+        bool $nullable = false,
+        bool $cascade = false,
+    ): void {
+        $definition = $table->uuid($column);
+
+        if ($nullable) {
+            $definition->nullable();
+        }
+
+        $foreign = $table->foreign(['tenant_id', $column, 'buyer_company_id'], self::constraintName($table->getTable(), $column, 'company_fk'))
+            ->references(['tenant_id', 'id', 'buyer_company_id'])
+            ->on($on);
+        $cascade ? $foreign->cascadeOnDelete() : $foreign->restrictOnDelete();
+
+        $table->index(['tenant_id', $column]);
+    }
+
+    /**
+     * unique (tenant_id, id, buyer_company_id): alvo de companyReference().
+     */
+    public static function companyKey(string $table): void
+    {
+        self::assertIdentifier($table);
+
+        DB::statement(sprintf(
+            'alter table %s add constraint %s unique (tenant_id, id, buyer_company_id)',
+            $table,
+            self::constraintName($table, 'buyer', 'unique'),
+        ));
+    }
+
+    /**
      * Habilita RLS por tenant e, opcionalmente, por empresa compradora.
      *
      * $buyerScope:
@@ -151,6 +193,22 @@ final class TenantSchema
         self::assertIdentifier($role);
 
         return $role;
+    }
+
+    /**
+     * Nome explícito de restrição: o PostgreSQL truncaria nomes acima de 63
+     * caracteres, e nomes truncados podem colidir.
+     */
+    private static function constraintName(string $table, string $column, string $suffix): string
+    {
+        $name = "{$table}_{$column}_{$suffix}";
+        self::assertIdentifier($name);
+
+        if (strlen($name) > 63) {
+            throw new InvalidArgumentException("Nome de restrição acima de 63 caracteres: {$name}");
+        }
+
+        return $name;
     }
 
     private static function assertIdentifier(string $identifier): void

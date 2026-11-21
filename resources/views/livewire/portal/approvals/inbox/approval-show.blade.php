@@ -183,7 +183,7 @@
                         <li wire:key="nivel-{{ $level->step->id }}" @class(['rounded-md border p-4', 'border-brand-300 bg-brand-50/40' => $level->current, 'border-slate-200' => ! $level->current])>
                             <div class="flex flex-wrap items-center gap-2">
                                 <h3 class="font-semibold text-slate-900">Nível {{ $level->step->level_number }}</h3>
-                                <x-ui.badge :color="match ($level->step->status) { \App\Enums\Approvals\ApprovalStepStatus::Approved => 'green', \App\Enums\Approvals\ApprovalStepStatus::Rejected => 'red', default => 'amber' }">{{ $level->step->status->label() }}</x-ui.badge>
+                                <x-ui.badge :color="match ($level->step->status) { \App\Enums\Approvals\ApprovalStepStatus::Approved => 'green', \App\Enums\Approvals\ApprovalStepStatus::Rejected => 'red', \App\Enums\Approvals\ApprovalStepStatus::Cancelled, \App\Enums\Approvals\ApprovalStepStatus::Superseded => 'slate', default => 'amber' }">{{ $level->step->status->label() }}</x-ui.badge>
                                 @if ($level->current)
                                     <x-ui.badge color="brand">Nível atual</x-ui.badge>
                                 @endif

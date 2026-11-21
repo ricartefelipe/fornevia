@@ -12,6 +12,8 @@ enum BudgetMovementType: string
     case Reservation = 'reservation';
     case Release = 'release';
     case Consumption = 'consumption';
+    // Estorno do consumo de pedido confirmado e depois cancelado.
+    case Reversal = 'reversal';
 
     public function label(): string
     {
@@ -19,6 +21,7 @@ enum BudgetMovementType: string
             self::Reservation => 'Reserva',
             self::Release => 'Liberação',
             self::Consumption => 'Consumo',
+            self::Reversal => 'Estorno de consumo',
         };
     }
 }
