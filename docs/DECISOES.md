@@ -469,16 +469,60 @@ sem nova contenção nas etapas de estoque e crédito.
   ator e titular. Aprovador revogado ou sem permissão deixa de ser
   elegível; nível sem aprovadores elegíveis suficientes é reatribuído pela
   administração da empresa (`portal.approval_rules`).
-- Na aprovação final, preços e condições são reavaliados (RN-054): preço
-  diferente reprecifica o pedido e invalida as aprovações (histórico
-  preservado); recusa de estoque, crédito, orçamento ou cota deixa o pedido
-  aprovado, sem confirmação, com o motivo registrado e nova tentativa.
+- Na aprovação final o pedido é reavaliado (RN-054, RF-061). Empresa sem
+  permissão de compra, condição de pagamento não mais permitida, endereço
+  inativo, item invisível para a empresa, inativo ou fora das regras de
+  compra, ou item sem preço vigente deixam o pedido aprovado aguardando
+  confirmação, com o motivo. Preço vigente diferente do aprovado, definição
+  da condição de pagamento alterada (prazos ou exigência de crédito) ou
+  pedido diferente da impressão gravada na submissão invalidam as
+  aprovações (histórico preservado): o pedido é reprecificado, a regra é
+  escolhida de novo pelo novo total e, se outra regra passar a valer, os
+  níveis são substituídos pelos dela (o retrato anterior fica marcado como
+  substituído). Se nenhuma regra valer, os níveis retratados continuam
+  exigidos: a reavaliação não dispensa aprovação.
+- Recusa de estoque, crédito, orçamento ou cota na confirmação deixa o
+  pedido aprovado, sem confirmação, com o motivo registrado e nova
+  tentativa.
+- Cancelamento durante a aprovação encerra a aprovação (situação
+  "encerrada") e os níveis sem decisão; cancelamento de pedido confirmado
+  estorna o consumo do orçamento, proporcional ao valor cancelado.
 - Orçamento mensal por centro de custo mantido por movimentos (reserva,
-  liberação, consumo) com projeção por trigger e reservado + consumido <=
-  valor garantido no banco.
+  liberação, consumo, estorno de consumo) com projeção por trigger e
+  reservado + consumido <= valor garantido no banco.
+- Integridade no banco: chaves estrangeiras compostas incluem a empresa
+  (nenhuma regra, nível, decisão, orçamento ou movimento aponta para
+  registro de outra empresa do mesmo distribuidor); decisão em nome de
+  outro titular só com delegação; a invalidação de uma decisão é definitiva
+  e única; o nível retratado não muda de pedido, número nem quórum, e
+  situações encerradas não voltam.
 
 **Motivo.** Separar a aprovação interna da confirmação com o distribuidor
 evita reservar estoque e crédito por dias à espera de aprovadores e deixa
 claro ao comprador o que a aprovação garante. O retrato dos níveis e a
 reavaliação tornam o aceite rastreável e vinculado ao que foi aprovado.
+
+---
+
+## ADR-024 — Pedidos e aprovação somente leitura no contexto de comprador
+
+**Status:** aceita
+
+**Decisão.** Pedidos, itens, eventos, níveis e decisões de aprovação e
+movimentos de orçamento são somente leitura nos contextos de comprador e
+de usuário (políticas restritivas de inserção, alteração e exclusão). As
+Actions do portal autorizam no contexto de comprador e gravam no contexto
+de sistema do mesmo usuário (`TenantDatabase::asSystem`, ADR-014); dentro
+dele as consultas filtram a empresa explicitamente. O `SELECT ... FOR
+UPDATE` dessas tabelas também acontece no contexto de sistema, porque a
+política de alteração se aplica ao bloqueio. A auditoria continua no
+contexto de quem agiu, com a associação do comprador. Regras, delegações e
+valores de orçamento seguem editáveis pela administração da empresa: são a
+configuração da própria empresa, não o registro do que foi aprovado.
+
+**Motivo.** A aprovação interna e a confirmação decidem pela situação do
+pedido, pelo solicitante, pelos níveis e pelas decisões. Com essas colunas
+graváveis pela conexão do portal, um único defeito de autorização bastaria
+para autoaprovar, liberar orçamento ou confirmar sem aprovação. Como em
+estoque e crédito (ADR-020), o banco é a segunda barreira.
 

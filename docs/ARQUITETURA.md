@@ -466,16 +466,25 @@ stateDiagram-v2
 |---|---|---|
 | Submissão para aprovação | reserva do total | não reservados |
 | Rejeição ou cancelamento | liberação da reserva | — |
+| Reavaliação (novo total) | liberação e nova reserva | — |
 | Confirmação | consumo (reserva convertida; diferença precisa caber) | reservados e comprometidos |
 | Checkout sem aprovação | consumo direto | reservados e comprometidos |
+| Cancelamento após a confirmação | estorno do consumo, proporcional | liberados, proporcionais |
 
 - Regra aplicável, níveis, quórum, delegação, perda de acesso e
   reavaliação: ADR-023.
 - A decisão bloqueia o pedido antes de ler níveis e decisões: aprovações
-  simultâneas que completam o quórum geram uma única confirmação
-  (verificado com processos concorrentes); submissões simultâneas não
-  ultrapassam o orçamento (bloqueio do orçamento antes da reserva).
-- Tabelas da aprovação usam RLS `required` (a empresa compradora vê e
-  administra apenas as suas); decisões são append-only, com a invalidação
-  registrada em coluna própria.
+  simultâneas que completam o quórum geram uma única confirmação, e a
+  aprovação final que concorre com o cancelamento encontra o pedido
+  cancelado (verificado com processos concorrentes, esperando o lock da
+  linha do pedido); submissões simultâneas não ultrapassam o orçamento
+  (bloqueio do orçamento antes da reserva).
+- Tabelas da aprovação usam RLS `required` (a empresa compradora vê apenas
+  as suas) e chaves estrangeiras compostas que incluem a empresa. Regras,
+  delegações e valores de orçamento são administrados pela empresa; pedidos,
+  níveis, decisões e movimentos de orçamento são somente leitura no
+  contexto de comprador e gravados no contexto de sistema do mesmo usuário
+  (ADR-024). Decisões são append-only, com invalidação definitiva em
+  coluna própria; o nível retratado não muda de quórum e situações
+  encerradas não voltam (triggers).
 
