@@ -1,0 +1,88 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+
+@source '../../vendor/livewire/livewire/src/Features/SupportPagination/views/*.blade.php';
+@source '../../app/Livewire';
+
+@theme {
+    --font-sans: ui-sans-serif, system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+    /* Fornevia: verde-petróleo institucional e âmbar de destaque. */
+    --color-brand-50: #effaf8;
+    --color-brand-100: #d6f1ec;
+    --color-brand-200: #aee2d9;
+    --color-brand-300: #7dccc0;
+    --color-brand-400: #4cb0a3;
+    --color-brand-500: #2d9488;
+    --color-brand-600: #21776e;
+    --color-brand-700: #1d5f59;
+    --color-brand-800: #1b4c48;
+    --color-brand-900: #183f3c;
+    --color-brand-950: #0b2523;
+}
+
+@layer base {
+    html {
+        @apply bg-slate-50 text-slate-900 antialiased;
+    }
+
+    :focus-visible {
+        @apply outline-2 outline-offset-2 outline-brand-600;
+    }
+
+    [x-cloak] {
+        display: none !important;
+    }
+}
+
+@utility fv-label {
+    @apply block text-sm font-medium text-slate-700;
+}
+
+@utility fv-input {
+    @apply mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-600 focus:ring-brand-600 disabled:bg-slate-100;
+}
+
+@utility fv-input-error {
+    @apply border-red-500 focus:border-red-600 focus:ring-red-600;
+}
+
+@utility fv-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+@utility fv-btn-primary {
+    @apply fv-btn bg-brand-700 text-white hover:bg-brand-800;
+}
+
+@utility fv-btn-secondary {
+    @apply fv-btn border border-slate-300 bg-white text-slate-800 hover:bg-slate-50;
+}
+
+@utility fv-btn-danger {
+    @apply fv-btn bg-red-700 text-white hover:bg-red-800;
+}
+
+@utility fv-card {
+    @apply rounded-lg border border-slate-200 bg-white shadow-sm;
+}
+
+@utility fv-table {
+    @apply min-w-full divide-y divide-slate-200 text-sm;
+
+    & th {
+        @apply bg-slate-50 px-4 py-2 text-left text-xs font-semibold tracking-wide text-slate-600 uppercase;
+    }
+
+    & td {
+        @apply px-4 py-3 align-top text-slate-800;
+    }
+}
+
+@utility fv-nav-link {
+    @apply flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-brand-100 hover:bg-brand-800 hover:text-white;
+
+    &[aria-current='page'] {
+        @apply bg-brand-950 text-white;
+    }
+}
