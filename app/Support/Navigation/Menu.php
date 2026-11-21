@@ -47,6 +47,8 @@ final readonly class Menu
         'portal.lists' => ['Listas de compra', Permission::PortalCart],
         'portal.quotes' => ['Cotações', Permission::PortalQuotes],
         'portal.approvals' => ['Aprovações', Permission::PortalApprovals],
+        'portal.approval-rules' => ['Regras de aprovação', Permission::PortalApprovalRules],
+        'portal.delegations' => ['Delegações', Permission::PortalApprovals],
         'portal.orders' => ['Pedidos', null],
         'portal.budgets' => ['Orçamentos', Permission::PortalBudgets],
         'portal.users' => ['Usuários da empresa', Permission::PortalUsers],
