@@ -35,7 +35,8 @@ beforeEach(function (): void {
     $this->admin = $this->scenario->tenant->addBuyerUser($this->company, SystemRole::BuyerAdmin);
     $this->works = Fx::costCenter($this->scenario, $this->company, 'OBRAS');
     $this->maintenance = Fx::costCenter($this->scenario, $this->company, 'MANUT');
-    $this->month = CarbonImmutable::now('UTC')->format('Y-m');
+    // Mês corrente no fuso comercial, como a aplicação calcula.
+    $this->month = CarbonImmutable::now((string) config('app.business_timezone'))->format('Y-m');
 
     $this->page = function (string $url, ?Membership $membership = null): TestResponse {
         $membership ??= $this->admin;
@@ -250,4 +251,17 @@ it('protege o orçamento exibido e a mensagem contra alteração pelo cliente', 
         expect(fn () => $show->set('budgetId', $other))->toThrow(CannotUpdateLockedPropertyException::class)
             ->and(fn () => $index->set('message', 'Orçamento salvo'))->toThrow(CannotUpdateLockedPropertyException::class);
     });
+});
+
+it('mostra o estorno de consumo com sinal negativo no histórico', function (): void {
+    $budget = Fx::budget($this->scenario, $this->works, 100_000);
+    $order = Fx::place($this->scenario, $this->buyer, ['costCenterId' => $this->works->id]);
+    $item = $this->scenario->system(fn (): App\Models\Ordering\OrderItem => App\Models\Ordering\OrderItem::query()->where('order_id', $order->id)->firstOrFail());
+    $this->scenario->tenant->actingAs($this->buyer['membership'], fn () => app(App\Actions\Ordering\CancelOrderItems::class)
+        ->handle($order, [$item->id => App\Domain\Shared\Quantity::of('1')], 'Obra adiada pelo cliente'));
+
+    ($this->page)(route('portal.budgets.show', $budget))
+        ->assertOk()
+        ->assertSeeInOrder([$order->number, 'Estorno de consumo', '− R$ 100,00', $order->number, 'Consumo', '+ R$ 300,00'])
+        ->assertDontSee('+ -R$', escape: false);
 });

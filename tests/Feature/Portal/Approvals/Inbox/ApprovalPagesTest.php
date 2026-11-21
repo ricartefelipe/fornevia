@@ -377,3 +377,55 @@ it('nega a fila e o detalhe sem portal.approvals e no contexto da equipe', funct
 
     ($this->as)($this->buyer['membership'], fn () => Livewire::test(ApprovalsInbox::class)->assertForbidden());
 });
+
+it('recusa a decisão tomada sobre a versão do pedido anterior à reavaliação', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->ana, $this->bruno]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+    $screen = ($this->as)($this->bruno, fn () => Livewire::test(ApprovalShow::class, ['order' => $order->id])->assertSee('R$ 300,00'));
+
+    $this->scenario->system(fn () => Illuminate\Support\Facades\DB::table('price_list_items')->where('sku_id', $this->scenario->sku->id)->update(['unit_price_cents' => 12_000]));
+    $this->scenario->system(static fn () => app(App\Services\Pricing\PriceVersion::class)->bump());
+    expect(Fx::decide($this->scenario, $this->ana, $order))->toBe(App\Enums\Approvals\ApprovalOutcome::Invalidated);
+
+    // A tela do Bruno ainda mostrava R$ 300,00: o clique não vale para R$ 360,00.
+    ($this->as)($this->bruno, fn () => $screen->call('approve')
+        ->assertSee('O pedido mudou desde que você abriu esta página')
+        ->assertSee('R$ 360,00'));
+
+    expect(($this->stored)($order)->commercial_status)->toBe(CommercialStatus::PendingApproval)
+        ->and($this->scenario->system(fn (): int => OrderApprovalDecision::query()->where('order_id', $order->id)->whereNull('invalidated_at')->count()))->toBe(0);
+
+    // Revisado o novo valor, a decisão vale e registra a impressão decidida.
+    ($this->as)($this->bruno, fn () => $screen->call('approve')->assertSee('Pedido aprovado e confirmado com o distribuidor.'));
+
+    $decision = $this->scenario->system(fn (): OrderApprovalDecision => OrderApprovalDecision::query()->where('order_id', $order->id)->whereNull('invalidated_at')->firstOrFail());
+    expect($decision->order_fingerprint)->toBe(($this->stored)($order)->approval_fingerprint);
+});
+
+it('conta só os níveis vigentes e marca os substituídos na reavaliação', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->ana]]], priority: 1, name: 'Gerência');
+    Fx::rule($this->scenario, $this->company, [[1, [$this->bruno]], [1, [$this->admin]]], ['min_total_cents' => 35_000], priority: 5, name: 'Diretoria');
+    $order = Fx::place($this->scenario, $this->buyer);
+    $this->scenario->system(fn () => Illuminate\Support\Facades\DB::table('price_list_items')->where('sku_id', $this->scenario->sku->id)->update(['unit_price_cents' => 12_000]));
+    $this->scenario->system(static fn () => app(App\Services\Pricing\PriceVersion::class)->bump());
+    Fx::decide($this->scenario, $this->ana, $order);
+
+    ($this->as)($this->bruno, fn () => Livewire::test(ApprovalShow::class, ['order' => $order->id])
+        ->assertSee('Nível 1 de 2')
+        ->assertSee('Nível substituído na reavaliação')
+        ->assertSee('Motivo: preço vigente diferente do aprovado'));
+});
+
+it('não mostra como aprovado sem confirmação o pedido pendente com orçamento recusado na reavaliação', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->ana]], [1, [$this->bruno]]]);
+    Fx::budget($this->scenario, $this->center, 32_000);
+    $order = Fx::place($this->scenario, $this->buyer, ['costCenterId' => $this->center->id]);
+    Fx::decide($this->scenario, $this->ana, $order);
+    $this->scenario->system(fn () => Illuminate\Support\Facades\DB::table('price_list_items')->where('sku_id', $this->scenario->sku->id)->update(['unit_price_cents' => 12_000]));
+    $this->scenario->system(static fn () => app(App\Services\Pricing\PriceVersion::class)->bump());
+    Fx::decide($this->scenario, $this->bruno, $order);
+
+    ($this->as)($this->ana, fn () => Livewire::test(ApprovalShow::class, ['order' => $order->id])
+        ->assertDontSee('Aprovado internamente, ainda não confirmado com o distribuidor')
+        ->assertSee('O novo total não coube no orçamento do centro de custo na reavaliação'));
+});

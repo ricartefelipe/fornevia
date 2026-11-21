@@ -77,6 +77,9 @@ final class OrderShow extends Component
     public ?string $message = null;
 
     #[Locked]
+    public string $messageType = 'success';
+
+    #[Locked]
     public ?string $failure = null;
 
     /** @var array{summary: string, added: int, rejected: int, lines: list<array<string, mixed>>}|null */
@@ -159,6 +162,8 @@ final class OrderShow extends Component
         }
 
         $this->message = $outcome->message();
+        // Reavaliação que invalidou as aprovações: o pedido voltou para aprovação.
+        $this->messageType = $outcome === ApprovalOutcome::Invalidated ? 'warning' : 'success';
     }
 
     public function reorder(Reorder $reorder): void
@@ -207,8 +212,6 @@ final class OrderShow extends Component
      */
     private function cancel(CancelOrderItems $cancel, Order $order, ?array $quantities, string $reason): void
     {
-        $unconfirmed = in_array($order->commercial_status, [CommercialStatus::PendingApproval, CommercialStatus::Approved], true);
-
         try {
             $updated = $cancel->handle($order, $quantities, $reason);
         } catch (BusinessRuleViolation $e) {
@@ -222,8 +225,10 @@ final class OrderShow extends Component
         }
 
         $this->reset('cancelQuantities', 'cancelReason');
+        // Decidido pelo pedido devolvido sob lock: uma confirmação concorrente
+        // pode ter terminado antes do cancelamento.
         $this->message = match (true) {
-            $unconfirmed => 'Pedido cancelado antes da confirmação com o distribuidor. A reserva de orçamento do centro de custo, se houver, foi liberada.',
+            $updated->confirmed_at === null => 'Pedido cancelado antes da confirmação com o distribuidor. A reserva de orçamento do centro de custo, se houver, foi liberada.',
             $quantities === null || $updated->commercial_status === CommercialStatus::Cancelled => 'Pedido cancelado. As reservas e o crédito correspondentes foram liberados.',
             default => 'Itens cancelados. As reservas e o crédito correspondentes foram liberados.',
         };
@@ -344,6 +349,7 @@ final class OrderShow extends Component
     {
         $this->resetErrorBag();
         $this->message = null;
+        $this->messageType = 'success';
         $this->failure = null;
         $this->report = null;
     }

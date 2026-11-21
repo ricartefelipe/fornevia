@@ -79,6 +79,18 @@ final class OrderApprovalSummary
     ];
 
     /**
+     * Problema registrado com o pedido ainda aguardando aprovação: a
+     * reavaliação não conseguiu reservar o novo total no orçamento. A
+     * confirmação exigirá que o total caiba.
+     */
+    public static function pendingIssue(Order $order): ?string
+    {
+        return $order->commercial_status === CommercialStatus::PendingApproval && $order->approval_status === ApprovalStatus::Pending
+            ? $order->confirmation_issue
+            : null;
+    }
+
+    /**
      * Aprovado internamente e ainda não confirmado com o distribuidor.
      */
     public static function awaitsConfirmation(Order $order): bool

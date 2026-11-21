@@ -26,9 +26,13 @@
         <p class="mt-1">Depois do último nível aprovado, o pedido é enviado para confirmação: o distribuidor confere preços, estoque e crédito nesse momento. Se algo mudar, o pedido pode voltar para aprovação ou ficar aprovado sem confirmação.</p>
     </x-ui.alert>
 
-    @if ($order->confirmation_issue)
+    @if (\App\Actions\Approvals\Support\OrderApprovalSummary::awaitsConfirmation($order) && $order->confirmation_issue)
         <x-ui.alert type="warning" class="mb-6">
             Aprovado internamente, ainda não confirmado com o distribuidor: {{ $order->confirmation_issue }}
+        </x-ui.alert>
+    @elseif ($pendingIssue = \App\Actions\Approvals\Support\OrderApprovalSummary::pendingIssue($order))
+        <x-ui.alert type="warning" class="mb-6">
+            O novo total não coube no orçamento do centro de custo na reavaliação: {{ $pendingIssue }} A confirmação, depois da aprovação, exigirá que o total caiba no orçamento.
         </x-ui.alert>
     @endif
 
@@ -51,7 +55,7 @@
                 <dt class="text-xs font-medium uppercase text-slate-500">Nível atual</dt>
                 <dd class="mt-1 text-sm">
                     @if ($current)
-                        Nível {{ $current->step->level_number }} de {{ count($review->steps) }} ·
+                        Nível {{ $current->step->level_number }} de {{ $review->levelCount() }} ·
                         {{ $current->approvals() }} de {{ $current->step->required_approvals }} {{ $current->step->required_approvals === 1 ? 'aprovação' : 'aprovações' }}
                         <span class="block text-xs text-slate-600">Aguardando há {{ \App\Actions\Approvals\Queries\InboxEntry::elapsed($submittedAt, $now) }}</span>
                     @else

@@ -76,7 +76,7 @@
                                     {{ $movement->reserved_delta === 0 ? '—' : ($movement->reserved_delta > 0 ? '+ ' : '− ').\App\Domain\Shared\Money::ofCents(abs($movement->reserved_delta))->format() }}
                                 </td>
                                 <td class="whitespace-nowrap text-right">
-                                    {{ $movement->consumed_delta === 0 ? '—' : '+ '.\App\Domain\Shared\Money::ofCents($movement->consumed_delta)->format() }}
+                                    {{ $movement->consumed_delta === 0 ? '—' : ($movement->consumed_delta > 0 ? '+ ' : '− ').\App\Domain\Shared\Money::ofCents(abs($movement->consumed_delta))->format() }}
                                 </td>
                                 <td class="text-sm">{{ $movement->actor_user_id !== null ? ($names[$movement->actor_user_id] ?? 'Usuário não identificado') : 'Sistema' }}</td>
                             </tr>

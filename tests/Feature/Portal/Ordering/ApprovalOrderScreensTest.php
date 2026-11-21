@@ -302,3 +302,34 @@ it('mostra o motivo da rejeição e a decisão do aprovador', function (): void 
         ->assertDontSeeText('Cancelar o pedido')
         ->assertDontSeeText('Tentar confirmar novamente');
 });
+
+it('avisa, sem sucesso verde, quando a nova tentativa invalida as aprovações', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->ana]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+    ($this->stock)('-49');
+    Fx::decide($this->scenario, $this->ana, $order);
+    $this->scenario->system(fn () => Illuminate\Support\Facades\DB::table('price_list_items')->where('sku_id', $this->scenario->sku->id)->update(['unit_price_cents' => 12_000]));
+    $this->scenario->system(static fn () => app(App\Services\Pricing\PriceVersion::class)->bump());
+
+    ($this->asBuyer)(fn () => Livewire::test(OrderShow::class, ['order' => $order->id])
+        ->call('retryConfirmation')
+        ->assertSet('messageType', 'warning')
+        ->assertSee(ApprovalOutcome::Invalidated->message()));
+
+    expect(Fx::fresh($this->scenario, $order)->commercial_status)->toBe(CommercialStatus::PendingApproval);
+});
+
+it('mostra no pedido pendente o orçamento recusado na reavaliação', function (): void {
+    Fx::rule($this->scenario, $this->company, [[1, [$this->ana]], [1, [$this->bruno]]]);
+    Fx::budget($this->scenario, $this->center, 32_000);
+    $order = Fx::place($this->scenario, $this->buyer, ['costCenterId' => $this->center->id]);
+    Fx::decide($this->scenario, $this->ana, $order);
+    $this->scenario->system(fn () => Illuminate\Support\Facades\DB::table('price_list_items')->where('sku_id', $this->scenario->sku->id)->update(['unit_price_cents' => 12_000]));
+    $this->scenario->system(static fn () => app(App\Services\Pricing\PriceVersion::class)->bump());
+
+    expect(Fx::decide($this->scenario, $this->bruno, $order))->toBe(ApprovalOutcome::Invalidated);
+
+    ($this->asBuyer)(fn () => Livewire::test(OrderShow::class, ['order' => $order->id])
+        ->assertSee('Na reavaliação, o novo total não coube no orçamento do centro de custo')
+        ->assertDontSee('Aprovado internamente, mas ainda não confirmado com o distribuidor.'));
+});

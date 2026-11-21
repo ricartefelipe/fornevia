@@ -16,7 +16,7 @@
 
     <div aria-live="polite" class="mb-4 space-y-2">
         @if ($message)
-            <x-ui.alert type="success">{{ $message }}</x-ui.alert>
+            <x-ui.alert :type="$messageType">{{ $message }}</x-ui.alert>
         @endif
         @if ($failure)
             <x-ui.alert type="error">{{ $failure }}</x-ui.alert>
@@ -63,6 +63,9 @@
             <x-ui.alert type="info" class="mt-4">
                 Este pedido aguarda a aprovação interna da sua empresa. Estoque e crédito ainda não foram reservados: a aprovação interna não garante
                 estoque nem crédito no distribuidor, que são conferidos somente na confirmação, depois da aprovação.
+                @if ($pendingIssue = \App\Actions\Approvals\Support\OrderApprovalSummary::pendingIssue($order))
+                    <span class="mt-1 block">Na reavaliação, o novo total não coube no orçamento do centro de custo: {{ $pendingIssue }}</span>
+                @endif
             </x-ui.alert>
         @endif
 
