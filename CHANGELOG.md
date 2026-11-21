@@ -5,6 +5,21 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Aprovação interna de compras: regras por valor, centro de custo, unidade,
+  categoria e perfil do solicitante; níveis com quórum; delegação com
+  prazo; reatribuição de nível bloqueado; reavaliação de preços e condições
+  na aprovação final; fila de aprovação no portal.
+- Orçamento mensal por centro de custo com reserva na submissão, consumo na
+  confirmação e liberação na rejeição ou no cancelamento.
+- Pedido aguardando aprovação e aprovado sem confirmação nas telas do
+  portal e da equipe, com nova tentativa de confirmação e cancelamento.
+
+### Segurança
+
+- Comprador só cancela ou confirma novamente pedidos que pode ver.
+
 ## [0.1.0] - 2026-11-21
 
 ### Adicionado

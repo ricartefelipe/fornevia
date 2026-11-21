@@ -430,6 +430,9 @@ no cancelamento total).
 | Equipe: pedidos | `orders.index`, `orders.show` | `orders.view`; cancelamento com `orders.manage`; custo e margem com `catalog.view_costs` |
 | Equipe: estoque | `inventory.index`, `inventory.movements`, `inventory.warehouses`, `inventory.operations` | `inventory.view`; operações com `inventory.manage` |
 | Equipe: crédito | `credit.index`, `credit.show` | `credit.view`; alterações com `credit.manage` |
+| Portal: aprovações | `portal.approvals`, `portal.approvals.show` | `portal.approvals` (aprovador do nível, delegado vigente ou quem já decidiu); bloqueados e reatribuição com `portal.approval_rules` |
+| Portal: regras e delegações | `portal.approval-rules`, `portal.approval-rules.create`, `portal.approval-rules.edit`, `portal.delegations` | regras com `portal.approval_rules`; delegações com `portal.approval_rules` (todas) ou `portal.approvals` (as próprias) |
+| Portal: orçamentos | `portal.budgets`, `portal.budgets.show` | `portal.budgets` |
 
 - O representante comercial (papel `sales_rep`) consulta apenas pedidos das
   empresas da própria carteira (`buyer_companies.sales_rep_membership_id`),

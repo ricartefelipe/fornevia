@@ -241,3 +241,34 @@ fim; a evidência da suíte completa é a CI do PR.
   local após as correções.
 - Fluxo de aprovação interna do comprador (os pedidos saem confirmados).
 - Recorte de carteira do representante apenas em pedidos.
+
+## Incremento 5 — Aprovação de compras e orçamento (`feature/aprovacoes-de-compra`)
+
+### Implementado
+
+- Regras de aprovação da empresa compradora (critérios, prioridade, níveis
+  com quórum e aprovadores), delegações com prazo e reatribuição de nível
+  bloqueado (RF-050, RN-050 a RN-053).
+- Checkout com submissão para aprovação: níveis retratados, orçamento
+  reservado, número atribuído; estoque e crédito apenas na confirmação
+  (RN-055, RN-056).
+- Decisão por nível sob lock do pedido; confirmação após a aprovação final
+  com reavaliação de preços e condições (RN-054); nova tentativa quando
+  estoque, crédito ou orçamento recusam; cancelamento do pedido não
+  confirmado.
+- Orçamento mensal por centro de custo (ledger e projeção no banco) e
+  telas do portal: fila de aprovação, regras, delegações e orçamentos;
+  telas de pedido do portal e da equipe com a aprovação interna.
+
+### Verificado localmente
+
+| Verificação | Resultado |
+|---|---|
+| Testes de concorrência | 18 aprovados, incluindo aprovações simultâneas que completam o quórum (uma única confirmação) e submissões disputando o mesmo orçamento |
+| Fluxo de aprovação, telas e regras | aprovados (aprovação, fila, regras, delegações, orçamentos, telas de pedido) |
+| Migrations (fresh, rollback, migrate) | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+
+A suíte completa e a revisão adversarial deste incremento são registradas
+na conclusão do PR.
+
