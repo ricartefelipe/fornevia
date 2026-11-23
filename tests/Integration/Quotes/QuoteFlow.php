@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Quotes;
 
+use App\Actions\Quotes\Portal\AcceptQuoteVersion;
 use App\Actions\Quotes\Portal\RequestQuote;
 use App\Actions\Quotes\Staff\SubmitQuoteVersion;
+use App\Data\Quotes\AcceptQuoteData;
 use App\Data\Quotes\QuoteLineInput;
 use App\Data\Quotes\QuoteVersionData;
 use App\Data\Quotes\RequestQuoteData;
 use App\Data\Quotes\ReviewedQuoteState;
+use App\Data\Quotes\ReviewedQuoteVersion;
 use App\Domain\Shared\Percentage;
 use App\Domain\Shared\Quantity;
 use App\Models\Identity\Membership;
+use App\Models\Ordering\Order;
 use App\Models\Quotes\Quote;
 use App\Models\Quotes\QuoteVersion;
 use Illuminate\Support\Str;
@@ -54,6 +58,28 @@ final class QuoteFlow
         ]);
 
         return $scenario->tenant->actingAs($staff, static fn (): QuoteVersion => app(SubmitQuoteVersion::class)->handle($data));
+    }
+
+    /**
+     * Aceita a versão enviada como o comprador a vê (com a situação da
+     * reserva).
+     *
+     * @param  array{membership: Membership, address: \App\Models\Buyers\BuyerAddress}  $buyer
+     * @param  array<string, mixed>  $overrides
+     */
+    public static function accept(OrderingScenario $scenario, array $buyer, Quote $quote, ?ReviewedQuoteVersion $reviewed = null, array $overrides = []): Order
+    {
+        $reviewed ??= $scenario->system(static fn (): ReviewedQuoteVersion => ReviewedQuoteVersion::of(
+            QuoteVersion::query()->where('quote_id', $quote->id)->where('status', 'sent')->firstOrFail(),
+            withHold: true,
+        ));
+
+        return $scenario->tenant->actingAs($buyer['membership'], static fn (): Order => app(AcceptQuoteVersion::class)->handle($quote->id, new AcceptQuoteData(...[
+            'reviewed' => $reviewed,
+            'idempotencyKey' => (string) Str::uuid7(),
+            'shippingAddressId' => $buyer['address']->id,
+            ...$overrides,
+        ])));
     }
 
     public static function fresh(OrderingScenario $scenario, Quote $quote): Quote
