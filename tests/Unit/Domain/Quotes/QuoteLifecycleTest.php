@@ -18,7 +18,7 @@ it('permite só as transições previstas da cotação e mantém as terminais', 
     expect($from->isTerminal())->toBe($allowed === []);
 })->with([
     'solicitada' => [QuoteStatus::Requested, [QuoteStatus::Proposed, QuoteStatus::Cancelled]],
-    'proposta' => [QuoteStatus::Proposed, [QuoteStatus::Proposed, QuoteStatus::Requested, QuoteStatus::Expired, QuoteStatus::Accepted, QuoteStatus::Rejected, QuoteStatus::Cancelled]],
+    'proposta' => [QuoteStatus::Proposed, [QuoteStatus::Requested, QuoteStatus::Expired, QuoteStatus::Accepted, QuoteStatus::Rejected, QuoteStatus::Cancelled]],
     'vencida' => [QuoteStatus::Expired, [QuoteStatus::Proposed, QuoteStatus::Requested, QuoteStatus::Cancelled]],
     'aceita' => [QuoteStatus::Accepted, []],
     'recusada' => [QuoteStatus::Rejected, []],
@@ -44,3 +44,12 @@ it('permite só as transições previstas da versão', function (QuoteVersionSta
     'retirada' => [QuoteVersionStatus::Withdrawn, []],
     'reprovada' => [QuoteVersionStatus::ApprovalRejected, []],
 ]);
+
+it('recusa a transição fora do mapa e aceita a mesma situação', function (): void {
+    expect(fn () => QuoteLifecycle::assertQuoteMove(QuoteStatus::Accepted, QuoteStatus::Proposed))->toThrow(LogicException::class, 'accepted para proposed')
+        ->and(fn () => QuoteLifecycle::assertVersionMove(QuoteVersionStatus::Expired, QuoteVersionStatus::Sent))->toThrow(LogicException::class, 'expired para sent');
+
+    QuoteLifecycle::assertQuoteMove(QuoteStatus::Proposed, QuoteStatus::Proposed);
+    QuoteLifecycle::assertVersionMove(QuoteVersionStatus::Sent, QuoteVersionStatus::Accepted);
+    expect(true)->toBeTrue();
+});

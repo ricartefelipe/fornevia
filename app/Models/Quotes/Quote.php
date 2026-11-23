@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models\Quotes;
 
+use App\Domain\Quotes\QuoteLifecycle;
+use App\Enums\Quotes\QuoteStatus;
 use App\Support\Tenancy\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -20,7 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $requested_by_user_id
  * @property string $requested_by_membership_id
  * @property string|null $sales_rep_membership_id
- * @property \App\Enums\Quotes\QuoteStatus $status
+ * @property QuoteStatus $status
  * @property \Carbon\CarbonImmutable|null $needed_by
  * @property \Carbon\CarbonImmutable|null $closed_at
  * @property string|null $closed_by_user_id
@@ -37,13 +39,22 @@ class Quote extends Model
 
     protected $guarded = ['*'];
 
+    protected static function booted(): void
+    {
+        static::updating(static function (self $quote): void {
+            if ($quote->isDirty('status')) {
+                QuoteLifecycle::assertQuoteMove(QuoteStatus::from((string) $quote->getRawOriginal('status')), $quote->status);
+            }
+        });
+    }
+
     /**
      * @return array<string, mixed>
      */
     protected function casts(): array
     {
         return [
-            'status' => \App\Enums\Quotes\QuoteStatus::class,
+            'status' => QuoteStatus::class,
             'needed_by' => 'immutable_date',
             'closed_at' => 'immutable_datetime',
             'close_reason_code' => \App\Enums\Quotes\QuoteCloseReason::class,

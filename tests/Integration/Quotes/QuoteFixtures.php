@@ -155,6 +155,9 @@ final class QuoteFixtures
     {
         return $scenario->system(static function () use ($scenario, $version): QuoteVersion {
             $number = (int) QuoteVersion::query()->where('quote_id', $version->quote_id)->max('version_number') + 1;
+            // A situação gravada é a de partida: os testes a alteram direto na
+            // tabela para exercitar os triggers.
+            $version->setRawAttributes([...$version->getAttributes(), 'status' => QuoteVersion::query()->toBase()->where('id', $version->id)->value('status')], true);
             $version->forceFill([
                 'status' => QuoteVersionStatus::Sent,
                 'version_number' => $number,

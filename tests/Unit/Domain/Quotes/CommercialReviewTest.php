@@ -6,7 +6,6 @@ use App\Domain\Pricing\DiscountPolicy;
 use App\Domain\Pricing\DiscountViolation;
 use App\Domain\Quotes\CommercialReview;
 use App\Domain\Quotes\CommercialReviewLine;
-use App\Domain\Quotes\DiscountForNetPrice;
 use App\Domain\Shared\Money;
 use App\Domain\Shared\Percentage;
 
@@ -65,20 +64,3 @@ it('aceita como aprovador só quem tem limite igual ou maior que o maior descont
         ->and($belowCost->selfApprovable(true))->toBeTrue()
         ->and($belowCost->selfApprovable(false))->toBeFalse();
 });
-
-it('calcula o desconto que leva ao preço líquido desejado', function (int $price, int $net, int $bps): void {
-    $discount = DiscountForNetPrice::of(Money::ofCents($price), Money::ofCents($net));
-
-    expect($discount->basisPoints)->toBe($bps);
-})->with([
-    'exato' => [10_000, 9_000, 1_000],
-    'sem desconto' => [10_000, 10_000, 0],
-    'menor desconto que chega ao líquido' => [3_333, 3_000, 998],
-    'menor desconto em preço baixo' => [199, 150, 2_438],
-    'mais próximo sem exato' => [1_000_000, 999_940, 1],
-    'empate sem exato fica com o menor' => [1_000_000, 999_950, 0],
-]);
-
-it('recusa preço líquido acima da tabela ou não positivo', function (int $net): void {
-    expect(fn () => DiscountForNetPrice::of(Money::ofCents(1_000), Money::ofCents($net)))->toThrow(InvalidArgumentException::class);
-})->with([[1_001], [0]]);

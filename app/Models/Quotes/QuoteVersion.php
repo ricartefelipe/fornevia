@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models\Quotes;
 
+use App\Domain\Quotes\QuoteLifecycle;
+use App\Enums\Quotes\QuoteVersionStatus;
 use App\Support\Tenancy\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -19,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $buyer_company_id
  * @property string $quote_id
  * @property int|null $version_number
- * @property \App\Enums\Quotes\QuoteVersionStatus $status
+ * @property QuoteVersionStatus $status
  * @property string $created_by_user_id
  * @property string $created_by_membership_id
  * @property string $payment_term_id
@@ -52,6 +54,15 @@ class QuoteVersion extends Model
 
     protected $guarded = ['*'];
 
+    protected static function booted(): void
+    {
+        static::updating(static function (self $version): void {
+            if ($version->isDirty('status')) {
+                QuoteLifecycle::assertVersionMove(QuoteVersionStatus::from((string) $version->getRawOriginal('status')), $version->status);
+            }
+        });
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -59,7 +70,7 @@ class QuoteVersion extends Model
     {
         return [
             'version_number' => 'integer',
-            'status' => \App\Enums\Quotes\QuoteVersionStatus::class,
+            'status' => QuoteVersionStatus::class,
             'payment_term' => 'array',
             'valid_until' => 'immutable_datetime',
             'stock_hold_until' => 'immutable_datetime',
