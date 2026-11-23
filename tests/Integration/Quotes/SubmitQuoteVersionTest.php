@@ -160,3 +160,12 @@ it('envia depois a versão aprovada e restringe o representante à carteira', fu
     expect(fn () => $this->scenario->tenant->actingAs($this->rep, fn () => app(SendQuoteVersion::class)->handle($this->quote->id, $state, $version->id)))
         ->toThrow(QuoteVersionOutdated::class);
 });
+
+it('devolve o envio concluído na repetição com a mesma chave, mesmo que a condição tenha deixado de valer', function (): void {
+    $overrides = ['idempotencyKey' => (string) Illuminate\Support\Str::uuid7(), 'reviewed' => F::state($this->scenario, $this->quote)];
+    $first = F::submit($this->scenario, $this->manager, $this->quote, overrides: $overrides);
+    $this->scenario->system(fn () => DB::table('buyer_payment_terms')->where('buyer_company_id', $this->buyer['company']->id)->delete());
+
+    expect(F::submit($this->scenario, $this->manager, $this->quote, overrides: $overrides)->id)->toBe($first->id)
+        ->and(fn () => F::submit($this->scenario, $this->manager, $this->quote))->toThrow(InvalidQuote::class, 'Condição de pagamento');
+});

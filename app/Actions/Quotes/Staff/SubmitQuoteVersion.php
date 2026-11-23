@@ -85,47 +85,50 @@ final readonly class SubmitQuoteVersion
         $authorLimit = Percentage::ofBasisPoints($this->access->maxDiscountBps());
         $canApprove = $this->access->can(Permission::PricingApprove);
 
-        $buyer = BuyerCompany::query()->findOrFail($quote->buyer_company_id);
-        $issue = $this->eligibility->companyIssue($buyer);
-
-        if ($issue !== null) {
-            throw new InvalidQuote($issue);
-        }
-
-        $term = $this->references->allowedTerm($buyer, $data->paymentTermId)
-            ?? throw new InvalidQuote('Condição de pagamento não disponível para esta empresa.', ['field' => 'payment_term']);
-        $now = $this->clock->now();
-        $terms = QuoteSettings::terms();
-        $validUntil = $terms->validUntil($data->validUntilDay, $now);
-        $holdUntil = $data->stockHoldUntilDay !== null && trim($data->stockHoldUntilDay) !== '' ? $terms->holdUntil($data->stockHoldUntilDay, $validUntil, $now) : null;
-        $notes = self::text($data->notes, self::MAX_NOTES, 'notes', 'As observações devem ter até 2.000 caracteres.');
-        $justification = self::text($data->justification, 1000, 'justification', 'A justificativa deve ter até 1.000 caracteres.');
-
-        [$lines, $totals] = $this->pricing->price($buyer, $data->lines);
-
-        if ($data->expectedTotalCents !== null && $data->expectedTotalCents !== $totals->total->cents) {
-            throw new PricesChanged('Os valores mudaram desde a prévia. Confira o novo total antes de enviar.', [
-                'expected_total_cents' => $data->expectedTotalCents, 'current_total_cents' => $totals->total->cents,
-            ]);
-        }
-
-        $review = $this->evaluator->evaluate($lines, $authorLimit);
-
-        if ($review->requiresApproval() && mb_strlen((string) $justification) < 10) {
-            throw new CommercialApprovalRequired(
-                'A proposta está fora da política comercial ('.implode('; ', array_map(static fn (DiscountViolation $v): string => mb_strtolower($v->label()), $review->violations())).'): justifique a exceção (ao menos 10 caracteres).',
-                ['field' => 'justification'],
-            );
-        }
-
-        $selfApprove = $data->selfApprove && $review->requiresApproval();
-
-        if ($selfApprove && ! $review->selfApprovable($canApprove)) {
-            throw new CommercialApprovalNotAllowed('Você não pode aprovar esta exceção: exige permissão de aprovar preços e limite de desconto de ao menos '.$review->maxDiscount()->format().'.', ['field' => 'self_approve']);
-        }
-
-        $result = $this->idempotency->run('quote.version', $data->idempotencyKey, $data->fingerprintPayload(), function () use ($quote, $data, $membership, $term, $validUntil, $holdUntil, $notes, $justification, $lines, $totals, $review, $selfApprove, $now): array {
+        // Validações dentro do trabalho idempotente: a repetição de um envio
+        // concluído devolve o resultado guardado, mesmo que preço, condição ou
+        // prazo tenham mudado depois.
+        $result = $this->idempotency->run('quote.version', $data->idempotencyKey, $data->fingerprintPayload(), function () use ($quote, $data, $membership, $authorLimit, $canApprove): array {
             $this->limits->assertWritable();
+            $buyer = BuyerCompany::query()->findOrFail($quote->buyer_company_id);
+            $issue = $this->eligibility->companyIssue($buyer);
+
+            if ($issue !== null) {
+                throw new InvalidQuote($issue);
+            }
+
+            $term = $this->references->allowedTerm($buyer, $data->paymentTermId)
+                ?? throw new InvalidQuote('Condição de pagamento não disponível para esta empresa.', ['field' => 'payment_term']);
+            $now = $this->clock->now();
+            $terms = QuoteSettings::terms();
+            $validUntil = $terms->validUntil($data->validUntilDay, $now);
+            $holdUntil = $data->stockHoldUntilDay !== null && trim($data->stockHoldUntilDay) !== '' ? $terms->holdUntil($data->stockHoldUntilDay, $validUntil, $now) : null;
+            $notes = self::text($data->notes, self::MAX_NOTES, 'notes', 'As observações devem ter até 2.000 caracteres.');
+            $justification = self::text($data->justification, 1000, 'justification', 'A justificativa deve ter até 1.000 caracteres.');
+
+            [$lines, $totals] = $this->pricing->price($buyer, $data->lines);
+
+            if ($data->expectedTotalCents !== null && $data->expectedTotalCents !== $totals->total->cents) {
+                throw new PricesChanged('Os valores mudaram desde a prévia. Confira o novo total antes de enviar.', [
+                    'expected_total_cents' => $data->expectedTotalCents, 'current_total_cents' => $totals->total->cents,
+                ]);
+            }
+
+            $review = $this->evaluator->evaluate($lines, $authorLimit);
+
+            if ($review->requiresApproval() && mb_strlen((string) $justification) < 10) {
+                throw new CommercialApprovalRequired(
+                    'A proposta está fora da política comercial ('.implode('; ', array_map(static fn (DiscountViolation $v): string => mb_strtolower($v->label()), $review->violations())).'): justifique a exceção (ao menos 10 caracteres).',
+                    ['field' => 'justification'],
+                );
+            }
+
+            $selfApprove = $data->selfApprove && $review->requiresApproval();
+
+            if ($selfApprove && ! $review->selfApprovable($canApprove)) {
+                throw new CommercialApprovalNotAllowed('Você não pode aprovar esta exceção: exige permissão de aprovar preços e limite de desconto de ao menos '.$review->maxDiscount()->format().'.', ['field' => 'self_approve']);
+            }
+
             $locked = $this->locks->lock($quote->id);
             $versions = $this->locks->versions($locked);
 
