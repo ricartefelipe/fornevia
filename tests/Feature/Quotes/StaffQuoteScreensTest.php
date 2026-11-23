@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Enums\Identity\MembershipKind;
+use App\Enums\Identity\MembershipStatus;
+use App\Enums\Identity\Permission;
 use App\Enums\Identity\SystemRole;
 use App\Enums\Quotes\QuoteStatus;
 use App\Enums\Quotes\QuoteVersionStatus;
@@ -105,4 +108,31 @@ it('não mostra custo nem margem sem permissão de ver custos', function (): voi
         ->assertDontSee('R$ 70,00')
         ->assertDontSee('Margem')
         ->assertSee('Dentro da política'));
+});
+
+it('aprova sem enviar quando o aprovador não elabora propostas', function (): void {
+    // Papel personalizado: aprova preços, mas não elabora nem envia propostas.
+    $approver = $this->scenario->system(function (): Membership {
+        $roleId = (string) Illuminate\Support\Str::uuid7();
+        DB::table('roles')->insert([
+            'id' => $roleId, 'tenant_id' => $this->scenario->tenant->organization->id, 'key' => 'aprovador_precos', 'name' => 'Aprovador de preços',
+            'kind' => 'staff', 'permissions' => json_encode([Permission::QuotesView->value, Permission::PricingApprove->value]),
+            'max_discount_bps' => 3_000, 'is_system' => false, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $membership = new Membership;
+        $membership->forceFill([
+            'user_id' => User::factory()->create()->id, 'kind' => MembershipKind::Staff, 'role_id' => $roleId, 'status' => MembershipStatus::Active,
+        ])->save();
+
+        return $membership;
+    });
+    F::submit($this->scenario, $this->rep, $this->quote, discount: '12', overrides: ['justification' => 'Concorrente cobriu o preço']);
+
+    ($this->as)($approver, fn () => Livewire::test(QuoteShow::class, ['quote' => $this->quote->id])
+        ->assertSee('Aprovar exceção')
+        ->assertDontSee('Enviar ao comprador ao aprovar')
+        ->call('decide', true)
+        ->assertSee('Exceção aprovada. A versão está pronta para envio.'));
+
+    expect(F::fresh($this->scenario, $this->quote)->versions->first()->status)->toBe(QuoteVersionStatus::Ready);
 });

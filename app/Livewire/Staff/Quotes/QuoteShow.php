@@ -72,12 +72,14 @@ final class QuoteShow extends Component
         $this->quoteId = $quotes->find($quote)->id;
     }
 
-    public function decide(bool $approve, DecideCommercialApproval $decide): void
+    public function decide(bool $approve, DecideCommercialApproval $decide, Access $access): void
     {
         $this->clear();
+        // "Aprovar e enviar" só para quem também elabora propostas.
+        $sendNow = $approve && $this->sendNow && $access->can(Permission::QuotesManage);
 
         try {
-            $decide->handle($this->quoteId, new ReviewedQuoteVersion((string) $this->preparingVersionId, $this->preparingFingerprint), $approve, $this->decisionComment, $approve && $this->sendNow);
+            $decide->handle($this->quoteId, new ReviewedQuoteVersion((string) $this->preparingVersionId, $this->preparingFingerprint), $approve, $this->decisionComment, $sendNow);
         } catch (BusinessRuleViolation $e) {
             ($e->details()['field'] ?? null) === 'comment' ? $this->addError('decisionComment', $e->getMessage()) : $this->failure = $e->getMessage();
 
@@ -85,7 +87,7 @@ final class QuoteShow extends Component
         }
 
         $this->reset('decisionComment');
-        $this->message = $approve ? ($this->sendNow ? 'Exceção aprovada e proposta enviada ao comprador.' : 'Exceção aprovada. A versão está pronta para envio.') : 'Versão reprovada na aprovação comercial.';
+        $this->message = $approve ? ($sendNow ? 'Exceção aprovada e proposta enviada ao comprador.' : 'Exceção aprovada. A versão está pronta para envio.') : 'Versão reprovada na aprovação comercial.';
     }
 
     public function send(SendQuoteVersion $send): void
