@@ -46,6 +46,10 @@ final class MorphMap
         'cost_center_budget' => Approvals\CostCenterBudget::class,
         'quote' => Quotes\Quote::class,
         'quote_version' => Quotes\QuoteVersion::class,
+        'shipment' => Fulfillment\Shipment::class,
+        'return_request' => Fulfillment\ReturnRequest::class,
+        'freight_rule' => Fulfillment\FreightRule::class,
+        'buyer_freight_condition' => Fulfillment\BuyerFreightCondition::class,
         'plan' => Platform\Plan::class,
         'subscription' => Platform\Subscription::class,
     ];
