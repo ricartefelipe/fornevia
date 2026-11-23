@@ -16,7 +16,12 @@
 
     @if ($quoteOrigin)
         <p class="mb-4 text-sm text-slate-700">
-            Origem: cotação <a href="{{ route('portal.quotes.show', $quoteOrigin->quote_id) }}" class="font-medium text-blue-800 underline">{{ $quoteOrigin->quote->number }}</a>,
+            Origem: cotação
+            @if ($canOpenQuote)
+                <a href="{{ route('portal.quotes.show', $quoteOrigin->quote_id) }}" class="font-medium text-blue-800 underline">{{ $quoteOrigin->quote->number }}</a>,
+            @else
+                <span class="font-medium">{{ $quoteOrigin->quote->number }}</span>,
+            @endif
             versão {{ $quoteOrigin->version_number }}. Os preços negociados ficam mantidos.
         </p>
     @endif

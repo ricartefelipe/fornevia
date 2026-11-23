@@ -9,6 +9,7 @@ use App\Actions\Approvals\Support\OrderApprovalSummary;
 use App\Actions\Ordering\CancelOrderItems;
 use App\Actions\Ordering\Portal\BuyerOrders;
 use App\Actions\Ordering\Portal\Reorder;
+use App\Actions\Quotes\Portal\BuyerQuotes;
 use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Money;
@@ -22,6 +23,7 @@ use App\Models\Catalog\UnitOfMeasure;
 use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderEvent;
 use App\Models\Ordering\OrderItem;
+use App\Models\Quotes\QuoteVersion;
 use App\Support\Auth\Access;
 use App\Support\Http\UntrustedId;
 use Illuminate\Contracts\View\View;
@@ -177,9 +179,13 @@ final class OrderShow extends Component
         }
     }
 
-    public function render(BuyerOrders $orders, Access $access): View
+    public function render(BuyerOrders $orders, BuyerQuotes $quotes, Access $access): View
     {
-        $order = $orders->find($orders->actor(), $this->orderId);
+        $actor = $orders->actor();
+        $order = $orders->find($actor, $this->orderId);
+        $quoteOrigin = $order->source_quote_version_id !== null
+            ? QuoteVersion::query()->with('quote')->find($order->source_quote_version_id)
+            : null;
         $canPlace = $access->can(Permission::PortalOrdersPlace);
         $unconfirmed = in_array($order->commercial_status, [CommercialStatus::PendingApproval, CommercialStatus::Approved], true);
         $names = $orders->userNames([
@@ -204,9 +210,9 @@ final class OrderShow extends Component
             'canRetry' => $canPlace && OrderApprovalSummary::awaitsConfirmation($order),
             'canReorder' => $access->can(Permission::PortalCart),
             'approvalLevels' => OrderApprovalSummary::levels($order),
-            'quoteOrigin' => $order->source_quote_version_id !== null
-                ? \App\Models\Quotes\QuoteVersion::query()->with('quote')->find($order->source_quote_version_id)
-                : null,
+            'quoteOrigin' => $quoteOrigin,
+            // Link só para quem pode abrir a cotação; os demais veem o número.
+            'canOpenQuote' => $quoteOrigin !== null && $quotes->canOpen($actor, $quoteOrigin->quote_id),
         ])->title("Pedido {$order->number}");
     }
 

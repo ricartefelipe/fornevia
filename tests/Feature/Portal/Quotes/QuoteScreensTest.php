@@ -236,3 +236,14 @@ it('usa a mesma chave da solicitação de cotação aberta no carrinho', functio
 
     expect($this->scenario->system(fn (): mixed => DB::table('idempotency_keys')->where('scope', 'quote.request')->value('key')))->toBe($key);
 });
+
+it('liga a cotação de origem no pedido só para quem pode abri-la', function (): void {
+    $quote = F::request($this->scenario, $this->buyer);
+    F::submit($this->scenario, $this->manager, $quote);
+    $order = F::accept($this->scenario, $this->buyer, $quote);
+    $approver = $this->scenario->tenant->addBuyerUser($this->buyer['company'], SystemRole::Approver);
+    $link = 'href="'.route('portal.quotes.show', $quote->id).'"';
+
+    ($this->page)(route('portal.orders.show', $order->id))->assertOk()->assertSee($link, escape: false);
+    ($this->page)(route('portal.orders.show', $order->id), $approver)->assertOk()->assertSeeText(F::fresh($this->scenario, $quote)->number)->assertDontSee($link, escape: false);
+});

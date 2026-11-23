@@ -70,6 +70,12 @@ final readonly class BuyerQuotes
     /**
      * @throws ModelNotFoundException
      */
+    /** Se a pessoa pode abrir a cotação: permissão de cotações e cotação dela (ou da empresa, para quem vê todas). */
+    public function canOpen(BuyerActor $actor, string $quoteId): bool
+    {
+        return $this->buyer->can(Permission::PortalQuotes) && $this->visible($actor)->whereKey($quoteId)->exists();
+    }
+
     public function find(BuyerActor $actor, mixed $quoteId): Quote
     {
         return $this->visible($actor)->whereKey(UntrustedId::uuid($quoteId, Quote::class))->firstOrFail();
