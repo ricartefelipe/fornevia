@@ -63,6 +63,25 @@ it('registra a falha do consumo quando as tentativas do job se esgotam', functio
     expect(DB::connection(OutboxRelay::CONNECTION)->table('outbox_failures')->count())->toBe(1);
 });
 
+it('deixa visível, preservada e reenviável a mensagem cujo consumo esgotou as tentativas', function (): void {
+    config(['queue.default' => 'sync']);
+    RecordingConsumer::$failuresLeft = 1;
+    $relay = DB::connection(OutboxRelay::CONNECTION)->table('outbox_messages');
+    $relay->where('id', $this->message)->update(['status' => 'published', 'published_at' => now()->subDays(40)]);
+
+    (new ProcessOutboxMessage($this->message, $this->tenantId))->failed(new RuntimeException('falha simulada'));
+
+    expect(DB::connection(OutboxRelay::CONNECTION)->table('outbox_messages')->where('id', $this->message)->value('status'))->toBe('dead')
+        ->and(app(OutboxRelay::class)->stats()['dead'])->toBe(1)
+        ->and(app(OutboxRelay::class)->prune())->toBe(0);
+
+    RecordingConsumer::$failuresLeft = 0;
+    $this->artisan('outbox:retry', ['--all' => true])->expectsOutputToContain('devolvidas à publicação: 1')->assertSuccessful();
+
+    expect(app(OutboxRelay::class)->runOnce('relay-a')['published'])->toBe(1)
+        ->and(RecordingConsumer::$handled)->toBe([$this->message]);
+});
+
 it('processa pelo job publicado pelo relay', function (): void {
     config(['queue.default' => 'sync']);
 

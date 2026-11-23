@@ -57,10 +57,18 @@ final readonly class OutboxProcessor
         return $acted;
     }
 
+    /**
+     * Tentativas do job esgotadas: registra a falha e deixa a mensagem sem
+     * novas tentativas ("dead"), visível em outbox:status, preservada pela
+     * retenção e reenviável por outbox:retry (os consumidores que já agiram
+     * são pulados na nova entrega).
+     */
     public function recordFailure(string $messageId, string $tenantId, int $attempt, ?Throwable $error): void
     {
-        $this->db->run(ExecutionContext::system($tenantId), function () use ($messageId, $tenantId, $attempt, $error): void {
-            if (! DB::table('outbox_messages')->where('id', $messageId)->exists()) {
+        $message = mb_substr($error === null ? 'Falha sem exceção.' : $error::class.': '.$error->getMessage(), 0, 2000);
+
+        $this->db->run(ExecutionContext::system($tenantId), function () use ($messageId, $tenantId, $attempt, $message): void {
+            if (DB::table('outbox_messages')->where('id', $messageId)->update(['status' => 'dead', 'last_error' => $message]) === 0) {
                 return;
             }
 
@@ -70,7 +78,7 @@ final readonly class OutboxProcessor
                 'outbox_message_id' => $messageId,
                 'attempt' => max(1, $attempt),
                 'stage' => 'consume',
-                'error' => mb_substr($error === null ? 'Falha sem exceção.' : $error::class.': '.$error->getMessage(), 0, 2000),
+                'error' => $message,
                 'created_at' => $this->clock->now(),
             ]);
         });
