@@ -249,3 +249,14 @@ it('não mostra ao comprador reservas e movimentações de estoque, nem as do pr
     expect($seen)->toBe([0, 0])
         ->and($scenario->system(static fn (): int => DB::table('stock_reservations')->count()))->toBe(1);
 });
+
+it('grava a origem do preço sem a política comercial interna', function (): void {
+    $scenario = OrderingScenario::create(stock: '10', unitPriceCents: 1_000);
+    $buyer = $scenario->buyerWithCart(quantity: '2');
+    $order = Tests\Integration\Approvals\ApprovalFixtures::place($scenario, $buyer);
+
+    $source = $scenario->system(fn () => json_decode((string) DB::table('order_items')->where('order_id', $order->id)->value('price_source'), true));
+
+    expect($source)->toHaveKeys(['source', 'unit_price_cents', 'version'])
+        ->and($source)->not->toHaveKey('min_unit_price_cents');
+});

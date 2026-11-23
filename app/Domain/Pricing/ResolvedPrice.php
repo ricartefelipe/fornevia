@@ -31,7 +31,8 @@ final readonly class ResolvedPrice
             'reference_id' => $this->referenceId,
             'unit_price_cents' => $this->unitPrice->cents,
             'tier_min_quantity' => $this->tier?->minQuantity->toDatabase(),
-            'min_unit_price_cents' => $this->minUnitPrice?->cents,
+            // Sem o preço mínimo: o retrato vai para documentos que o
+            // comprador lê, e a política comercial é interna (RS-020).
             'version' => $this->version,
         ];
     }
