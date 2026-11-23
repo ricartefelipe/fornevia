@@ -228,6 +228,7 @@ tabelas da outbox) reivindica mensagens com `FOR UPDATE SKIP LOCKED` e
 lease, despacha jobs para o Redis e registra a publicação. Consumidores são
 idempotentes (`outbox_consumptions` com unique por mensagem e handler).
 Entrega é *at-least-once*; não há promessa de exatamente uma vez.
+Relay, consumo e notificações: ADR-026.
 
 ---
 
@@ -603,3 +604,50 @@ apagaria o desconto negociado. Aceitar convertendo elimina o estado
 RN-060). Política e custo ficam fora do alcance do comprador (ADR-020), e o
 ledger mantém um só saldo verdadeiro (ADR-005).
 
+
+---
+
+## ADR-026 — Relay da outbox, consumidores idempotentes e notificações
+
+**Status:** aceita
+
+**Decisão.**
+- O relay (`php artisan outbox:relay`, papel `fornevia_relay`) reivindica
+  lotes de mensagens pendentes e disponíveis com `FOR UPDATE SKIP LOCKED`,
+  gravando lease (dono e prazo) e tentativa numa transação curta. Fora dela,
+  despacha um job por mensagem para a fila declarada pelos consumidores do
+  tipo e marca a mensagem como publicada, conferindo o dono do lease. Lease
+  vencido volta a ser reivindicado; mensagem sem consumidor é marcada como
+  publicada sem despacho.
+- Falha ao despachar fica em `outbox_failures` (etapa `publish`), com nova
+  disponibilidade por backoff exponencial limitado. Depois do máximo de
+  tentativas, a mensagem fica `dead`, consultável e reenviável por comando
+  (`outbox:retry`).
+- O consumo roda no worker, no contexto de sistema do tenant da mensagem.
+  Cada consumidor roda em transação própria e registra
+  `outbox_consumptions` (único por mensagem e consumidor) antes de agir:
+  repetição da mensagem não repete o efeito. Falha desfaz o consumo; o job
+  tenta de novo com backoff e, esgotado, registra a falha (etapa
+  `consume`) e deixa a mensagem `dead`, reenviável por `outbox:retry`.
+- Destinatário precisa ainda ter a permissão da tela do aviso; aprovadores
+  que já decidiram o nível e os delegados deles não são avisados.
+- Notificações são um consumidor: os destinatários são calculados no
+  consumo, pelo estado atual (aprovadores do nível pendente com delegações
+  vigentes, solicitante da cotação, representante da carteira ou quem tem a
+  permissão). A notificação no sistema (`user_notifications`, única por
+  mensagem e associação) é visível só ao próprio usuário (RLS) e só tem a
+  data de leitura gravável. O e-mail sai depois do commit, uma vez por
+  notificação criada, salvo se a pessoa desligou o e-mail no contexto.
+- Eventos do pedido que pedem ação de alguém (envio para aprovação, nível
+  aprovado, reavaliação, reatribuição, rejeição, confirmação pendente) são
+  registrados também na outbox, na mesma transação do evento.
+- O próprio relay apaga, periodicamente, mensagens publicadas além do prazo
+  de retenção; mensagens `dead` ficam até serem reenviadas ou analisadas.
+
+**Motivo.** O ADR-008 garante que nenhum evento se perde entre o commit e a
+publicação, mas sem relay e consumidores os eventos não chegam a ninguém.
+Lease com `SKIP LOCKED` permite mais de um relay sem publicação dupla no
+caminho normal; a entrega continua pelo menos uma vez, e a idempotência
+fica no consumidor. Calcular destinatários no consumo evita notificar quem
+perdeu a permissão, e a tabela de notificações do próprio sistema mantém o
+isolamento por tenant e por pessoa.

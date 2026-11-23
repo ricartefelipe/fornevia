@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Web\ContextController;
 use App\Http\Controllers\Web\InvitationController;
+use App\Livewire\Notifications\NotificationsPage;
 use App\Livewire\Onboarding\CreateOrganizationForm;
 use App\Livewire\Platform\OrganizationsIndex;
 use App\Livewire\Platform\PlansIndex;
@@ -45,6 +46,7 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         Route::livewire('/painel', Dashboard::class)->name('dashboard');
         Route::livewire('/equipe', TeamMembers::class)->middleware('permission:members.manage')->name('team.index');
         Route::livewire('/filiais', BranchesIndex::class)->middleware('permission:organization.manage')->name('branches.index');
+        Route::livewire('/notificacoes', NotificationsPage::class)->name('notifications.index');
 
         foreach (glob(__DIR__.'/staff/*.php') ?: [] as $file) {
             require $file;
@@ -55,6 +57,7 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     // /portal e nomes portal.*.
     Route::middleware(['context:buyer'])->prefix('portal')->name('portal.')->group(function (): void {
         Route::livewire('/', PortalHome::class)->name('home');
+        Route::livewire('/notificacoes', NotificationsPage::class)->name('notifications');
 
         foreach (glob(__DIR__.'/portal/*.php') ?: [] as $file) {
             require $file;

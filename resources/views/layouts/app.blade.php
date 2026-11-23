@@ -45,6 +45,9 @@
                     @endif
                 </div>
                 <div class="flex items-center gap-3 text-sm">
+                    @if ($membership)
+                        <livewire:notifications.notification-bell />
+                    @endif
                     <a href="{{ route('contexts.index', ['escolher' => 1]) }}" class="font-medium text-brand-700 hover:underline">Trocar contexto</a>
                     <a href="{{ route('profile.security') }}" class="text-slate-700 hover:underline">{{ auth()->user()?->name }}</a>
                     <form method="POST" action="{{ route('logout') }}">

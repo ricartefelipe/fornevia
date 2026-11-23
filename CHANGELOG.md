@@ -5,6 +5,23 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Relay da outbox (`outbox:relay`) com lease, `SKIP LOCKED`, backoff,
+  mensagens sem novas tentativas reenviáveis (`outbox:retry`), retenção e
+  situação (`outbox:status`); consumo idempotente por mensagem e
+  consumidor.
+- Notificações no sistema e por e-mail sobre cotações, aprovação
+  comercial, aprovação interna e pedidos, para quem precisa agir, nunca
+  para quem causou o evento; central de notificações na equipe e no
+  portal, com contagem no cabeçalho e preferência de e-mail por contexto.
+
+### Segurança
+
+- Notificações visíveis só à própria pessoa, criadas apenas no contexto de
+  sistema, com link sempre interno; preferência de e-mail gravável só para
+  a própria associação.
+
 ## [0.2.0] - 2026-11-23
 
 ### Adicionado

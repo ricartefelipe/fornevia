@@ -341,3 +341,48 @@ aos aprovadores (incremento de processamento da outbox).
 Limitações registradas: sem notificação ao comprador e à equipe sobre
 proposta, aprovação comercial e vencimento (incremento de processamento da
 outbox); a disponibilidade exibida sem reserva é só uma consulta.
+
+## Incremento 7 — Outbox e notificações (`feature/outbox-notificacoes`)
+
+### Implementado
+
+- Relay da outbox (`outbox:relay`, papel `fornevia_relay`): lotes com lease
+  e `SKIP LOCKED`, um job por mensagem na fila do consumidor, backoff,
+  mensagens sem novas tentativas com reenvio (`outbox:retry`), retenção e
+  situação (`outbox:status`), encerramento limpo por sinal (ADR-026).
+- Consumo idempotente no worker: cada consumidor uma vez por mensagem, em
+  transação própria no contexto de sistema do tenant; falhas registradas.
+- Eventos do pedido que pedem ação também na outbox.
+- Notificações no sistema e por e-mail sobre cotações, aprovação comercial,
+  aprovação interna e pedidos, com destinatários calculados no consumo e
+  nunca quem causou o evento; central na equipe e no portal, contagem no
+  cabeçalho e preferência de e-mail por contexto.
+- Defesa no banco: notificações visíveis só à própria pessoa, criadas no
+  contexto de sistema, só a leitura alterável, link interno; preferência e
+  notificação amarradas à pessoa da associação por trigger.
+
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Testes do relay, do consumo, das notificações, da segurança e das telas | 35 testes aprovados; os 8 de regressão da revisão falham sem a correção correspondente |
+| Suítes afetadas, local (aprovação, pedidos, cotações, portal, equipe, identidade, concorrência, tenancy, unitários e todas as telas) | aprovadas após as correções |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+| Suíte completa na CI do PR #14, commit `c28473d` | 2.175 testes e 10.593 asserções aprovados; cobertura de linhas total 94,8%, núcleo 97,85%, caminhos críticos 100%; migrations, imagem, segredos e frontend aprovados |
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Cancelamento de pedido ainda não confirmado sem aviso a quem o fez.
+- Aviso a quem perdeu a permissão da tela (com o total da proposta no
+  e-mail).
+- Consumo com tentativas esgotadas invisível, sem reenvio e apagado pela
+  retenção.
+- Retenção limitada a mil mensagens por hora.
+- Delegado de quem já decidiu o nível avisado para aprovar.
+- Falha registrada por relay que já tinha perdido o lease.
+- `outbox:retry` com id e `--all` reenviando todas.
+- Relay sem espera crescente com banco ou fila indisponível.
+
+Limitações registradas: sem push ou SMS; o e-mail usa o modelo padrão do
+framework; sem agrupamento de avisos repetidos.

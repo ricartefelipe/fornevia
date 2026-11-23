@@ -198,6 +198,7 @@ final readonly class CancelOrderItems
         ])->save();
 
         $this->confirmation->event($order, 'order.cancelled', ['reason' => $reason, 'confirmed' => false]);
+        $this->outbox->record('order.cancelled', 'order', $order->id, ['order_id' => $order->id, 'number' => $order->number, 'confirmed' => false]);
 
         return $order;
     }

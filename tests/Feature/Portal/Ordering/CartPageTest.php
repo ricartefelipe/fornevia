@@ -270,8 +270,7 @@ it('protege carrinho, total exibido e chave de envio contra alteração pelo cli
 
 it('devolve o mesmo pedido ao reenviar a mesma tentativa pelo endpoint real', function (): void {
     $page = ($this->page)(route('portal.cart'))->assertOk();
-    preg_match('/wire:snapshot="([^"]+)"/', (string) $page->getContent(), $match);
-    $snapshot = html_entity_decode($match[1] ?? '', ENT_QUOTES | ENT_HTML5);
+    $snapshot = Tests\Support\LivewireSnapshot::page($page);
 
     $send = function (string $reference = 'OC-77') use ($snapshot): TestResponse {
         app()->forgetScopedInstances();
