@@ -86,6 +86,22 @@ it('registra a falha de publicação, espera o backoff e para depois do máximo 
     expect(app(OutboxRelay::class)->runOnce('relay-b')['published'])->toBe(1);
 });
 
+it('não registra falha de mensagem cujo lease passou a outro relay', function (): void {
+    $id = ($this->record)();
+    $bus = Mockery::mock(Dispatcher::class);
+    $bus->shouldReceive('dispatch')->andReturnUsing(function () use ($id): never {
+        // Despacho lento: o lease venceu e outro relay reivindicou a mensagem.
+        ($this->relayDb)()->where('id', $id)->update(['lease_owner' => 'relay-b']);
+
+        throw new RuntimeException('tempo esgotado');
+    });
+    $relay = new OutboxRelay(app('db'), app(OutboxConsumers::class), $bus, app(Clock::class));
+
+    expect($relay->runOnce('relay-a'))->toBe(['claimed' => 1, 'published' => 0, 'failed' => 0, 'dead' => 0])
+        ->and(DB::connection(OutboxRelay::CONNECTION)->table('outbox_failures')->count())->toBe(0)
+        ->and(($this->relayDb)()->where('id', $id)->value('lease_owner'))->toBe('relay-b');
+});
+
 it('não reivindica mensagem com lease vigente nem bloqueada por outro relay', function (): void {
     Queue::fake();
     $leased = ($this->record)();
@@ -124,6 +140,26 @@ it('apaga as publicadas além da retenção e mantém as recentes e as sem novas
 
     expect(app(OutboxRelay::class)->prune())->toBe(1)
         ->and(($this->relayDb)()->orderBy('id')->pluck('id')->all())->toEqualCanonicalizing([$recent, $dead]);
+});
+
+it('apaga em lotes até não restar publicada vencida', function (): void {
+    Queue::fake();
+    foreach (range(1, 5) as $ignored) {
+        ($this->record)();
+    }
+    app(OutboxRelay::class)->runOnce('relay-a');
+    ($this->relayDb)()->update(['published_at' => now()->subDays(31)]);
+
+    expect(app(OutboxRelay::class)->prune(limit: 2))->toBe(5)
+        ->and(($this->relayDb)()->count())->toBe(0);
+
+    foreach (range(1, 3) as $ignored) {
+        ($this->record)();
+    }
+    app(OutboxRelay::class)->runOnce('relay-a');
+    ($this->relayDb)()->update(['published_at' => now()->subDays(31)]);
+
+    expect(app(OutboxRelay::class)->prune(limit: 1, maxBatches: 2))->toBe(2);
 });
 
 it('mostra a situação da outbox', function (): void {

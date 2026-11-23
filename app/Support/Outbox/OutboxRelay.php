@@ -59,8 +59,11 @@ final readonly class OutboxRelay
                 $this->markPublished($message->id, $owner);
                 $result['published']++;
             } catch (Throwable $e) {
-                $dead = $this->markFailed($message->id, $message->tenant_id, $owner, $message->attempts, $e);
-                $result[$dead ? 'dead' : 'failed']++;
+                $outcome = $this->markFailed($message->id, $message->tenant_id, $owner, $message->attempts, $e);
+
+                if ($outcome !== null) {
+                    $result[$outcome]++;
+                }
             }
         }
 
@@ -69,17 +72,29 @@ final readonly class OutboxRelay
 
     /**
      * Apaga mensagens publicadas além do prazo de retenção (falhas e
-     * consumos vão junto). Mensagens "dead" ficam.
+     * consumos vão junto), em lotes curtos até não restar nenhuma ou até o
+     * máximo de lotes por chamada. Mensagens "dead" ficam.
      */
-    public function prune(int $limit = 1000): int
+    public function prune(int $limit = 1000, int $maxBatches = 100): int
     {
         $before = $this->clock->now()->subDays((int) config('outbox.retention_days', 30));
+        $limit = max(1, $limit);
+        $total = 0;
 
-        return $this->connection()->delete(
-            "delete from outbox_messages where id in (
-                select id from outbox_messages where status = 'published' and published_at < ? order by published_at limit ?)",
-            [$before, $limit],
-        );
+        for ($batch = 0; $batch < max(1, $maxBatches); $batch++) {
+            $deleted = $this->connection()->delete(
+                "delete from outbox_messages where id in (
+                    select id from outbox_messages where status = 'published' and published_at < ? order by published_at limit ?)",
+                [$before, $limit],
+            );
+            $total += $deleted;
+
+            if ($deleted < $limit) {
+                break;
+            }
+        }
+
+        return $total;
     }
 
     /**
@@ -154,8 +169,15 @@ final readonly class OutboxRelay
         );
     }
 
-    /** Registra a falha e agenda a próxima tentativa; true quando a mensagem ficou "dead". */
-    private function markFailed(string $id, string $tenantId, string $owner, int $attempts, Throwable $error): bool
+    /**
+     * Registra a falha e agenda a próxima tentativa. Devolve "dead" quando a
+     * mensagem fica sem novas tentativas, "failed" quando volta à fila, ou
+     * null quando o lease já não é deste relay (outro relay a reivindicou):
+     * nesse caso nada é registrado.
+     *
+     * @return 'failed'|'dead'|null
+     */
+    private function markFailed(string $id, string $tenantId, string $owner, int $attempts, Throwable $error): ?string
     {
         $now = $this->clock->now();
         $dead = $attempts >= (int) config('outbox.max_attempts', 10);
@@ -165,19 +187,24 @@ final readonly class OutboxRelay
         $message = mb_substr($error::class.': '.$error->getMessage(), 0, 2000);
         $connection = $this->connection();
 
-        $connection->transaction(static function () use ($connection, $id, $tenantId, $owner, $attempts, $now, $dead, $delay, $message): void {
+        return $connection->transaction(static function () use ($connection, $id, $tenantId, $owner, $attempts, $now, $dead, $delay, $message): ?string {
+            $updated = $connection->update(
+                "update outbox_messages set status = ?, available_at = ?, lease_owner = null, lease_expires_at = null, last_error = ?
+                  where id = ? and lease_owner = ? and status = 'pending'",
+                [$dead ? 'dead' : 'pending', $now->addSeconds($delay), $message, $id, $owner],
+            );
+
+            if ($updated === 0) {
+                return null;
+            }
+
             $connection->insert(
                 'insert into outbox_failures (id, tenant_id, outbox_message_id, attempt, stage, error, created_at) values (?, ?, ?, ?, ?, ?, ?)',
                 [(string) Str::uuid7(), $tenantId, $id, $attempts, 'publish', $message, $now],
             );
-            $connection->update(
-                'update outbox_messages set status = ?, available_at = ?, lease_owner = null, lease_expires_at = null, last_error = ?
-                  where id = ? and lease_owner = ?',
-                [$dead ? 'dead' : 'pending', $now->addSeconds($delay), $message, $id, $owner],
-            );
-        });
 
-        return $dead;
+            return $dead ? 'dead' : 'failed';
+        });
     }
 
     private function connection(): ConnectionInterface
