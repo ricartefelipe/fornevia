@@ -16,6 +16,7 @@ use App\Enums\Approvals\ApprovalStepStatus;
 use App\Enums\Identity\Permission;
 use App\Enums\Ordering\ApprovalStatus;
 use App\Enums\Ordering\CommercialStatus;
+use App\Enums\Quotes\StockHoldEndReason;
 use App\Models\Approvals\OrderApprovalDecision;
 use App\Models\Approvals\OrderApprovalStep;
 use App\Models\Ordering\Order;
@@ -24,6 +25,8 @@ use App\Services\Approvals\ApprovedOrderFinalizer;
 use App\Services\Approvals\BudgetLedger;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Ordering\OrderConfirmation;
+use App\Services\Quotes\QuoteLocks;
+use App\Services\Quotes\QuoteStockHolds;
 use App\Support\Auth\Access;
 use App\Support\Clock\Clock;
 use App\Support\Tenancy\TenantDatabase;
@@ -56,6 +59,8 @@ final readonly class DecideOrderApproval
         private OrderConfirmation $confirmation,
         private AuditRecorder $audit,
         private TenantDatabase $db,
+        private QuoteLocks $quoteLocks,
+        private QuoteStockHolds $quoteHolds,
         private Clock $clock,
     ) {}
 
@@ -103,6 +108,8 @@ final readonly class DecideOrderApproval
             ->where('buyer_company_id', $order->buyer_company_id)
             ->lockForUpdate()
             ->findOrFail($order->id);
+        // Pedido → cotação de origem (ADR-006).
+        $this->quoteLocks->lockSourceOf($locked);
 
         if ($locked->commercial_status !== CommercialStatus::PendingApproval || $locked->approval_status !== ApprovalStatus::Pending) {
             throw new OrderNotAwaitingApproval('Este pedido não está aguardando aprovação.');
@@ -168,6 +175,7 @@ final readonly class DecideOrderApproval
                 'confirmation_issue' => null,
             ])->save();
             $this->budgets->release($locked);
+            $this->quoteHolds->releaseForOrder($locked, StockHoldEndReason::OrderRejected);
             $this->confirmation->event($locked, 'order.approval_rejected', ['level' => $step->level_number, 'reason' => $comment]);
 
             return ApprovalOutcome::Rejected;

@@ -8,6 +8,8 @@ use App\Data\Inventory\ReservationRequest;
 use App\Enums\Inventory\ReservationHolder;
 use App\Enums\Quotes\StockHoldEndReason;
 use App\Enums\Quotes\StockHoldStatus;
+use App\Models\Ordering\Order;
+use App\Models\Ordering\OrderItem;
 use App\Models\Quotes\QuoteItem;
 use App\Models\Quotes\QuoteVersion;
 use App\Services\Inventory\StockLedger;
@@ -84,6 +86,52 @@ final readonly class QuoteStockHolds
             'stock_hold_ended_at' => $this->clock->now(),
             'stock_hold_end_reason' => $reason,
         ])->save();
+    }
+
+    /**
+     * Na confirmação de um pedido gerado de cotação: bloqueia de uma vez a
+     * união dos saldos da reserva da versão com os dos SKUs do pedido e
+     * libera a reserva (transferida). A reserva do pedido, feita em seguida
+     * sobre os saldos ainda bloqueados, aproveita o estoque liberado. Com a
+     * reserva já encerrada, não faz nada.
+     */
+    public function handOff(Order $order): void
+    {
+        $version = self::sourceOf($order);
+
+        if ($version === null || $version->stock_hold_status !== StockHoldStatus::Active) {
+            return;
+        }
+
+        $skuIds = OrderItem::query()->where('order_id', $order->id)->pluck('sku_id')->map(static fn (mixed $id): string => (string) $id)->all();
+        $holders = self::items($version)->pluck('id')->map(static fn (mixed $id): string => (string) $id)->all();
+
+        $this->stock->lockLevels(array_values($skuIds), ReservationHolder::QuoteItem, array_values($holders));
+        $this->release($version, StockHoldEndReason::Transferred, locked: true);
+    }
+
+    /**
+     * Pedido de cotação rejeitado na aprovação interna ou cancelado antes da
+     * confirmação: a reserva da versão é liberada e o motivo registrado.
+     */
+    public function releaseForOrder(Order $order, StockHoldEndReason $reason): void
+    {
+        $version = self::sourceOf($order);
+
+        if ($version !== null) {
+            $this->release($version, $reason);
+        }
+    }
+
+    private static function sourceOf(Order $order): ?QuoteVersion
+    {
+        if ($order->source_quote_version_id === null) {
+            return null;
+        }
+
+        return QuoteVersion::query()
+            ->where('buyer_company_id', $order->buyer_company_id)
+            ->find($order->source_quote_version_id);
     }
 
     /**

@@ -13,6 +13,7 @@ use App\Enums\Ordering\CommercialStatus;
 use App\Models\Ordering\Order;
 use App\Services\Approvals\ApprovedOrderFinalizer;
 use App\Services\Audit\AuditRecorder;
+use App\Services\Quotes\QuoteLocks;
 use App\Support\Auth\Access;
 use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -30,6 +31,7 @@ final readonly class RetryOrderConfirmation
         private ApprovedOrderFinalizer $finalizer,
         private AuditRecorder $audit,
         private TenantDatabase $db,
+        private QuoteLocks $quoteLocks,
     ) {}
 
     public function handle(Order $order): ApprovalOutcome
@@ -58,6 +60,8 @@ final readonly class RetryOrderConfirmation
             ->where('buyer_company_id', $order->buyer_company_id)
             ->lockForUpdate()
             ->findOrFail($order->id);
+        // Pedido → cotação de origem (ADR-006).
+        $this->quoteLocks->lockSourceOf($locked);
 
         if ($locked->commercial_status !== CommercialStatus::Approved || $locked->approval_status !== ApprovalStatus::Approved
             || ApprovalSteps::current($locked) !== null) {

@@ -11,6 +11,7 @@ use App\Enums\Approvals\ApprovalStepStatus;
 use App\Enums\Identity\Permission;
 use App\Enums\Ordering\ApprovalStatus;
 use App\Enums\Ordering\CommercialStatus;
+use App\Enums\Quotes\StockHoldEndReason;
 use App\Models\Approvals\OrderApprovalStep;
 use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderItem;
@@ -19,6 +20,8 @@ use App\Services\Audit\AuditRecorder;
 use App\Services\Credit\CreditLedger;
 use App\Services\Inventory\StockLedger;
 use App\Services\Ordering\OrderConfirmation;
+use App\Services\Quotes\QuoteLocks;
+use App\Services\Quotes\QuoteStockHolds;
 use App\Support\Auth\Access;
 use App\Support\Clock\Clock;
 use App\Support\Http\UntrustedId;
@@ -48,6 +51,8 @@ final readonly class CancelOrderItems
         private BudgetLedger $budgets,
         private OrderConfirmation $confirmation,
         private AuditRecorder $audit,
+        private QuoteLocks $quoteLocks,
+        private QuoteStockHolds $quoteHolds,
         private Clock $clock,
     ) {}
 
@@ -87,6 +92,8 @@ final readonly class CancelOrderItems
             ->where('buyer_company_id', $order->buyer_company_id)
             ->lockForUpdate()
             ->findOrFail($order->id);
+        // Pedido → cotação de origem (ADR-006).
+        $this->quoteLocks->lockSourceOf($locked);
 
         if (in_array($locked->commercial_status, [CommercialStatus::PendingApproval, CommercialStatus::Approved], true)) {
             return [$this->cancelUnconfirmed($locked, $quantities, $reason), ['items' => [], 'value_cents' => 0, 'confirmed' => false]];
@@ -181,6 +188,7 @@ final readonly class CancelOrderItems
         }
 
         $this->budgets->release($order);
+        $this->quoteHolds->releaseForOrder($order, StockHoldEndReason::OrderCancelled);
 
         $order->forceFill([
             'commercial_status' => CommercialStatus::Cancelled,

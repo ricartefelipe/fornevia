@@ -15,6 +15,7 @@ use App\Enums\Approvals\ApprovalStepStatus;
 use App\Enums\Buyers\AddressKind;
 use App\Enums\Ordering\ApprovalStatus;
 use App\Enums\Ordering\CommercialStatus;
+use App\Enums\Ordering\OrderSource;
 use App\Models\Approvals\ApprovalRule;
 use App\Models\Buyers\BuyerAddress;
 use App\Models\Buyers\BuyerCompany;
@@ -88,6 +89,20 @@ final readonly class ApprovedOrderFinalizer
             return $this->awaiting($order, $issue);
         }
 
+        // Pedido de cotação: os preços negociados ficam mantidos (RN-044);
+        // não há reprecificação nem nova escolha de regra.
+        if ($order->source === OrderSource::Quote) {
+            if (CheckoutReferences::termChanged($order->payment_term, $term)) {
+                return $this->awaiting($order, 'A condição de pagamento mudou desde a proposta. Cancele o pedido e solicite nova cotação.');
+            }
+
+            if (! hash_equals((string) $order->approval_fingerprint, ApprovalFingerprint::of($order))) {
+                return $this->awaiting($order, 'O pedido difere do que foi aprovado. Cancele o pedido e solicite nova cotação.');
+            }
+
+            return $this->confirmOrAwait($order);
+        }
+
         $prices = $this->pricing->resolve($buyer, $items->mapWithKeys(static fn (OrderItem $item): array => [$item->sku_id => $item->quantity])->all());
         $changes = [];
 
@@ -117,6 +132,11 @@ final readonly class ApprovedOrderFinalizer
             return ApprovalOutcome::Invalidated;
         }
 
+        return $this->confirmOrAwait($order);
+    }
+
+    private function confirmOrAwait(Order $order): ApprovalOutcome
+    {
         try {
             DB::transaction(fn () => $this->confirmation->confirm($order));
         } catch (BusinessRuleViolation $e) {
