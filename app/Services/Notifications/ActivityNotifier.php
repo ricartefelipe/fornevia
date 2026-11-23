@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Notifications;
 
 use App\Domain\Shared\Money;
+use App\Enums\Identity\Permission;
 use App\Enums\Ordering\CommercialStatus;
 use App\Models\Identity\Membership;
 use App\Models\Ordering\Order;
@@ -75,7 +76,7 @@ final readonly class ActivityNotifier implements OutboxConsumer
         $company = $buyer !== null ? $buyer->trade_name : 'O comprador';
         $staffPath = route('quotes.show', $quote->id, false);
         $portalPath = route('portal.quotes.show', $quote->id, false);
-        $requester = fn (): Collection => $this->recipients->memberships([$quote->requested_by_membership_id]);
+        $requester = fn (): Collection => $this->recipients->memberships([$quote->requested_by_membership_id], Permission::PortalQuotes);
         $team = fn (): Collection => $this->recipients->quoteTeam($quote);
         $version = fn (): ?QuoteVersion => QuoteVersion::query()->find($message->string('version_id'));
 
@@ -97,7 +98,7 @@ final readonly class ActivityNotifier implements OutboxConsumer
                     $staffPath,
                     'Abrir a cotação',
                 ),
-                $this->recipients->memberships([$version()?->created_by_membership_id]),
+                $this->recipients->memberships([$version()?->created_by_membership_id], Permission::QuotesView),
             ],
             'quote.proposal_sent' => [
                 new NotificationContent($message->type, "Proposta recebida: cotação {$number}", self::proposalBody($message), $portalPath, 'Ver a proposta'),

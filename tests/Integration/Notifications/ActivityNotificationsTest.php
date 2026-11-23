@@ -176,3 +176,33 @@ it('avisa quem fez o pedido quando a equipe cancela o pedido ainda em aprovaçã
 
     expect(($this->inbox)($this->buyer['membership']))->toBe([['order.cancelled', "/portal/pedidos/{$order->id}"]]);
 });
+
+it('não avisa quem perdeu a permissão da tela do aviso', function (): void {
+    $quote = F::request($this->scenario, $this->buyer);
+    // O solicitante passa a um papel sem cotações.
+    $this->scenario->system(fn () => Membership::query()->whereKey($this->buyer['membership']->id)
+        ->update(['role_id' => $this->scenario->tenant->role(SystemRole::Approver)->id]));
+    F::submit($this->scenario, $this->manager, $quote);
+    ($this->drain)();
+
+    expect(($this->inbox)($this->buyer['membership']))->toBe([])
+        ->and(($this->emails)())->not->toContain(($this->email)($this->buyer['membership']));
+});
+
+it('não avisa o delegado de quem já decidiu o nível', function (): void {
+    $ana = $this->scenario->tenant->addBuyerUser($this->buyer['company'], SystemRole::Approver);
+    $bia = $this->scenario->tenant->addBuyerUser($this->buyer['company'], SystemRole::Approver);
+    $anaDelegate = $this->scenario->tenant->addBuyerUser($this->buyer['company'], SystemRole::Approver);
+    $biaDelegate = $this->scenario->tenant->addBuyerUser($this->buyer['company'], SystemRole::Approver);
+    Fx::delegation($this->scenario, $ana, $anaDelegate);
+    Fx::delegation($this->scenario, $bia, $biaDelegate);
+    Fx::rule($this->scenario, $this->buyer['company'], [[2, [$ana, $bia]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+
+    expect(Fx::decide($this->scenario, $ana, $order))->toBe(ApprovalOutcome::Pending);
+
+    $ids = $this->scenario->system(fn (): array => app(App\Services\Notifications\NotificationRecipients::class)
+        ->pendingApprovers(App\Models\Ordering\Order::query()->findOrFail($order->id))->pluck('id')->all());
+
+    expect($ids)->toEqualCanonicalizing([$bia->id, $biaDelegate->id]);
+});

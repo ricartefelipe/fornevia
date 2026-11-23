@@ -31,14 +31,22 @@ final readonly class NotificationRecipients
     ) {}
 
     /**
+     * Associações ativas que ainda têm a permissão da tela do aviso.
+     *
      * @param  list<string|null>  $ids
      * @return Collection<int, Membership>
      */
-    public function memberships(array $ids): Collection
+    public function memberships(array $ids, ?Permission $permission = null): Collection
     {
         $ids = array_values(array_unique(array_filter($ids, static fn (?string $id): bool => $id !== null && $id !== '')));
 
-        return $ids === [] ? new Collection : $this->active()->whereKey($ids)->get();
+        if ($ids === []) {
+            return new Collection;
+        }
+
+        return $this->active()->whereKey($ids)->get()
+            ->filter(static fn (Membership $m): bool => $permission === null || $m->role->grants($permission))
+            ->values();
     }
 
     /**
@@ -63,10 +71,10 @@ final readonly class NotificationRecipients
      */
     public function quoteTeam(Quote $quote): Collection
     {
-        $rep = $this->memberships([$quote->sales_rep_membership_id])
-            ->filter(static fn (Membership $m): bool => $m->role->grants(Permission::QuotesManage));
+        $answers = static fn (Membership $m): bool => $m->role->grants(Permission::QuotesManage) && $m->role->grants(Permission::QuotesView);
+        $rep = $this->memberships([$quote->sales_rep_membership_id])->filter($answers);
 
-        return $rep->isNotEmpty() ? $rep->values() : $this->staffWith(Permission::QuotesManage);
+        return ($rep->isNotEmpty() ? $rep : $this->staffWith(Permission::QuotesManage)->filter($answers))->values();
     }
 
     /**
@@ -78,7 +86,9 @@ final readonly class NotificationRecipients
     public function commercialApprovers(int $maxDiscountBps, string $authorMembershipId): Collection
     {
         return $this->staffWith(Permission::PricingApprove)
-            ->filter(static fn (Membership $m): bool => $m->id !== $authorMembershipId && $m->role->max_discount_bps >= $maxDiscountBps)
+            ->filter(static fn (Membership $m): bool => $m->id !== $authorMembershipId
+                && $m->role->grants(Permission::QuotesView)
+                && $m->role->max_discount_bps >= $maxDiscountBps)
             ->values();
     }
 
@@ -105,23 +115,25 @@ final readonly class NotificationRecipients
         $listed = array_values($step->approver_membership_ids);
         $eligible = $this->eligibility->eligible($order->buyer_company_id, $listed);
         $now = $this->clock->now();
-        $delegates = ApprovalDelegation::query()
-            ->where('buyer_company_id', $order->buyer_company_id)
-            ->whereIn('delegator_membership_id', $eligible)
-            ->whereNull('revoked_at')
-            ->where('valid_from', '<=', $now)
-            ->where('valid_until', '>', $now)
-            ->pluck('delegate_membership_id')
-            ->map(static fn (mixed $id): string => (string) $id)
-            ->all();
         $decided = OrderApprovalDecision::query()
             ->where('order_approval_step_id', $step->id)
             ->whereNull('invalidated_at')
             ->get(['actor_membership_id', 'principal_membership_id'])
             ->flatMap(static fn (OrderApprovalDecision $d): array => [(string) $d->actor_membership_id, (string) $d->principal_membership_id])
             ->all();
+        // Só quem ainda não decidiu pode delegar a decisão deste nível.
+        $undecided = array_values(array_diff($eligible, $decided));
+        $delegates = ApprovalDelegation::query()
+            ->where('buyer_company_id', $order->buyer_company_id)
+            ->whereIn('delegator_membership_id', $undecided)
+            ->whereNull('revoked_at')
+            ->where('valid_from', '<=', $now)
+            ->where('valid_until', '>', $now)
+            ->pluck('delegate_membership_id')
+            ->map(static fn (mixed $id): string => (string) $id)
+            ->all();
         $candidates = array_diff(
-            array_unique([...$eligible, ...$this->eligibility->eligible($order->buyer_company_id, array_values($delegates))]),
+            array_unique([...$undecided, ...$this->eligibility->eligible($order->buyer_company_id, array_values($delegates))]),
             $decided,
             [(string) $order->placed_by_membership_id],
         );
