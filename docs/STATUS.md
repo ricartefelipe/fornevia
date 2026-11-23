@@ -284,4 +284,60 @@ aos aprovadores (incremento de processamento da outbox).
 
 ## Incremento 6 — Cotações e negociação (`feature/cotacoes`)
 
-Em andamento: RF-040 e RN-040 a RN-044, conforme a ADR-025.
+### Implementado
+
+- Solicitação de cotação pelo portal a partir do carrinho, com mensagem e
+  prazo desejado; lista em abas e detalhe com histórico e conversa; notas
+  internas da equipe invisíveis ao comprador (RF-040).
+- Propostas da equipe em versões imutáveis, com preço de referência do
+  servidor e desconto avaliado pela política comercial do autor; fora da
+  política, justificativa obrigatória e aprovação comercial vinculada à
+  versão, com autoaprovação para quem tem permissão e limite (RN-041).
+- Reserva de estoque opcional, tudo ou nada, com prazo limitado à validade
+  e a 7 dias, transferida ao pedido na confirmação e liberada na
+  contraproposta, recusa, retirada, rejeição ou cancelamento do pedido
+  (RN-043).
+- Aceite vinculado à versão exibida, que gera o pedido pelo mesmo caminho
+  do checkout (aprovação interna e orçamento), com os valores negociados
+  mantidos na confirmação; contraproposta, recusa, cancelamento e
+  encerramento pela equipe (RN-040, RN-042, RN-044).
+- Expiração agendada a cada minuto, com SKIP LOCKED e isolamento de falhas
+  por cotação.
+- Defesa no banco: versões e itens imutáveis, transições por trigger (o
+  mesmo mapa conferido pelos models), envio só com avaliação comercial
+  válida, pedido de cotação só a partir de versão aceita com o mesmo total
+  e a mesma condição; comentários internos fora do alcance do comprador.
+
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Suítes de cotação (unitários, integração, concorrência e telas) | aprovadas após as correções da revisão |
+| Suítes afetadas (aprovação, pedidos, estoque, portal, equipe, unitários, concorrência), local | 909 testes e 3.899 asserções aprovados |
+| Testes de concorrência das cotações | 5 cenários; sem o lock da cotação no aceite, 2 falham |
+| Testes de regressão da revisão | os 9 novos falham sem a correção correspondente e passam com ela |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+| Suíte completa na CI do PR #11, commit `e5d6cbf` | 2.140 testes e 10.421 asserções aprovados; cobertura de linhas total 95,0%, núcleo 97,84%, caminhos críticos 100%; migrations, imagem, segredos e frontend aprovados |
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Cotação vencida sem proposta exibida nem formulário de revalidação.
+- Aprovador comercial sem permissão de elaborar propostas recebia erro ao
+  aprovar, porque o envio junto era sempre pedido.
+- Chave de idempotência da solicitação de cotação não era criada na
+  abertura do carrinho.
+- Quantidades do pedido de revisão herdadas de uma versão anterior.
+- Recusa e pedido de revisão recusados quando a reserva terminava depois
+  da exibição.
+- Falha em uma cotação interrompia a expiração das demais do tenant.
+- Repetição de um envio concluído falhava se condição, prazo ou preço
+  tivessem mudado.
+- Pedido de cotação confirmado sem conferir a embalagem da proposta.
+- Link para a cotação de origem exibido a quem não pode abri-la.
+- Mapa de transições da aplicação divergente do trigger e auxiliar sem uso.
+- Expectativa do menu da equipe sem o item de cotações (apontada pela CI).
+
+Limitações registradas: sem notificação ao comprador e à equipe sobre
+proposta, aprovação comercial e vencimento (incremento de processamento da
+outbox); a disponibilidade exibida sem reserva é só uma consulta.
