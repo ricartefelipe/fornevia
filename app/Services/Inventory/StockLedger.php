@@ -9,6 +9,7 @@ use App\Data\Inventory\ReservationRequest;
 use App\Domain\Inventory\StockAllocator;
 use App\Domain\Inventory\WarehouseStock;
 use App\Domain\Shared\Quantity;
+use App\Enums\Inventory\ReservationHolder;
 use App\Enums\Inventory\ReservationStatus;
 use App\Enums\Inventory\StockMovementType;
 use App\Models\Inventory\StockReservation;
@@ -34,11 +35,12 @@ final readonly class StockLedger
     ) {}
 
     /**
-     * Reserva os itens de um pedido de forma atômica: ou todos os itens são
-     * atendidos (ou explicitamente encomendados), ou nada é reservado.
+     * Reserva os itens de um pedido ou de uma versão de cotação de forma
+     * atômica: ou todos os itens são atendidos (ou explicitamente
+     * encomendados), ou nada é reservado.
      *
      * @param  list<ReservationRequest>  $requests
-     * @return array<string, ReservationOutcome> por order_item_id
+     * @return array<string, ReservationOutcome> por titular (item de pedido ou de cotação)
      */
     public function reserve(array $requests, string $referenceType, string $referenceId): array
     {
@@ -90,7 +92,7 @@ final readonly class StockLedger
                 $reservationIds[] = $this->createReservation($part['warehouseId'], $request, $part['quantity'], $referenceType, $referenceId);
             }
 
-            $outcomes[$request->orderItemId] = new ReservationOutcome($request->orderItemId, $allocation->reserved(), $allocation->backordered, $reservationIds);
+            $outcomes[$request->holderId] = new ReservationOutcome($request->holderId, $allocation->reserved(), $allocation->backordered, $reservationIds);
         }
 
         return $outcomes;
@@ -110,24 +112,85 @@ final readonly class StockLedger
      */
     public function lockLevelsForOrderItems(array $orderItemIds): void
     {
+        $this->lockLevels([], ReservationHolder::OrderItem, $orderItemIds);
+    }
+
+    /**
+     * Bloqueia de uma vez, na ordem (warehouse_id, sku_id) do ADR-006, a
+     * união dos saldos dos SKUs informados nos depósitos que atendem vendas
+     * com os saldos das reservas ativas dos titulares informados. Usado ao
+     * trocar ou transferir a reserva de uma cotação: o estoque liberado não
+     * escapa para outra transação antes da nova reserva.
+     *
+     * @param  list<string>  $skuIds  SKUs que serão reservados em seguida
+     * @param  list<string>  $holderIds  titulares cujas reservas ativas serão liberadas
+     */
+    public function lockLevels(array $skuIds, ReservationHolder $holder, array $holderIds): void
+    {
         $this->assertInTransaction();
 
-        if ($orderItemIds === []) {
+        if ($skuIds === [] && $holderIds === []) {
             return;
         }
 
-        $pairs = DB::table('stock_reservations')
-            ->whereIn('order_item_id', $orderItemIds)
-            ->where('status', ReservationStatus::Active->value)
-            ->select(['warehouse_id', 'sku_id'])
-            ->distinct();
+        $query = DB::table('stock_levels')
+            ->where(static function ($levels) use ($skuIds, $holder, $holderIds): void {
+                if ($skuIds !== []) {
+                    $levels->orWhere(static fn ($sales) => $sales
+                        ->whereIn('sku_id', $skuIds)
+                        ->whereIn('warehouse_id', DB::table('warehouses')->where('is_active', true)->where('allows_sales', true)->select('id')));
+                }
 
-        DB::table('stock_levels')
-            ->whereIn(DB::raw('(warehouse_id, sku_id)'), $pairs)
+                if ($holderIds !== []) {
+                    $levels->orWhereIn(DB::raw('(warehouse_id, sku_id)'), DB::table('stock_reservations')
+                        ->whereIn($holder->column(), $holderIds)
+                        ->where('status', ReservationStatus::Active->value)
+                        ->select(['warehouse_id', 'sku_id'])
+                        ->distinct());
+                }
+            });
+
+        $query->orderBy('warehouse_id')->orderBy('sku_id')->lockForUpdate()->get(['id']);
+    }
+
+    /**
+     * Libera todo o saldo ativo das reservas dos itens de cotação
+     * informados (fim da reserva com prazo). Exige lockLevels antes.
+     *
+     * @param  list<string>  $quoteItemIds
+     * @return int reservas liberadas
+     */
+    public function releaseForQuoteItems(array $quoteItemIds, string $reason, string $referenceType, string $referenceId): int
+    {
+        $this->assertInTransaction();
+
+        if ($quoteItemIds === []) {
+            return 0;
+        }
+
+        $reservations = StockReservation::query()
+            ->whereIn('quote_item_id', $quoteItemIds)
+            ->where('status', ReservationStatus::Active->value)
             ->orderBy('warehouse_id')
             ->orderBy('sku_id')
+            ->orderBy('id')
             ->lockForUpdate()
-            ->get(['id']);
+            ->get();
+
+        foreach ($reservations as $reservation) {
+            $open = $reservation->quantity->minus($reservation->quantity_consumed)->minus($reservation->quantity_released);
+
+            $reservation->forceFill([
+                'quantity_released' => $reservation->quantity_released->plus($open),
+                'status' => $reservation->quantity_consumed->isPositive() ? ReservationStatus::Consumed : ReservationStatus::Released,
+            ])->save();
+
+            if ($open->isPositive()) {
+                $this->movement(StockMovementType::ReservationRelease, $reservation->warehouse_id, $reservation->sku_id, $open, $reservation->id, $referenceType, $referenceId, $reason);
+            }
+        }
+
+        return $reservations->count();
     }
 
     public function releaseForOrderItem(string $orderItemId, Quantity $quantity, string $reason, string $referenceType, string $referenceId): Quantity
@@ -222,7 +285,8 @@ final readonly class StockLedger
         $reservation->forceFill([
             'warehouse_id' => $warehouseId,
             'sku_id' => $request->skuId,
-            'order_item_id' => $request->orderItemId,
+            $request->holder->column() => $request->holderId,
+            'expires_at' => $request->expiresAt,
             'quantity' => $quantity,
             'quantity_consumed' => Quantity::zero(),
             'quantity_released' => Quantity::zero(),
