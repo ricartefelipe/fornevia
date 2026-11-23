@@ -120,6 +120,20 @@ final readonly class OrderConfirmation
     }
 
     /**
+     * Eventos do histórico que pedem ação ou ciência de alguém: vão também
+     * para a outbox, na mesma transação (ADR-026). order.confirmed e
+     * order.cancelled já são gravados na outbox por quem os produz.
+     */
+    public const array OUTBOX_EVENTS = [
+        'order.submitted_for_approval',
+        'order.approval_level_approved',
+        'order.approval_rejected',
+        'order.approvals_invalidated',
+        'order.approval_step_reassigned',
+        'order.confirmation_pending',
+    ];
+
+    /**
      * Evento do histórico do pedido. Pedidos e eventos são somente leitura
      * no contexto de comprador: o chamador já está no contexto de sistema
      * do mesmo usuário (ou da equipe).
@@ -128,6 +142,15 @@ final readonly class OrderConfirmation
      */
     public function event(Order $order, string $type, array $data): void
     {
+        if (in_array($type, self::OUTBOX_EVENTS, true)) {
+            $this->outbox->record($type, 'order', $order->id, [
+                'order_id' => $order->id,
+                'number' => $order->number,
+                'buyer_company_id' => $order->buyer_company_id,
+                ...$data,
+            ]);
+        }
+
         DB::table('order_events')->insert([
             'id' => (string) Str::uuid7(),
             'tenant_id' => $order->tenant_id,
