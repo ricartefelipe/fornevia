@@ -628,7 +628,9 @@ ledger mantém um só saldo verdadeiro (ADR-005).
   `outbox_consumptions` (único por mensagem e consumidor) antes de agir:
   repetição da mensagem não repete o efeito. Falha desfaz o consumo; o job
   tenta de novo com backoff e, esgotado, registra a falha (etapa
-  `consume`).
+  `consume`) e deixa a mensagem `dead`, reenviável por `outbox:retry`.
+- Destinatário precisa ainda ter a permissão da tela do aviso; aprovadores
+  que já decidiram o nível e os delegados deles não são avisados.
 - Notificações são um consumidor: os destinatários são calculados no
   consumo, pelo estado atual (aprovadores do nível pendente com delegações
   vigentes, solicitante da cotação, representante da carteira ou quem tem a

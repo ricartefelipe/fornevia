@@ -548,8 +548,8 @@ O relay (`php artisan outbox:relay`, container `outbox`, papel
 | Reivindicação | relay, transação curta | `FOR UPDATE SKIP LOCKED` com lease (dono e prazo) e tentativa; mais de um relay não pega a mesma mensagem |
 | Publicação | relay, fora da transação | um job `ProcessOutboxMessage` por mensagem, na fila declarada pelos consumidores do tipo (`critical` prevalece); marcação conferindo o dono do lease |
 | Falha de publicação | relay | `outbox_failures` (etapa `publish`), backoff de 5 s a 1 h, `dead` após 10 tentativas; `outbox:retry` reenvia |
-| Consumo | worker, contexto de sistema do tenant | um consumidor por transação, com `outbox_consumptions` único por mensagem e consumidor; falha desfaz consumo e efeito; esgotadas as tentativas, `outbox_failures` (etapa `consume`) |
-| Retenção | relay, a cada hora | publicadas há mais de 30 dias são apagadas; `dead` ficam |
+| Consumo | worker, contexto de sistema do tenant | um consumidor por transação, com `outbox_consumptions` único por mensagem e consumidor; falha desfaz consumo e efeito; esgotadas as tentativas, `outbox_failures` (etapa `consume`) e a mensagem fica `dead`, reenviável sem repetir os consumidores que já agiram |
+| Retenção | relay, a cada hora | publicadas há mais de 30 dias são apagadas em lotes; `dead` ficam |
 
 `outbox:status` mostra pendentes, idade da mais antiga, reivindicadas e
 `dead` (`--json` para coleta de métricas).
