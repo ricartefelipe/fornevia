@@ -245,7 +245,8 @@ final readonly class ApprovedOrderFinalizer
             ])->save();
         }
 
-        $totals = DocumentTotals::of($amounts);
+        // O frete do pedido é o calculado no checkout; a reavaliação só reprecifica os itens.
+        $totals = DocumentTotals::of($amounts, $order->freight_cents);
         $now = $this->clock->now();
 
         DB::table('order_approval_decisions')

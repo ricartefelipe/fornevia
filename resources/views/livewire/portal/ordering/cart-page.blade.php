@@ -131,16 +131,16 @@
                 </table>
             </div>
 
-            @if ($cart->totals)
+            @if ($totals)
                 <dl class="ml-auto grid max-w-sm grid-cols-2 gap-x-6 gap-y-1 p-5 text-sm" aria-label="Totais do carrinho">
                     <dt class="text-slate-600">Subtotal</dt>
-                    <dd class="text-right">{{ $cart->totals->subtotal->format() }}</dd>
+                    <dd class="text-right">{{ $totals->subtotal->format() }}</dd>
                     <dt class="text-slate-600">Descontos</dt>
-                    <dd class="text-right">{{ $cart->totals->discount->format() }}</dd>
-                    <dt class="text-slate-600">Frete</dt>
-                    <dd class="text-right">{{ $cart->totals->freight->isZero() ? 'A combinar' : $cart->totals->freight->format() }}</dd>
+                    <dd class="text-right">{{ $totals->discount->format() }}</dd>
+                    <dt class="text-slate-600">Frete do distribuidor @if ($freight)<span class="block text-xs">{{ $freight->source }}</span>@endif</dt>
+                    <dd class="text-right">{{ $totals->freight->isZero() ? 'Sem frete' : $totals->freight->format() }}</dd>
                     <dt class="font-semibold text-slate-900">Total</dt>
-                    <dd class="text-right text-lg font-semibold text-slate-900">{{ $cart->totals->total->format() }}</dd>
+                    <dd class="text-right text-lg font-semibold text-slate-900">{{ $totals->total->format() }}</dd>
                 </dl>
             @endif
         </section>
@@ -160,7 +160,7 @@
                     <x-ui.select label="Unidade" name="unitId" :options="$choices->units" placeholder="Sem unidade específica" wire:model.live="unitId" />
                 @endif
 
-                <x-ui.select label="Endereço de entrega" name="shippingAddressId" :options="$choices->shippingAddresses" placeholder="Selecione o endereço" wire:model="shippingAddressId" required />
+                <x-ui.select label="Endereço de entrega" name="shippingAddressId" :options="$choices->shippingAddresses" placeholder="Selecione o endereço" wire:model.live="shippingAddressId" required />
 
                 @if ($choices->billingAddresses !== [])
                     <x-ui.select label="Endereço de cobrança" name="billingAddressId" :options="$choices->billingAddresses" placeholder="Usar o cadastro da empresa" wire:model="billingAddressId" />
@@ -173,7 +173,7 @@
                         @if ($budget && ! $errors->has('costCenterId'))
                             <p id="centro-custo-orcamento" class="mt-1 text-xs text-slate-600">
                                 Orçamento do centro de custo no mês: {{ $budget->available()->format() }} disponíveis de {{ $budget->amount->format() }}.
-                                @if ($cart->totals && $cart->isReady() && ! $budget->fits($cart->totals->total))
+                                @if ($totals && $cart->isReady() && ! $budget->fits($totals->total))
                                     <span class="block font-medium text-red-700">O total do carrinho excede o disponível: o pedido será recusado com este centro de custo.</span>
                                 @endif
                             </p>
@@ -216,8 +216,8 @@
                         :disabled="! $canPlace || ! $cart->isReady() || ! $cart->companyCanPurchase || $shippingAddressMissing">
                         {{ $approval ? 'Enviar para aprovação' : 'Confirmar pedido' }}
                     </x-ui.button>
-                    @if ($cart->totals && $cart->isReady())
-                        <span class="text-sm text-slate-700">{{ $approval ? 'Total a enviar' : 'Total a confirmar' }}: <strong>{{ $cart->totals->total->format() }}</strong></span>
+                    @if ($totals && $cart->isReady())
+                        <span class="text-sm text-slate-700">{{ $approval ? 'Total a enviar' : 'Total a confirmar' }}: <strong>{{ $totals->total->format() }}</strong></span>
                     @endif
                     <span wire:loading wire:target="placeOrder" class="text-sm text-slate-600" role="status">{{ $approval ? 'Enviando o pedido…' : 'Confirmando o pedido…' }}</span>
                 </div>
