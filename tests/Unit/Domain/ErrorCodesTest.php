@@ -51,6 +51,12 @@ function domainErrorCodes(): array
 
 it('mantém os códigos de erro das regras de negócio', function (): void {
     expect(domainErrorCodes())->toBe([
+        'App\Domain\Approvals\Exceptions\ApprovalNotAllowed' => 'approval_not_allowed',
+        'App\Domain\Approvals\Exceptions\ApprovalOutdated' => 'approval_outdated',
+        'App\Domain\Approvals\Exceptions\BudgetExceeded' => 'budget_exceeded',
+        'App\Domain\Approvals\Exceptions\InvalidApprovalRule' => 'invalid_approval_rule',
+        'App\Domain\Approvals\Exceptions\InvalidBudget' => 'invalid_budget',
+        'App\Domain\Approvals\Exceptions\OrderNotAwaitingApproval' => 'order_not_awaiting_approval',
         'App\Domain\Buyers\Exceptions\BuyerCompanyAlreadyRegistered' => 'buyer_company_already_registered',
         'App\Domain\Buyers\Exceptions\BuyerCompanyStatusUnchanged' => 'buyer_company_status_unchanged',
         'App\Domain\Buyers\Exceptions\BuyerUnitCodeTaken' => 'buyer_unit_code_taken',
@@ -119,6 +125,13 @@ it('mantém os códigos de erro das regras de negócio', function (): void {
         'App\Domain\Pricing\Exceptions\PriceNotAvailable' => 'price_not_available',
         'App\Domain\Pricing\Exceptions\SkuNotPriceable' => 'sku_not_priceable',
         'App\Domain\Pricing\Exceptions\SkuPackagingChanged' => 'sku_packaging_changed',
+        'App\Domain\Quotes\Exceptions\CommercialApprovalNotAllowed' => 'commercial_approval_not_allowed',
+        'App\Domain\Quotes\Exceptions\CommercialApprovalRequired' => 'commercial_approval_required',
+        'App\Domain\Quotes\Exceptions\InvalidQuote' => 'invalid_quote',
+        'App\Domain\Quotes\Exceptions\QuoteAlreadyAccepted' => 'quote_already_accepted',
+        'App\Domain\Quotes\Exceptions\QuoteExpired' => 'quote_expired',
+        'App\Domain\Quotes\Exceptions\QuoteNotOpen' => 'quote_not_open',
+        'App\Domain\Quotes\Exceptions\QuoteVersionOutdated' => 'quote_version_outdated',
         'App\Domain\Shared\AmountOutOfRange' => 'amount_out_of_range',
         'App\Domain\Shared\InvalidDocument' => 'invalid_document',
     ]);

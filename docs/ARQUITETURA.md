@@ -254,6 +254,7 @@ Gerada a partir de `App\Enums\Identity\SystemRole`. Permissões marcadas com
 | `portal.quotes` Solicitar cotações | ✓ | ✓ | ✓ |  |
 | `portal.approvals` Aprovar compras | ✓ |  |  | ✓ |
 | `portal.budgets` Gerenciar orçamentos | ✓ |  |  |  |
+| `portal.approval_rules` Gerenciar regras e delegações de aprovação | ✓ |  |  |  |
 | `portal.users` Gerenciar usuários da empresa | ✓ |  |  |  |
 
 Regras adicionais:
@@ -402,7 +403,7 @@ sequenceDiagram
     A-->>P: pedido (ou recusa sem efeito parcial)
 ```
 
-Ordem de locks (ADR-006): carrinho → chave de idempotência → saldos de
+Ordem de locks (ADR-006): chave de idempotência → carrinho → saldos de
 estoque (depósito, SKU) → conta de crédito → contador do plano. Gravações
 em estoque, crédito, custos, contador e outbox usam o contexto de sistema do
 mesmo usuário (ADR-014), porque o contexto de comprador só lê essas tabelas.
@@ -429,6 +430,9 @@ no cancelamento total).
 | Equipe: pedidos | `orders.index`, `orders.show` | `orders.view`; cancelamento com `orders.manage`; custo e margem com `catalog.view_costs` |
 | Equipe: estoque | `inventory.index`, `inventory.movements`, `inventory.warehouses`, `inventory.operations` | `inventory.view`; operações com `inventory.manage` |
 | Equipe: crédito | `credit.index`, `credit.show` | `credit.view`; alterações com `credit.manage` |
+| Portal: aprovações | `portal.approvals`, `portal.approvals.show` | `portal.approvals` (aprovador do nível, delegado vigente ou quem já decidiu); bloqueados e reatribuição com `portal.approval_rules` |
+| Portal: regras e delegações | `portal.approval-rules`, `portal.approval-rules.create`, `portal.approval-rules.edit`, `portal.delegations` | regras com `portal.approval_rules`; delegações com `portal.approval_rules` (todas) ou `portal.approvals` (as próprias) |
+| Portal: orçamentos | `portal.budgets`, `portal.budgets.show` | `portal.budgets` |
 
 - O representante comercial (papel `sales_rep`) consulta apenas pedidos das
   empresas da própria carteira (`buyer_companies.sales_rep_membership_id`),
@@ -442,4 +446,94 @@ no cancelamento total).
   atribuídos no fim da confirmação (ADR-022).
 - Reservas, movimentações de estoque e dados de crédito não são legíveis no
   contexto de comprador, nem os da própria empresa (ADR-020).
+
+## 10. Aprovação de compras e orçamento
+
+```mermaid
+stateDiagram-v2
+    [*] --> AguardandoAprovacao: checkout com regra aplicável
+    [*] --> Confirmado: checkout sem regra
+    AguardandoAprovacao --> AguardandoAprovacao: aprovação parcial / reavaliação
+    AguardandoAprovacao --> Rejeitado: rejeição em qualquer nível
+    AguardandoAprovacao --> Cancelado: cancelamento
+    AguardandoAprovacao --> Confirmado: último nível aprovado e confirmação aceita
+    AguardandoAprovacao --> AprovadoSemConfirmacao: confirmação recusada (estoque, crédito, orçamento)
+    AprovadoSemConfirmacao --> Confirmado: nova tentativa aceita
+    AprovadoSemConfirmacao --> Cancelado: cancelamento
+```
+
+| Etapa | Orçamento | Estoque e crédito |
+|---|---|---|
+| Submissão para aprovação | reserva do total | não reservados |
+| Rejeição ou cancelamento | liberação da reserva | — |
+| Reavaliação (novo total) | liberação e nova reserva | — |
+| Confirmação | consumo (reserva convertida; diferença precisa caber) | reservados e comprometidos |
+| Checkout sem aprovação | consumo direto | reservados e comprometidos |
+| Cancelamento após a confirmação | estorno do consumo, proporcional | liberados, proporcionais |
+
+- Regra aplicável, níveis, quórum, delegação, perda de acesso e
+  reavaliação: ADR-023.
+- A decisão bloqueia o pedido antes de ler níveis e decisões: aprovações
+  simultâneas que completam o quórum geram uma única confirmação, e a
+  aprovação final que concorre com o cancelamento encontra o pedido
+  cancelado (verificado com processos concorrentes, esperando o lock da
+  linha do pedido); submissões simultâneas não ultrapassam o orçamento
+  (bloqueio do orçamento antes da reserva).
+- Tabelas da aprovação usam RLS `required` (a empresa compradora vê apenas
+  as suas) e chaves estrangeiras compostas que incluem a empresa. Todas,
+  como pedidos, itens e eventos, são somente leitura no contexto de
+  comprador: as Actions autorizam a administração da empresa (regras,
+  delegações, orçamentos), o aprovador ou o solicitante e gravam no
+  contexto de sistema do mesmo usuário (ADR-024). Decisões são append-only,
+  com invalidação definitiva em coluna própria e delegação conferida pelo
+  par titular e delegado; o nível retratado não muda de quórum, situações
+  encerradas não voltam e delegação revogada não volta a valer (triggers).
+- A escolha da regra (submissão e reavaliação) toma o lock consultivo das
+  regras da empresa em modo compartilhado; a alteração de regras, em modo
+  exclusivo (ADR-006). A decisão por delegação bloqueia a delegação em
+  modo compartilhado: a revogação concorrente termina antes ou espera.
+
+## 11. Cotações e negociação
+
+```mermaid
+stateDiagram-v2
+    [*] --> Solicitada: comprador solicita (carrinho)
+    Solicitada --> Proposta: equipe envia versão
+    Proposta --> Proposta: nova versão (anterior substituída)
+    Proposta --> Solicitada: pedido de revisão / retirada
+    Proposta --> Vencida: validade (job ou ação sob lock)
+    Vencida --> Proposta: nova versão
+    Vencida --> Solicitada: pedido de revalidação
+    Proposta --> Aceita: aceite gera o pedido
+    Proposta --> Recusada: comprador recusa
+    Solicitada --> Cancelada: cancelamento / encerramento
+    Vencida --> Cancelada: cancelamento / encerramento
+    Proposta --> Cancelada: encerramento pela equipe
+```
+
+| Etapa | Versão | Reserva de estoque | Pedido |
+|---|---|---|---|
+| Submissão dentro da política | pronta e enviada na mesma transação | criada no envio, se pedida (tudo ou nada) | — |
+| Submissão fora da política | em aprovação comercial (só a equipe vê) | — | — |
+| Aprovação comercial | pronta; enviada se "aprovar e enviar" | criada no envio | — |
+| Nova versão enviada | anterior substituída | anterior liberada, nova criada sob o mesmo lock | — |
+| Revisão, recusa, retirada, encerramento | encerrada | liberada com o motivo | — |
+| Aceite | aceita, cotação encerrada | mantida até o prazo (com aprovação interna) ou transferida | nasce pelo caminho do checkout |
+| Pedido rejeitado ou cancelado antes da confirmação | — | liberada | — |
+
+- Versões imutáveis (privilégio de coluna), itens conferidos com os totais
+  no COMMIT, numeração só no envio e no máximo uma versão em preparo, uma
+  com o comprador e uma aceita por cotação (ADR-025).
+- Preço de referência sempre do `PricingService`; a equipe informa o
+  desconto e a avaliação comercial aplica limite do papel, preço mínimo,
+  custo e margem (RN-032, RN-033, RN-041). A avaliação e as notas internas
+  não são legíveis pelo comprador (ADR-020).
+- Aceite, nova versão, aprovação e expiração bloqueiam a cotação primeiro;
+  operações do pedido bloqueiam o pedido e depois a cotação de origem
+  (ADR-006). A expiração usa `SKIP LOCKED` e nunca bloqueia pedidos;
+  verificado com processos concorrentes (`tests/Concurrency/Quotes`).
+- Telas: portal em `/portal/cotacoes` (`portal.quotes`; aceitar exige
+  `portal.orders.place`); equipe em `/cotacoes` (`quotes.view`, elaborar
+  com `quotes.manage`) e `/cotacoes/aprovacoes` (`pricing.approve`).
+- O comando `quotes:expire` roda a cada minuto no serviço `scheduler`.
 

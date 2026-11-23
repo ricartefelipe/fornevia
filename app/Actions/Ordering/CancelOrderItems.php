@@ -7,43 +7,52 @@ namespace App\Actions\Ordering;
 use App\Domain\Ordering\Exceptions\OrderNotCancellable;
 use App\Domain\Shared\Money;
 use App\Domain\Shared\Quantity;
+use App\Enums\Approvals\ApprovalStepStatus;
 use App\Enums\Identity\Permission;
+use App\Enums\Ordering\ApprovalStatus;
 use App\Enums\Ordering\CommercialStatus;
+use App\Enums\Quotes\StockHoldEndReason;
+use App\Models\Approvals\OrderApprovalStep;
 use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderItem;
+use App\Services\Approvals\BudgetLedger;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Credit\CreditLedger;
 use App\Services\Inventory\StockLedger;
+use App\Services\Ordering\OrderConfirmation;
+use App\Services\Quotes\QuoteLocks;
+use App\Services\Quotes\QuoteStockHolds;
 use App\Support\Auth\Access;
 use App\Support\Clock\Clock;
 use App\Support\Http\UntrustedId;
 use App\Support\Outbox\Outbox;
-use App\Support\Tenancy\CurrentContext;
-use App\Support\Tenancy\ExecutionContext;
 use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 /**
  * Cancelamento total ou parcial de itens ainda não expedidos (RF-062).
  *
  * Libera primeiro a parte encomendada (sem estoque) e depois as reservas;
- * libera o comprometimento de crédito proporcional ao valor cancelado e,
- * ao cancelar tudo, o saldo comprometido restante (sem resíduos de
- * arredondamento). Itens expedidos exigem devolução.
+ * libera o comprometimento de crédito e estorna o consumo do orçamento do
+ * centro de custo proporcionais ao valor cancelado e, ao cancelar tudo, os
+ * saldos restantes (sem resíduos de arredondamento). Itens expedidos exigem
+ * devolução. Pedido aguardando aprovação, ou aprovado sem confirmação, é
+ * cancelado por inteiro, liberando a reserva de orçamento.
  */
 final readonly class CancelOrderItems
 {
     public function __construct(
         private Access $access,
-        private CurrentContext $context,
         private TenantDatabase $db,
         private StockLedger $stock,
         private CreditLedger $credit,
         private Outbox $outbox,
+        private BudgetLedger $budgets,
+        private OrderConfirmation $confirmation,
         private AuditRecorder $audit,
+        private QuoteLocks $quoteLocks,
+        private QuoteStockHolds $quoteHolds,
         private Clock $clock,
     ) {}
 
@@ -61,84 +70,136 @@ final readonly class CancelOrderItems
         $this->authorize($order);
 
         return DB::transaction(function () use ($order, $quantities, $reason): Order {
-            $locked = Order::query()->lockForUpdate()->findOrFail($order->id);
+            // Pedidos, itens, estoque, crédito e orçamento são somente leitura
+            // no contexto de comprador: a gravação roda no contexto de sistema
+            // do mesmo usuário (ADR-014); a auditoria, no contexto de quem
+            // cancelou.
+            [$locked, $audit] = $this->db->asSystem(fn (): array => $this->cancel($order, $quantities, $reason));
 
-            if (! in_array($locked->commercial_status, [CommercialStatus::Confirmed, CommercialStatus::PartiallyCancelled], true)) {
-                throw new OrderNotCancellable('O pedido não está em situação que permita cancelamento.');
-            }
-
-            $items = OrderItem::query()->where('order_id', $locked->id)->orderBy('line_number')->lockForUpdate()->get()->keyBy('id');
-            $requests = $this->requests($items, $quantities);
-            $execution = $this->context->require();
-            $cancelledValue = Money::zero();
-            $changes = [];
-
-            $this->db->run(ExecutionContext::system($execution->requireTenantId(), $execution->userId), function () use ($requests, $locked, $reason, &$cancelledValue, &$changes): void {
-                // Saldos na ordem (depósito, SKU), como na reserva do checkout (ADR-006).
-                $this->stock->lockLevelsForOrderItems(array_values(array_map(static fn (array $r): string => $r['item']->id, $requests)));
-
-                foreach ($requests as ['item' => $item, 'quantity' => $quantity]) {
-                    $base = $quantity->convertedBy($item->conversion_factor);
-                    $fromBackorder = Quantity::min($base, $item->quantity_backordered);
-                    $fromReservation = $base->minus($fromBackorder);
-
-                    $released = $fromReservation->isPositive()
-                        ? $this->stock->releaseForOrderItem($item->id, $fromReservation, $reason, 'order', $locked->id)
-                        : Quantity::zero();
-
-                    $item->forceFill([
-                        'quantity_cancelled' => $item->quantity_cancelled->plus($quantity),
-                        'quantity_backordered' => $item->quantity_backordered->minus($fromBackorder),
-                        'quantity_reserved' => $item->quantity_reserved->minus($released),
-                    ])->save();
-
-                    $cancelledValue = $cancelledValue->plus($item->unit_net_price_cents->times($quantity));
-                    $changes[] = ['order_item_id' => $item->id, 'quantity' => $quantity->toDatabase()];
-                }
-            });
-
-            $remaining = OrderItem::query()->where('order_id', $locked->id)->get();
-            $fullyCancelled = $remaining->every(static fn (OrderItem $i): bool => $i->quantity_cancelled->equals($i->quantity));
-
-            if ($locked->credit_committed_cents->isPositive()) {
-                $release = $fullyCancelled ? $locked->credit_committed_cents : Money::min($cancelledValue, $locked->credit_committed_cents);
-
-                $this->db->run(ExecutionContext::system($execution->requireTenantId(), $execution->userId), function () use ($locked, $release, $reason): void {
-                    $this->credit->releaseCommitment($locked->buyer_company_id, $locked->id, $release, $reason);
-                });
-
-                $locked->forceFill(['credit_committed_cents' => $locked->credit_committed_cents->minus($release)]);
-            }
-
-            $locked->forceFill([
-                'commercial_status' => $fullyCancelled ? CommercialStatus::Cancelled : CommercialStatus::PartiallyCancelled,
-                'cancelled_at' => $fullyCancelled ? $this->clock->now() : $locked->cancelled_at,
-                'cancel_reason' => $reason,
-            ])->save();
-
-            DB::table('order_events')->insert([
-                'id' => (string) Str::uuid7(),
-                'tenant_id' => $locked->tenant_id,
-                'order_id' => $locked->id,
-                'buyer_company_id' => $locked->buyer_company_id,
-                'type' => $fullyCancelled ? 'order.cancelled' : 'order.items_cancelled',
-                'data' => json_encode(['items' => $changes, 'value_cents' => $cancelledValue->cents, 'reason' => $reason], JSON_THROW_ON_ERROR),
-                'actor_user_id' => $execution->userId,
-                'correlation_id' => Context::get('correlation_id'),
-                'created_at' => $this->clock->now(),
-            ]);
-
-            $this->db->run(ExecutionContext::system($execution->requireTenantId(), $execution->userId), fn (): string => $this->outbox->record(
-                $fullyCancelled ? 'order.cancelled' : 'order.items_cancelled',
-                'order',
-                $locked->id,
-                ['order_id' => $locked->id, 'number' => $locked->number, 'items' => $changes, 'value_cents' => $cancelledValue->cents],
-            ));
-
-            $this->audit->record('order.items_cancelled', $locked, ['items' => $changes, 'value_cents' => $cancelledValue->cents], $reason);
+            $this->audit->record('order.items_cancelled', $locked, $audit, $reason);
 
             return $locked;
         });
+    }
+
+    /**
+     * @param  array<string, Quantity>|null  $quantities
+     * @return array{0: Order, 1: array<string, mixed>}
+     */
+    private function cancel(Order $order, ?array $quantities, string $reason): array
+    {
+        $locked = Order::query()
+            ->where('buyer_company_id', $order->buyer_company_id)
+            ->lockForUpdate()
+            ->findOrFail($order->id);
+        // Pedido → cotação de origem (ADR-006).
+        $this->quoteLocks->lockSourceOf($locked);
+
+        if (in_array($locked->commercial_status, [CommercialStatus::PendingApproval, CommercialStatus::Approved], true)) {
+            return [$this->cancelUnconfirmed($locked, $quantities, $reason), ['items' => [], 'value_cents' => 0, 'confirmed' => false]];
+        }
+
+        if (! in_array($locked->commercial_status, [CommercialStatus::Confirmed, CommercialStatus::PartiallyCancelled], true)) {
+            throw new OrderNotCancellable('O pedido não está em situação que permita cancelamento.');
+        }
+
+        $items = OrderItem::query()->where('order_id', $locked->id)->orderBy('line_number')->lockForUpdate()->get()->keyBy('id');
+        $requests = $this->requests($items, $quantities);
+        $cancelledValue = Money::zero();
+        $changes = [];
+
+        // Saldos na ordem (depósito, SKU), como na reserva do checkout (ADR-006).
+        $this->stock->lockLevelsForOrderItems(array_values(array_map(static fn (array $r): string => $r['item']->id, $requests)));
+
+        foreach ($requests as ['item' => $item, 'quantity' => $quantity]) {
+            $base = $quantity->convertedBy($item->conversion_factor);
+            $fromBackorder = Quantity::min($base, $item->quantity_backordered);
+            $fromReservation = $base->minus($fromBackorder);
+
+            $released = $fromReservation->isPositive()
+                ? $this->stock->releaseForOrderItem($item->id, $fromReservation, $reason, 'order', $locked->id)
+                : Quantity::zero();
+
+            $item->forceFill([
+                'quantity_cancelled' => $item->quantity_cancelled->plus($quantity),
+                'quantity_backordered' => $item->quantity_backordered->minus($fromBackorder),
+                'quantity_reserved' => $item->quantity_reserved->minus($released),
+            ])->save();
+
+            $cancelledValue = $cancelledValue->plus($item->unit_net_price_cents->times($quantity));
+            $changes[] = ['order_item_id' => $item->id, 'quantity' => $quantity->toDatabase()];
+        }
+
+        $remaining = OrderItem::query()->where('order_id', $locked->id)->get();
+        $fullyCancelled = $remaining->every(static fn (OrderItem $i): bool => $i->quantity_cancelled->equals($i->quantity));
+
+        if ($locked->credit_committed_cents->isPositive()) {
+            $release = $fullyCancelled ? $locked->credit_committed_cents : Money::min($cancelledValue, $locked->credit_committed_cents);
+            $this->credit->releaseCommitment($locked->buyer_company_id, $locked->id, $release, $reason);
+            $locked->forceFill(['credit_committed_cents' => $locked->credit_committed_cents->minus($release)]);
+        }
+
+        // Estorno do consumo do orçamento do centro de custo (RN-055), depois
+        // do crédito (ADR-006); no cancelamento total, todo o consumo restante.
+        $this->budgets->reverse($locked, $fullyCancelled ? null : $cancelledValue);
+
+        $locked->forceFill([
+            'commercial_status' => $fullyCancelled ? CommercialStatus::Cancelled : CommercialStatus::PartiallyCancelled,
+            'cancelled_at' => $fullyCancelled ? $this->clock->now() : $locked->cancelled_at,
+            'cancel_reason' => $reason,
+        ])->save();
+
+        $this->confirmation->event($locked, $fullyCancelled ? 'order.cancelled' : 'order.items_cancelled', [
+            'items' => $changes, 'value_cents' => $cancelledValue->cents, 'reason' => $reason,
+        ]);
+
+        $this->outbox->record(
+            $fullyCancelled ? 'order.cancelled' : 'order.items_cancelled',
+            'order',
+            $locked->id,
+            ['order_id' => $locked->id, 'number' => $locked->number, 'items' => $changes, 'value_cents' => $cancelledValue->cents],
+        );
+
+        return [$locked, ['items' => $changes, 'value_cents' => $cancelledValue->cents]];
+    }
+
+    /**
+     * Pedido aguardando aprovação ou aprovado sem confirmação: não há
+     * reserva de estoque nem crédito comprometido; o cancelamento é total,
+     * libera a reserva de orçamento (RN-055) e encerra a aprovação ainda
+     * pendente (níveis sem decisão deixam de aguardar aprovadores).
+     *
+     * @param  array<string, Quantity>|null  $quantities
+     */
+    private function cancelUnconfirmed(Order $order, ?array $quantities, string $reason): Order
+    {
+        if ($quantities !== null) {
+            throw new OrderNotCancellable('Pedido ainda não confirmado só pode ser cancelado por inteiro.', ['field' => 'items']);
+        }
+
+        $now = $this->clock->now();
+
+        if ($order->approval_status === ApprovalStatus::Pending) {
+            OrderApprovalStep::query()
+                ->where('order_id', $order->id)
+                ->where('status', ApprovalStepStatus::Pending->value)
+                ->update(['status' => ApprovalStepStatus::Cancelled->value, 'decided_at' => $now, 'updated_at' => $now]);
+            $order->forceFill(['approval_status' => ApprovalStatus::Cancelled]);
+        }
+
+        $this->budgets->release($order);
+        $this->quoteHolds->releaseForOrder($order, StockHoldEndReason::OrderCancelled);
+
+        $order->forceFill([
+            'commercial_status' => CommercialStatus::Cancelled,
+            'cancelled_at' => $now,
+            'cancel_reason' => $reason,
+            'confirmation_issue' => null,
+        ])->save();
+
+        $this->confirmation->event($order, 'order.cancelled', ['reason' => $reason, 'confirmed' => false]);
+
+        return $order;
     }
 
     /**
@@ -188,7 +249,8 @@ final readonly class CancelOrderItems
             return;
         }
 
-        if ($this->access->isBuyer() && $this->access->can(Permission::PortalOrdersPlace) && $order->buyer_company_id === $this->access->buyerCompanyId()) {
+        if ($this->access->isBuyer() && $this->access->can(Permission::PortalOrdersPlace) && $order->buyer_company_id === $this->access->buyerCompanyId()
+            && ($order->placed_by_membership_id === $this->access->membership()->id || $this->access->can(Permission::PortalOrdersViewAll))) {
             return;
         }
 

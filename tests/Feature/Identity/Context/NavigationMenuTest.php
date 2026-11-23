@@ -16,7 +16,7 @@ use Tests\Support\Builders\TenantScenario;
 | as permissões do papel ativo. Rotas ainda não registradas não aparecem.
 |
 | Rotas de módulos ainda não implementados (financeiro, auditoria,
-| assinatura e algumas seções do portal) são registradas aqui para exercitar
+| assinatura, cotações e usuários do portal) são registradas aqui para exercitar
 | o filtro por permissão; os módulos já implementados usam as rotas reais, e
 | cotações, expedição, devoluções e integrações permanecem ausentes.
 */
@@ -29,8 +29,6 @@ beforeEach(function (): void {
         'audit.index' => '/teste/menu/auditoria',
         'subscription.show' => '/teste/menu/assinatura',
         'portal.quotes' => '/teste/menu/portal/cotacoes',
-        'portal.approvals' => '/teste/menu/portal/aprovacoes',
-        'portal.budgets' => '/teste/menu/portal/orcamentos',
         'portal.users' => '/teste/menu/portal/usuarios',
     ] as $name => $uri) {
         Route::middleware('web')->get($uri, static fn (): string => $name)->name($name);
@@ -54,17 +52,17 @@ it('monta o menu da equipe conforme as permissões do papel', function (SystemRo
     expect(($this->menuFor)($membership))->toBe($expected);
 })->with([
     'proprietário' => [SystemRole::Owner, [
-        'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'orders.index', 'inventory.index', 'credit.index',
+        'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index',
         'finance.index', 'audit.index', 'team.index', 'branches.index', 'subscription.show',
     ]],
     'administrador' => [SystemRole::Admin, [
-        'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'orders.index', 'inventory.index', 'credit.index',
+        'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index',
         'finance.index', 'audit.index', 'team.index', 'branches.index',
     ]],
-    'representante comercial' => [SystemRole::SalesRep, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'orders.index', 'inventory.index', 'credit.index']],
+    'representante comercial' => [SystemRole::SalesRep, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index']],
     'estoque e expedição' => [SystemRole::Warehouse, ['dashboard', 'catalog.products', 'orders.index', 'inventory.index']],
     'financeiro e crédito' => [SystemRole::Finance, ['dashboard', 'buyers.index', 'orders.index', 'credit.index', 'finance.index', 'audit.index']],
-    'consulta' => [SystemRole::Viewer, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'orders.index', 'inventory.index', 'credit.index', 'finance.index']],
+    'consulta' => [SystemRole::Viewer, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index', 'finance.index']],
 ]);
 
 it('monta o menu do portal conforme as permissões do papel do comprador', function (SystemRole $role, array $expected): void {
@@ -74,11 +72,11 @@ it('monta o menu do portal conforme as permissões do papel do comprador', funct
 })->with([
     'administrador da empresa' => [SystemRole::BuyerAdmin, [
         'portal.home', 'portal.catalog', 'portal.cart', 'portal.quick-order', 'portal.lists', 'portal.quotes',
-        'portal.approvals', 'portal.orders', 'portal.budgets', 'portal.users',
+        'portal.approvals', 'portal.approval-rules', 'portal.delegations', 'portal.orders', 'portal.budgets', 'portal.users',
     ]],
     'comprador' => [SystemRole::Purchaser, ['portal.home', 'portal.catalog', 'portal.cart', 'portal.quick-order', 'portal.lists', 'portal.quotes', 'portal.orders']],
     'solicitante' => [SystemRole::Requester, ['portal.home', 'portal.catalog', 'portal.cart', 'portal.quick-order', 'portal.lists', 'portal.quotes', 'portal.orders']],
-    'aprovador' => [SystemRole::Approver, ['portal.home', 'portal.catalog', 'portal.approvals', 'portal.orders']],
+    'aprovador' => [SystemRole::Approver, ['portal.home', 'portal.catalog', 'portal.approvals', 'portal.delegations', 'portal.orders']],
 ]);
 
 it('reflete o ajuste de permissões feito pelo tenant em um papel', function (): void {
@@ -91,7 +89,7 @@ it('reflete o ajuste de permissões feito pelo tenant em um papel', function ():
         ])->save();
     });
 
-    expect(($this->menuFor)($membership))->toBe(['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'orders.index', 'inventory.index']);
+    expect(($this->menuFor)($membership))->toBe(['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index']);
 });
 
 it('não exibe itens de navegação sem contexto ativo', function (): void {

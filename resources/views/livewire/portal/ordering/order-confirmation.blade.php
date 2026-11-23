@@ -1,10 +1,21 @@
+@php($timezone = (string) config('app.business_timezone'))
 <div>
-    <x-ui.page-header :title="'Pedido '.$order->number.' confirmado'" description="Recebemos o seu pedido. Os itens disponíveis já estão reservados para você.">
+    <x-ui.page-header :title="$title" :description="$description">
         <x-slot:actions>
             <a href="{{ route('portal.orders.show', $order->id) }}" class="fv-btn-primary">Ver detalhes do pedido</a>
             <a href="{{ route('portal.catalog') }}" class="fv-btn-secondary">Voltar ao catálogo</a>
         </x-slot:actions>
     </x-ui.page-header>
+
+    @if ($pendingApproval)
+        <x-ui.alert type="info" class="mb-6">
+            <p class="font-semibold">Aguardando aprovação interna.</p>
+            <p class="mt-1">
+                Estoque e crédito ainda não foram reservados: a aprovação interna não garante estoque nem crédito no distribuidor.
+                Depois da aprovação, o pedido é confirmado com os preços, o estoque e o crédito do momento; você acompanha a situação em Pedidos.
+            </p>
+        </x-ui.alert>
+    @endif
 
     <div class="grid gap-6 lg:grid-cols-3">
         <section class="fv-card p-5 lg:col-span-2" aria-labelledby="confirmacao-itens">
@@ -30,7 +41,9 @@
                                 <td class="text-right">{{ $item->quantity->format() }} {{ $item->unit_code }}</td>
                                 <td class="text-right">{{ $item->line_total_cents->format() }}</td>
                                 <td class="text-sm">
-                                    @if ($item->quantity_backordered->isPositive())
+                                    @if (! $confirmed)
+                                        <x-ui.badge color="amber">{{ $pendingApproval ? 'Aguardando aprovação' : 'Sem reserva' }}</x-ui.badge>
+                                    @elseif ($item->quantity_backordered->isPositive())
                                         <x-ui.badge color="amber">Sob encomenda: {{ $item->quantity_backordered->format() }}</x-ui.badge>
                                     @else
                                         <x-ui.badge color="green">Reservado</x-ui.badge>
@@ -43,7 +56,17 @@
             </div>
         </section>
 
-        <aside class="space-y-6" aria-label="Resumo do pedido">
+        @if ($approvalLevels !== [])
+            <section class="fv-card p-5 lg:col-span-2" aria-labelledby="confirmacao-aprovacao">
+                <h2 id="confirmacao-aprovacao" class="text-lg font-semibold">Aprovação interna</h2>
+                @if ($order->approval_rule_name)
+                    <p class="mt-1 text-sm text-slate-600">Regra aplicada: {{ $order->approval_rule_name }}.</p>
+                @endif
+                @include('livewire.portal.ordering.partials.approval-levels', ['levels' => $approvalLevels, 'levelsLabel' => 'Níveis de aprovação do pedido '.$order->number])
+            </section>
+        @endif
+
+        <aside class="space-y-6 lg:col-start-3 lg:row-span-2 lg:row-start-1" aria-label="Resumo do pedido">
             <section class="fv-card p-5" aria-labelledby="confirmacao-resumo">
                 <h2 id="confirmacao-resumo" class="text-lg font-semibold">Resumo</h2>
                 <dl class="mt-3 space-y-2 text-sm">

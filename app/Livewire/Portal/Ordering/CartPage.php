@@ -9,15 +9,25 @@ use App\Actions\Ordering\Portal\CheckoutOptions;
 use App\Actions\Ordering\Portal\CurrentCart;
 use App\Actions\Ordering\Portal\RemoveCartItem;
 use App\Actions\Ordering\Portal\UpdateCartItem;
+use App\Actions\Quotes\Portal\RequestQuote;
+use App\Data\Ordering\CartLineQuote;
 use App\Data\Ordering\PlaceOrderData;
+use App\Data\Ordering\Portal\CartView;
 use App\Data\Ordering\Portal\CheckoutChoices;
+use App\Data\Quotes\RequestQuoteData;
+use App\Domain\Approvals\ApprovalContext;
+use App\Domain\Approvals\BudgetPosition;
 use App\Domain\Ordering\Exceptions\CartAlreadyConverted;
 use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Enums\Identity\Permission;
+use App\Services\Approvals\ApprovalRuleResolver;
+use App\Services\Approvals\BudgetLedger;
 use App\Support\Auth\Access;
+use App\Support\Clock\Clock;
 use App\Support\Idempotency\IdempotencyKeyReused;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
@@ -36,6 +46,11 @@ use Livewire\Component;
  *   envio: reenvios da mesma tentativa (duplo clique, nova tentativa após
  *   falha de rede) devolvem o mesmo pedido; após uma recusa, a próxima
  *   tentativa recebe outra chave.
+ * - Com o carrinho pronto, a tela antecipa a regra de aprovação interna
+ *   que se aplicaria (ApprovalRuleResolver, com os mesmos critérios do
+ *   checkout) e o orçamento disponível do centro de custo no mês. É só uma
+ *   prévia: PlaceOrder decide de novo na confirmação. Orçamento
+ *   insuficiente (BudgetExceeded) vira erro do campo de centro de custo.
  */
 #[Layout('layouts.app')]
 #[Title('Carrinho')]
@@ -72,8 +87,19 @@ final class CartPage extends Component
     #[Locked]
     public ?string $message = null;
 
+    /** Pedido de cotação a partir do carrinho (RF-040). */
+    public string $quoteMessage = '';
+
+    public string $quoteNeededBy = '';
+
+    public bool $quoteRemoveItems = true;
+
+    #[Locked]
+    public string $quoteKey = '';
+
     public function mount(CheckoutOptions $options): void
     {
+        $this->quoteKey = self::newKey();
         $this->checkoutKey = self::newKey();
         $choices = $options->handle();
         $this->shippingAddressId = (string) $choices->defaultShippingAddressId;
@@ -154,6 +180,43 @@ final class CartPage extends Component
         $this->message = 'Item removido do carrinho.';
     }
 
+    /**
+     * Solicita cotação dos itens do carrinho: sem preço; a proposta vem da
+     * equipe do distribuidor.
+     */
+    public function requestQuote(RequestQuote $request): void
+    {
+        $this->message = null;
+        $this->resetErrorBag();
+
+        if ($this->displayedCartId === null) {
+            $this->addError('quote', 'Adicione itens ao carrinho antes de solicitar a cotação.');
+
+            return;
+        }
+
+        try {
+            $quote = $request->handle(new RequestQuoteData(
+                cartId: $this->displayedCartId,
+                idempotencyKey: $this->quoteKey,
+                message: self::nullable(trim($this->quoteMessage)),
+                neededBy: self::nullable($this->quoteNeededBy),
+                removeFromCart: $this->quoteRemoveItems,
+            ));
+        } catch (BusinessRuleViolation $e) {
+            $this->quoteKey = self::newKey();
+            $this->addError(match ($e->details()['field'] ?? null) {
+                'message' => 'quoteMessage',
+                'needed_by' => 'quoteNeededBy',
+                default => 'quote',
+            }, $e->getMessage());
+
+            return;
+        }
+
+        $this->redirectRoute('portal.quotes.show', ['quote' => $quote->id]);
+    }
+
     public function placeOrder(PlaceOrder $place, CheckoutOptions $options): void
     {
         $this->message = null;
@@ -187,7 +250,7 @@ final class CartPage extends Component
         } catch (BusinessRuleViolation $e) {
             // Nova tentativa, nova chave: a recusa desfez a anterior por completo.
             $this->checkoutKey = self::newKey();
-            $this->addError('checkout', match (true) {
+            $this->addError(($e->details()['field'] ?? null) === 'cost_center' ? 'costCenterId' : 'checkout', match (true) {
                 $e instanceof CartAlreadyConverted => $e->getMessage().' Consulte-o em Pedidos.',
                 $e instanceof IdempotencyKeyReused => 'Este envio já foi processado com outros dados. Confira o pedido em Pedidos antes de tentar novamente.',
                 default => $e->getMessage(),
@@ -211,11 +274,64 @@ final class CartPage extends Component
             $this->quantities[$line->cartItemId] ??= $line->quantity->format();
         }
 
+        $choices = $options->handle($this->unitId !== '' ? $this->unitId : null);
+        $costCenterId = $this->costCenterId !== '' && $choices->hasCostCenter($this->costCenterId) ? strtolower($this->costCenterId) : null;
+
         return view('livewire.portal.ordering.cart-page', [
             'cart' => $cart,
-            'choices' => $options->handle($this->unitId !== '' ? $this->unitId : null),
+            'choices' => $choices,
             'canPlace' => $access->can(Permission::PortalOrdersPlace),
+            'canQuote' => $access->can(Permission::PortalQuotes),
+            'approval' => $cart->isReady() ? $this->approvalPreview($cart, $choices, $costCenterId, $access) : null,
+            'budget' => $costCenterId !== null ? $this->budgetPosition($costCenterId) : null,
         ]);
+    }
+
+    /**
+     * Regra de aprovação interna que se aplicaria ao carrinho com as escolhas
+     * atuais (total, centro de custo, unidade, categorias e perfil).
+     *
+     * @return array{rule: string, levels: int}|null
+     */
+    private function approvalPreview(CartView $cart, CheckoutChoices $choices, ?string $costCenterId, Access $access): ?array
+    {
+        $membership = $access->membershipOrNull();
+        $companyId = $access->buyerCompanyId();
+
+        if ($cart->totals === null || $membership === null || $companyId === null) {
+            return null;
+        }
+
+        $skuIds = array_values(array_unique(array_map(static fn (CartLineQuote $line): string => $line->skuId, $cart->lines)));
+        $categoryIds = DB::table('skus')
+            ->join('products', 'products.id', '=', 'skus.product_id')
+            ->whereIn('skus.id', $skuIds)
+            ->whereNotNull('products.category_id')
+            ->distinct()
+            ->pluck('products.category_id')
+            ->map(static fn (mixed $id): string => (string) $id)
+            ->all();
+
+        $rule = app(ApprovalRuleResolver::class)->resolve($companyId, new ApprovalContext(
+            total: $cart->totals->total,
+            costCenterId: $costCenterId,
+            buyerUnitId: $this->unitId !== '' && $choices->hasUnit($this->unitId) ? strtolower($this->unitId) : null,
+            categoryIds: array_values($categoryIds),
+            requesterRoleKey: $membership->role->key,
+        ));
+
+        return $rule === null ? null : ['rule' => $rule->name, 'levels' => $rule->levels->count()];
+    }
+
+    /**
+     * Orçamento do centro de custo no mês em que o pedido seria gravado
+     * (o mesmo critério de BudgetLedger); null quando não há orçamento.
+     */
+    private function budgetPosition(string $costCenterId): ?BudgetPosition
+    {
+        $companyId = app(Access::class)->buyerCompanyId();
+
+        return $companyId === null ? null : app(BudgetLedger::class)->budgetFor($companyId, $costCenterId, app(Clock::class)->now())?->position();
     }
 
     private function validCheckout(CheckoutChoices $choices): bool

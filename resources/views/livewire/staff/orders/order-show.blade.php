@@ -38,13 +38,40 @@
         </dl>
         @if ($order->cancel_reason)
             <p class="mt-4 rounded-md bg-slate-50 p-3 text-sm">
-                <span class="font-medium">Motivo do último cancelamento:</span> {{ $order->cancel_reason }}
+                <span class="font-medium">{{ $order->commercial_status === \App\Enums\Ordering\CommercialStatus::Rejected ? 'Motivo da rejeição pelo comprador:' : 'Motivo do último cancelamento:' }}</span> {{ $order->cancel_reason }}
                 @if ($order->cancelled_at)
                     <span class="text-slate-500">· pedido cancelado em {{ $order->cancelled_at->setTimezone($timezone)->format('d/m/Y H:i') }}</span>
                 @endif
             </p>
         @endif
+        @if ($order->commercial_status === \App\Enums\Ordering\CommercialStatus::PendingApproval)
+            <p class="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+                Pedido aguardando a aprovação interna do comprador. Estoque e crédito só são reservados quando ele for aprovado e confirmado.
+            </p>
+        @elseif (\App\Actions\Approvals\Support\OrderApprovalSummary::awaitsConfirmation($order))
+            <p class="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+                <span class="font-medium">Aprovado pelo comprador, ainda não confirmado.</span>
+                @if ($order->confirmation_issue)
+                    Motivo: {{ $order->confirmation_issue }}
+                @endif
+            </p>
+        @endif
     </section>
+
+    @if ($approvalLevels !== [])
+        <section class="fv-card mb-6 p-6" aria-labelledby="order-approval-title">
+            <h2 id="order-approval-title" class="text-lg font-semibold">Aprovação interna do comprador</h2>
+            <p class="mt-1 text-sm text-slate-600">
+                Somente leitura: os níveis e aprovadores foram retratados no envio do pedido, e as decisões são registradas pelos aprovadores da empresa compradora no portal.
+            </p>
+            <dl class="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+                <div><dt class="text-slate-500">Regra aplicada</dt><dd>{{ $order->approval_rule_name ?? 'Não registrada' }}</dd></div>
+                <div><dt class="text-slate-500">Enviado para aprovação em</dt><dd>{{ $order->submitted_at?->setTimezone($timezone)->format('d/m/Y H:i') ?? '—' }}</dd></div>
+                <div><dt class="text-slate-500">Aprovado em</dt><dd>{{ $order->approved_at?->setTimezone($timezone)->format('d/m/Y H:i') ?? '—' }}</dd></div>
+            </dl>
+            @include('livewire.portal.ordering.partials.approval-levels', ['levels' => $approvalLevels, 'levelsLabel' => 'Níveis de aprovação do pedido '.$order->number])
+        </section>
+    @endif
 
     <div class="grid gap-6 lg:grid-cols-3">
         <section class="fv-card p-6 lg:col-span-2" aria-labelledby="order-header-title">
@@ -244,13 +271,13 @@
                     @foreach ($detail->events as $event)
                         <li class="border-l-2 border-slate-200 pl-3" wire:key="event-{{ $event->id }}">
                             <p>
-                                <span class="font-medium">{{ $detail->eventLabel($event) }}</span>
+                                <span class="font-medium">{{ $approvalEventLabels[$event->type] ?? $detail->eventLabel($event) }}</span>
                                 <time class="text-slate-500" datetime="{{ $event->created_at->toIso8601String() }}">
                                     · {{ $event->created_at->setTimezone($timezone)->format('d/m/Y H:i') }}
                                 </time>
                                 <span class="text-slate-500">· {{ $detail->actorName($event) }}</span>
                             </p>
-                            @foreach ($detail->eventDetails($event) as $line)
+                            @foreach ($eventDetails[$event->id] ?? [] as $line)
                                 <p class="text-slate-600">{{ $line }}</p>
                             @endforeach
                         </li>
@@ -260,7 +287,23 @@
         </section>
     </div>
 
-    @if ($canManage && $detail->isCancellable())
+    @if ($canManage && $detail->isCancellable() && $detail->isUnconfirmed())
+        <section class="fv-card mt-6 p-6" aria-labelledby="order-cancel-title">
+            <h2 id="order-cancel-title" class="text-lg font-semibold">Cancelar pedido não confirmado</h2>
+            <p class="mt-1 text-sm text-slate-600">
+                O pedido ainda não foi confirmado: não há reserva de estoque nem crédito comprometido. O cancelamento é do pedido inteiro
+                e libera a reserva de orçamento do comprador.
+            </p>
+
+            <form wire:submit="cancelAll" class="mt-4 space-y-4" novalidate>
+                <x-ui.textarea label="Motivo do cancelamento" name="cancelReason" wire:model="cancelReason" rows="2" maxlength="500"></x-ui.textarea>
+                <x-ui.button type="submit" variant="danger" wire:loading.attr="disabled" wire:target="cancelAll"
+                    wire:confirm="Cancelar o pedido {{ $order->number }}?">
+                    Cancelar o pedido
+                </x-ui.button>
+            </form>
+        </section>
+    @elseif ($canManage && $detail->isCancellable())
         <section class="fv-card mt-6 p-6" aria-labelledby="order-cancel-title">
             <h2 id="order-cancel-title" class="text-lg font-semibold">Cancelar itens não expedidos</h2>
             <p class="mt-1 text-sm text-slate-600">

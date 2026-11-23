@@ -24,7 +24,7 @@ it('separa o catálogo de permissões entre equipe e portal sem sobreposição',
 
     expect(count($staff) + count($buyer))->toBe(count(Permission::cases()))
         ->and(array_intersect(permissionMatrixValues($staff), permissionMatrixValues($buyer)))->toBe([])
-        ->and($buyer)->toHaveCount(8)
+        ->and($buyer)->toHaveCount(9)
         ->and(array_filter($buyer, static fn (Permission $p): bool => ! str_starts_with($p->value, 'portal.')))->toBe([])
         ->and(array_filter($staff, static fn (Permission $p): bool => str_starts_with($p->value, 'portal.')))->toBe([]);
 });

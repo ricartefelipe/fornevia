@@ -241,3 +241,103 @@ fim; a evidência da suíte completa é a CI do PR.
   local após as correções.
 - Fluxo de aprovação interna do comprador (os pedidos saem confirmados).
 - Recorte de carteira do representante apenas em pedidos.
+
+## Incremento 5 — Aprovação de compras e orçamento (`feature/aprovacoes-de-compra`)
+
+### Implementado
+
+- Regras de aprovação da empresa compradora (critérios, prioridade, níveis
+  com quórum e aprovadores), delegações com prazo e reatribuição de nível
+  bloqueado (RF-050, RN-050 a RN-053).
+- Checkout com submissão para aprovação: níveis retratados, orçamento
+  reservado, número atribuído; estoque e crédito apenas na confirmação
+  (RN-055, RN-056).
+- Decisão por nível sob lock do pedido, vinculada à versão exibida ao
+  aprovador; confirmação após a aprovação final com reavaliação de preços,
+  condição de pagamento e itens, e nova escolha da regra pelo novo total
+  (RN-054, RF-061); nova tentativa quando estoque, crédito ou orçamento
+  recusam; cancelamento do pedido não confirmado, que encerra a aprovação.
+- Orçamento mensal por centro de custo (ledger e projeção no banco), com
+  reserva, consumo, liberação e estorno do consumo no cancelamento de
+  pedido confirmado; telas do portal: fila de aprovação, regras,
+  delegações e orçamentos; telas de pedido do portal e da equipe com a
+  aprovação interna.
+- Defesa no banco (ADR-024): pedidos e todas as tabelas da aprovação
+  somente leitura no contexto de comprador, com gravação no contexto de
+  sistema do mesmo usuário; chaves estrangeiras compostas por empresa;
+  histórico de decisões e retrato dos níveis protegidos por triggers.
+
+### Verificado localmente
+
+| Verificação | Resultado |
+|---|---|
+| Suíte completa com cobertura (PCOV), esquema recriado, commit `3c8ecd7` | 2.023 testes e 9.778 asserções aprovados (46 min); cobertura de linhas total 95,6%, núcleo 98,17%, caminhos críticos 100% |
+| Testes depois das últimas correções da revisão | unitários, concorrência, aprovação, orçamento e telas do portal aprovados (esquema recriado) |
+| Testes de concorrência | 20 cenários aprovados; a remoção do lock do pedido na decisão e do lock das delegações faz os testes correspondentes falharem |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+| Revisão | revisão independente e revisão em cinco frentes com verificação adversarial; achados confirmados corrigidos com teste de regressão |
+
+Limitações registradas: associações da empresa compradora ainda graváveis
+no contexto de comprador (revisão de identidade e acesso); sem notificação
+aos aprovadores (incremento de processamento da outbox).
+
+## Incremento 6 — Cotações e negociação (`feature/cotacoes`)
+
+### Implementado
+
+- Solicitação de cotação pelo portal a partir do carrinho, com mensagem e
+  prazo desejado; lista em abas e detalhe com histórico e conversa; notas
+  internas da equipe invisíveis ao comprador (RF-040).
+- Propostas da equipe em versões imutáveis, com preço de referência do
+  servidor e desconto avaliado pela política comercial do autor; fora da
+  política, justificativa obrigatória e aprovação comercial vinculada à
+  versão, com autoaprovação para quem tem permissão e limite (RN-041).
+- Reserva de estoque opcional, tudo ou nada, com prazo limitado à validade
+  e a 7 dias, transferida ao pedido na confirmação e liberada na
+  contraproposta, recusa, retirada, rejeição ou cancelamento do pedido
+  (RN-043).
+- Aceite vinculado à versão exibida, que gera o pedido pelo mesmo caminho
+  do checkout (aprovação interna e orçamento), com os valores negociados
+  mantidos na confirmação; contraproposta, recusa, cancelamento e
+  encerramento pela equipe (RN-040, RN-042, RN-044).
+- Expiração agendada a cada minuto, com SKIP LOCKED e isolamento de falhas
+  por cotação.
+- Defesa no banco: versões e itens imutáveis, transições por trigger (o
+  mesmo mapa conferido pelos models), envio só com avaliação comercial
+  válida, pedido de cotação só a partir de versão aceita com o mesmo total
+  e a mesma condição; comentários internos fora do alcance do comprador.
+
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Suítes de cotação (unitários, integração, concorrência e telas) | aprovadas após as correções da revisão |
+| Suítes afetadas (aprovação, pedidos, estoque, portal, equipe, unitários, concorrência), local | 909 testes e 3.899 asserções aprovados |
+| Testes de concorrência das cotações | 5 cenários; sem o lock da cotação no aceite, 2 falham |
+| Testes de regressão da revisão | os 9 novos falham sem a correção correspondente e passam com ela |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+| Suíte completa na CI do PR #11, commit `e5d6cbf` | 2.140 testes e 10.421 asserções aprovados; cobertura de linhas total 95,0%, núcleo 97,84%, caminhos críticos 100%; migrations, imagem, segredos e frontend aprovados |
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Cotação vencida sem proposta exibida nem formulário de revalidação.
+- Aprovador comercial sem permissão de elaborar propostas recebia erro ao
+  aprovar, porque o envio junto era sempre pedido.
+- Chave de idempotência da solicitação de cotação não era criada na
+  abertura do carrinho.
+- Quantidades do pedido de revisão herdadas de uma versão anterior.
+- Recusa e pedido de revisão recusados quando a reserva terminava depois
+  da exibição.
+- Falha em uma cotação interrompia a expiração das demais do tenant.
+- Repetição de um envio concluído falhava se condição, prazo ou preço
+  tivessem mudado.
+- Pedido de cotação confirmado sem conferir a embalagem da proposta.
+- Link para a cotação de origem exibido a quem não pode abri-la.
+- Mapa de transições da aplicação divergente do trigger e auxiliar sem uso.
+- Expectativa do menu da equipe sem o item de cotações (apontada pela CI).
+
+Limitações registradas: sem notificação ao comprador e à equipe sobre
+proposta, aprovação comercial e vencimento (incremento de processamento da
+outbox); a disponibilidade exibida sem reserva é só uma consulta.

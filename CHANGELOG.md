@@ -5,6 +5,45 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.2.0] - 2026-11-23
+
+### Adicionado
+
+- Cotações: solicitação pelo carrinho, propostas da equipe em versões
+  imutáveis com preço do servidor e desconto avaliado pela política
+  comercial, aprovação comercial vinculada à versão, reserva de estoque
+  opcional com prazo, pedido de revisão, recusa, cancelamento, conversa e
+  notas internas, aceite que gera o pedido com os preços negociados e
+  expiração agendada; telas do portal e da equipe.
+- Aprovação interna de compras: regras por valor, centro de custo, unidade,
+  categoria e perfil do solicitante; níveis com quórum; delegação com
+  prazo; reatribuição de nível bloqueado; reavaliação de preços, condição
+  de pagamento e itens na aprovação final, com nova escolha da regra pelo
+  novo total; fila de aprovação no portal.
+- Orçamento mensal por centro de custo com reserva na submissão, consumo na
+  confirmação, liberação na rejeição ou no cancelamento e estorno do
+  consumo no cancelamento de pedido confirmado.
+- Pedido aguardando aprovação e aprovado sem confirmação nas telas do
+  portal e da equipe, com nova tentativa de confirmação e cancelamento.
+
+### Segurança
+
+- Comprador só cancela ou confirma novamente pedidos que pode ver.
+- Pedidos, itens, eventos e todas as tabelas da aprovação interna (regras,
+  delegações, níveis, decisões, orçamentos e movimentos) passam a ser
+  somente leitura na conexão do portal; a gravação ocorre no contexto de
+  sistema do mesmo usuário, após a autorização.
+- Submissão para aprovação exige assinatura ativa do distribuidor.
+- Decisão de aprovação vale somente para a versão do pedido exibida ao
+  aprovador: depois de uma reavaliação ou da mudança de nível, a decisão
+  feita na tela antiga é recusada.
+
+### Atualização
+
+- O administrador da empresa compradora dos distribuidores já existentes
+  recebe a permissão de regras e delegações de aprovação
+  (`portal.approval_rules`), por migration de dados.
+
 ## [0.1.0] - 2026-11-21
 
 ### Adicionado
@@ -62,5 +101,6 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
 
-[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.1.0...develop
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.2.0...develop
+[0.2.0]: https://github.com/ricartefelipe/fornevia/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ricartefelipe/fornevia/releases/tag/v0.1.0

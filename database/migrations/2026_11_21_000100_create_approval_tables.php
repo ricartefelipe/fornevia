@@ -1,0 +1,358 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Support\Database\TenantSchema;
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Aprovação interna de compras e orçamento por centro de custo
+ * (RF-050, RN-050 a RN-056).
+ *
+ * - approval_rules / approval_rule_levels / approval_rule_level_approvers:
+ *   regras da empresa compradora (critérios e níveis com quórum);
+ * - approval_delegations: delegação com prazo;
+ * - order_approval_steps: retrato dos níveis e aprovadores na submissão do
+ *   pedido (alterar a regra não muda pedidos já submetidos);
+ * - order_approval_decisions: decisões (append-only), com a impressão do
+ *   pedido decidido; invalidação registra a data, sem apagar o histórico;
+ * - cost_center_budgets: projeção mantida por budget_movements (ADR-005),
+ *   com reservado + consumido <= valor garantido no banco.
+ *
+ * Todas as tabelas são da empresa compradora (RLS required) e as chaves
+ * estrangeiras incluem a empresa: nenhuma linha aponta para registro de outra
+ * empresa do mesmo distribuidor. Todas são somente leitura no contexto de
+ * comprador: as Actions autorizam a administração da empresa (regras,
+ * delegações, orçamentos) ou o aprovador (decisões) e gravam no contexto de
+ * sistema do mesmo usuário (ADR-014, ADR-024), como estoque e crédito.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        // Alvos das chaves compostas por empresa.
+        TenantSchema::companyKey('cost_centers');
+        TenantSchema::companyKey('buyer_units');
+        TenantSchema::companyKey('memberships');
+
+        Schema::create('approval_rules', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            TenantSchema::tenant($table);
+            TenantSchema::reference($table, 'buyer_company_id', 'buyer_companies');
+            $table->string('name', 120);
+            $table->integer('priority')->default(0);
+            $table->boolean('is_active')->default(true);
+            $table->bigInteger('min_total_cents')->nullable();
+            TenantSchema::companyReference($table, 'cost_center_id', 'cost_centers', nullable: true);
+            TenantSchema::companyReference($table, 'buyer_unit_id', 'buyer_units', nullable: true);
+            TenantSchema::reference($table, 'category_id', 'categories', nullable: true);
+            $table->string('requester_role_key', 60)->nullable();
+            $table->timestampsTz();
+
+            $table->index(['tenant_id', 'buyer_company_id', 'is_active', 'priority'], 'approval_rules_lookup_index');
+        });
+        DB::statement('alter table approval_rules add constraint approval_rules_values_check check (
+            coalesce(min_total_cents, 0) >= 0 and priority between -1000 and 1000)');
+        TenantSchema::companyKey('approval_rules');
+        TenantSchema::enableRowLevelSecurity('approval_rules', 'required');
+        TenantSchema::buyerReadOnly('approval_rules');
+
+        Schema::create('approval_rule_levels', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            TenantSchema::tenant($table);
+            TenantSchema::reference($table, 'buyer_company_id', 'buyer_companies');
+            TenantSchema::companyReference($table, 'approval_rule_id', 'approval_rules', cascade: true);
+            $table->smallInteger('level_number');
+            $table->smallInteger('required_approvals')->default(1);
+            $table->timestampsTz();
+
+            $table->unique(['tenant_id', 'approval_rule_id', 'level_number'], 'approval_rule_levels_unique');
+        });
+        DB::statement('alter table approval_rule_levels add constraint approval_rule_levels_values_check check (
+            level_number between 1 and 10 and required_approvals between 1 and 10)');
+        TenantSchema::companyKey('approval_rule_levels');
+        TenantSchema::enableRowLevelSecurity('approval_rule_levels', 'required');
+        TenantSchema::buyerReadOnly('approval_rule_levels');
+
+        Schema::create('approval_rule_level_approvers', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            TenantSchema::tenant($table);
+            TenantSchema::reference($table, 'buyer_company_id', 'buyer_companies');
+            TenantSchema::companyReference($table, 'approval_rule_level_id', 'approval_rule_levels', cascade: true);
+            TenantSchema::companyReference($table, 'membership_id', 'memberships');
+            $table->timestampTz('created_at')->useCurrent();
+
+            $table->unique(['tenant_id', 'approval_rule_level_id', 'membership_id'], 'approval_level_approvers_unique');
+        });
+        TenantSchema::enableRowLevelSecurity('approval_rule_level_approvers', 'required');
+        TenantSchema::buyerReadOnly('approval_rule_level_approvers');
+
+        Schema::create('approval_delegations', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            TenantSchema::tenant($table);
+            TenantSchema::reference($table, 'buyer_company_id', 'buyer_companies');
+            TenantSchema::companyReference($table, 'delegator_membership_id', 'memberships');
+            TenantSchema::companyReference($table, 'delegate_membership_id', 'memberships');
+            $table->timestampTz('valid_from');
+            $table->timestampTz('valid_until');
+            $table->text('reason');
+            $table->timestampTz('revoked_at')->nullable();
+            $table->foreignUuid('created_by_user_id')->constrained('users')->restrictOnDelete();
+            $table->timestampsTz();
+
+            $table->index(['tenant_id', 'delegate_membership_id', 'valid_until'], 'approval_delegations_delegate_index');
+        });
+        DB::statement('alter table approval_delegations add constraint approval_delegations_values_check check (
+            delegator_membership_id <> delegate_membership_id and valid_until > valid_from)');
+        TenantSchema::companyKey('approval_delegations');
+        // Alvo da chave da decisão: a delegação usada é do par titular → ator.
+        DB::statement('alter table approval_delegations add constraint approval_delegations_pair_unique
+            unique (tenant_id, id, delegator_membership_id, delegate_membership_id)');
+        TenantSchema::enableRowLevelSecurity('approval_delegations', 'required');
+        TenantSchema::buyerReadOnly('approval_delegations');
+        // Titular, delegado e prazo não mudam; a revogação só é registrada.
+        DB::statement(sprintf('revoke update, delete, truncate on approval_delegations from %s', TenantSchema::appRole()));
+        DB::statement(sprintf('grant update (revoked_at, updated_at) on approval_delegations to %s', TenantSchema::appRole()));
+
+        Schema::table('orders', function (Blueprint $table): void {
+            $table->uuid('approval_rule_id')->nullable();
+            $table->string('approval_rule_name', 120)->nullable();
+            $table->char('approval_fingerprint', 64)->nullable();
+            $table->timestampTz('submitted_at')->nullable();
+            $table->timestampTz('approved_at')->nullable();
+            $table->text('confirmation_issue')->nullable();
+        });
+
+        Schema::create('order_approval_steps', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            TenantSchema::tenant($table);
+            TenantSchema::reference($table, 'buyer_company_id', 'buyer_companies');
+            TenantSchema::companyReference($table, 'order_id', 'orders');
+            $table->smallInteger('level_number');
+            $table->smallInteger('required_approvals');
+            $table->jsonb('approver_membership_ids');
+            $table->string('status', 10)->default('pending');
+            $table->timestampTz('decided_at')->nullable();
+            $table->timestampsTz();
+
+            $table->unique(['tenant_id', 'id', 'order_id', 'buyer_company_id'], 'order_approval_steps_order_unique');
+        });
+        // cancelled: pedido cancelado durante a aprovação; superseded: retrato
+        // substituído na reavaliação, quando o novo total cai em outra regra.
+        DB::statement("alter table order_approval_steps add constraint order_approval_steps_values_check check (
+            status in ('pending', 'approved', 'rejected', 'cancelled', 'superseded') and required_approvals between 1 and 10
+            and jsonb_typeof(approver_membership_ids) = 'array')");
+        DB::statement("create unique index order_approval_steps_unique on order_approval_steps
+            (tenant_id, order_id, level_number) where status <> 'superseded'");
+        TenantSchema::enableRowLevelSecurity('order_approval_steps', 'required');
+        TenantSchema::buyerReadOnly('order_approval_steps');
+        DB::statement(sprintf('revoke delete, truncate on order_approval_steps from %s', TenantSchema::appRole()));
+
+        Schema::create('order_approval_decisions', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            TenantSchema::tenant($table);
+            TenantSchema::reference($table, 'buyer_company_id', 'buyer_companies');
+            TenantSchema::companyReference($table, 'order_id', 'orders');
+            $table->uuid('order_approval_step_id');
+            TenantSchema::companyReference($table, 'actor_membership_id', 'memberships');
+            TenantSchema::companyReference($table, 'principal_membership_id', 'memberships');
+            $table->string('decision', 10);
+            $table->text('comment')->nullable();
+            // Impressão do pedido que o aprovador viu e decidiu (RN-054).
+            $table->char('order_fingerprint', 64);
+            TenantSchema::companyReference($table, 'delegation_id', 'approval_delegations', nullable: true);
+            $table->timestampTz('invalidated_at')->nullable();
+            $table->timestampTz('created_at')->useCurrent();
+
+            $table->index(['tenant_id', 'order_id', 'created_at'], 'order_approval_decisions_order_index');
+        });
+        // O nível pertence ao pedido e à empresa da decisão.
+        DB::statement('alter table order_approval_decisions add constraint order_approval_decisions_step_fk
+            foreign key (tenant_id, order_approval_step_id, order_id, buyer_company_id)
+            references order_approval_steps (tenant_id, id, order_id, buyer_company_id) on delete restrict');
+        DB::statement("alter table order_approval_decisions add constraint order_approval_decisions_decision_check check (decision in ('approved', 'rejected'))");
+        // Decisão em nome de outro titular só por delegação, e da delegação
+        // desse titular para esse ator.
+        DB::statement('alter table order_approval_decisions add constraint order_approval_decisions_delegation_check
+            check ((actor_membership_id = principal_membership_id) = (delegation_id is null))');
+        DB::statement('alter table order_approval_decisions add constraint order_approval_decisions_delegation_pair_fk
+            foreign key (tenant_id, delegation_id, principal_membership_id, actor_membership_id)
+            references approval_delegations (tenant_id, id, delegator_membership_id, delegate_membership_id) on delete restrict');
+        // Uma decisão válida por pessoa (e por titular, na delegação) em cada nível.
+        DB::statement('create unique index order_approval_decisions_one_actor on order_approval_decisions
+            (tenant_id, order_approval_step_id, actor_membership_id) where invalidated_at is null');
+        DB::statement('create unique index order_approval_decisions_one_principal on order_approval_decisions
+            (tenant_id, order_approval_step_id, principal_membership_id) where invalidated_at is null');
+        TenantSchema::enableRowLevelSecurity('order_approval_decisions', 'required');
+        TenantSchema::buyerReadOnly('order_approval_decisions');
+        // Histórico: apenas inserção e marcação de invalidação, uma única vez.
+        DB::statement(sprintf('revoke update, delete, truncate on order_approval_decisions from %s', TenantSchema::appRole()));
+        DB::statement(sprintf('grant update (invalidated_at) on order_approval_decisions to %s', TenantSchema::appRole()));
+
+        Schema::create('cost_center_budgets', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            TenantSchema::tenant($table);
+            TenantSchema::reference($table, 'buyer_company_id', 'buyer_companies');
+            TenantSchema::companyReference($table, 'cost_center_id', 'cost_centers');
+            $table->date('period_start');
+            $table->bigInteger('amount_cents');
+            $table->bigInteger('reserved_cents')->default(0);
+            $table->bigInteger('consumed_cents')->default(0);
+            $table->timestampsTz();
+
+            $table->unique(['tenant_id', 'cost_center_id', 'period_start'], 'cost_center_budgets_unique');
+        });
+        DB::statement("alter table cost_center_budgets add constraint cost_center_budgets_values_check check (
+            amount_cents >= 0 and reserved_cents >= 0 and consumed_cents >= 0
+            and reserved_cents + consumed_cents <= amount_cents
+            and period_start = date_trunc('month', period_start)::date)");
+        TenantSchema::companyKey('cost_center_budgets');
+        TenantSchema::enableRowLevelSecurity('cost_center_budgets', 'required');
+        TenantSchema::buyerReadOnly('cost_center_budgets');
+        // Valor por Action; saldos apenas por movimentos.
+        TenantSchema::projection('cost_center_budgets', ['amount_cents', 'updated_at']);
+        DB::statement(sprintf(
+            'grant insert (id, tenant_id, buyer_company_id, cost_center_id, period_start, amount_cents, created_at, updated_at) on cost_center_budgets to %s',
+            TenantSchema::appRole(),
+        ));
+
+        Schema::create('budget_movements', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            TenantSchema::tenant($table);
+            TenantSchema::reference($table, 'buyer_company_id', 'buyer_companies');
+            TenantSchema::companyReference($table, 'cost_center_budget_id', 'cost_center_budgets');
+            TenantSchema::companyReference($table, 'order_id', 'orders');
+            $table->string('type', 12);
+            $table->bigInteger('reserved_delta');
+            $table->bigInteger('consumed_delta');
+            $table->foreignUuid('actor_user_id')->nullable()->constrained('users')->restrictOnDelete();
+            $table->timestampTz('created_at')->useCurrent();
+
+            $table->index(['tenant_id', 'order_id'], 'budget_movements_order_index');
+        });
+        DB::statement("alter table budget_movements add constraint budget_movements_type_check check (case type
+            when 'reservation' then reserved_delta > 0 and consumed_delta = 0
+            when 'release' then reserved_delta < 0 and consumed_delta = 0
+            when 'consumption' then reserved_delta <= 0 and consumed_delta > 0
+            when 'reversal' then reserved_delta = 0 and consumed_delta < 0
+            else false end)");
+        TenantSchema::enableRowLevelSecurity('budget_movements', 'required');
+        TenantSchema::buyerReadOnly('budget_movements');
+        TenantSchema::appendOnly('budget_movements');
+
+        DB::unprepared(<<<'SQL'
+            create or replace function budget_apply_movement() returns trigger
+                language plpgsql security definer set search_path = public
+                as $$
+                begin
+                    update cost_center_budgets
+                       set reserved_cents = reserved_cents + new.reserved_delta,
+                           consumed_cents = consumed_cents + new.consumed_delta,
+                           updated_at = now()
+                     where id = new.cost_center_budget_id and tenant_id = new.tenant_id;
+
+                    if not found then
+                        raise exception 'orçamento inexistente para o movimento %', new.id;
+                    end if;
+
+                    return null;
+                end
+                $$;
+
+            revoke all on function budget_apply_movement() from public;
+
+            create trigger budget_movements_apply after insert on budget_movements
+                for each row execute function budget_apply_movement();
+
+            -- Invalidação definitiva: só de NULL para uma data, uma vez.
+            create or replace function approval_decision_guard() returns trigger
+                language plpgsql
+                as $$
+                begin
+                    if old.invalidated_at is not null or new.invalidated_at is null then
+                        raise exception 'decisão de aprovação % já invalidada ou invalidação desfeita', old.id
+                            using errcode = 'check_violation';
+                    end if;
+
+                    return new;
+                end
+                $$;
+
+            create trigger order_approval_decisions_guard before update on order_approval_decisions
+                for each row execute function approval_decision_guard();
+
+            -- Retrato do nível: identidade e quórum imutáveis; situações
+            -- terminais (rejeitado, encerrado, substituído) não mudam.
+            create or replace function approval_step_guard() returns trigger
+                language plpgsql
+                as $$
+                begin
+                    if new.tenant_id <> old.tenant_id or new.buyer_company_id <> old.buyer_company_id
+                        or new.order_id <> old.order_id or new.level_number <> old.level_number
+                        or new.required_approvals <> old.required_approvals then
+                        raise exception 'nível de aprovação % não pode mudar de pedido, número ou quórum', old.id
+                            using errcode = 'check_violation';
+                    end if;
+
+                    if old.status in ('rejected', 'cancelled', 'superseded') and new.status <> old.status then
+                        raise exception 'nível de aprovação % já encerrado', old.id
+                            using errcode = 'check_violation';
+                    end if;
+
+                    return new;
+                end
+                $$;
+
+            create trigger order_approval_steps_guard before update on order_approval_steps
+                for each row execute function approval_step_guard();
+
+            -- Revogação definitiva: delegação revogada não volta a valer.
+            create or replace function approval_delegation_guard() returns trigger
+                language plpgsql
+                as $$
+                begin
+                    if old.revoked_at is not null and new.revoked_at is distinct from old.revoked_at then
+                        raise exception 'delegação % já revogada', old.id
+                            using errcode = 'check_violation';
+                    end if;
+
+                    return new;
+                end
+                $$;
+
+            create trigger approval_delegations_guard before update on approval_delegations
+                for each row execute function approval_delegation_guard();
+            SQL);
+    }
+
+    public function down(): void
+    {
+        DB::unprepared(<<<'SQL'
+            drop trigger if exists budget_movements_apply on budget_movements;
+            drop function if exists budget_apply_movement();
+            drop trigger if exists order_approval_decisions_guard on order_approval_decisions;
+            drop function if exists approval_decision_guard();
+            drop trigger if exists order_approval_steps_guard on order_approval_steps;
+            drop function if exists approval_step_guard();
+            drop trigger if exists approval_delegations_guard on approval_delegations;
+            drop function if exists approval_delegation_guard();
+            SQL);
+        Schema::dropIfExists('budget_movements');
+        Schema::dropIfExists('cost_center_budgets');
+        Schema::dropIfExists('order_approval_decisions');
+        Schema::dropIfExists('order_approval_steps');
+        Schema::table('orders', function (Blueprint $table): void {
+            $table->dropColumn(['approval_rule_id', 'approval_rule_name', 'approval_fingerprint', 'submitted_at', 'approved_at', 'confirmation_issue']);
+        });
+        Schema::dropIfExists('approval_delegations');
+        Schema::dropIfExists('approval_rule_level_approvers');
+        Schema::dropIfExists('approval_rule_levels');
+        Schema::dropIfExists('approval_rules');
+        DB::statement('alter table memberships drop constraint if exists memberships_buyer_unique');
+        DB::statement('alter table buyer_units drop constraint if exists buyer_units_buyer_unique');
+        DB::statement('alter table cost_centers drop constraint if exists cost_centers_buyer_unique');
+    }
+};

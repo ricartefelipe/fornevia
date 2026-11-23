@@ -12,7 +12,7 @@ final readonly class ReservationOutcome
      * @param  list<string>  $reservationIds
      */
     public function __construct(
-        public string $orderItemId,
+        public string $holderId,
         public Quantity $reserved,
         public Quantity $backordered,
         public array $reservationIds,

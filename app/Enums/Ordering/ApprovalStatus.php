@@ -10,6 +10,8 @@ enum ApprovalStatus: string
     case Pending = 'pending';
     case Approved = 'approved';
     case Rejected = 'rejected';
+    // Pedido cancelado enquanto aguardava aprovação.
+    case Cancelled = 'cancelled';
 
     public function label(): string
     {
@@ -18,6 +20,7 @@ enum ApprovalStatus: string
             self::Pending => 'Pendente',
             self::Approved => 'Aprovada',
             self::Rejected => 'Reprovada',
+            self::Cancelled => 'Encerrada',
         };
     }
 }
