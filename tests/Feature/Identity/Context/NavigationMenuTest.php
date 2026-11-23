@@ -52,17 +52,17 @@ it('monta o menu da equipe conforme as permissões do papel', function (SystemRo
     expect(($this->menuFor)($membership))->toBe($expected);
 })->with([
     'proprietário' => [SystemRole::Owner, [
-        'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'orders.index', 'inventory.index', 'credit.index',
+        'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index',
         'finance.index', 'audit.index', 'team.index', 'branches.index', 'subscription.show',
     ]],
     'administrador' => [SystemRole::Admin, [
-        'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'orders.index', 'inventory.index', 'credit.index',
+        'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index',
         'finance.index', 'audit.index', 'team.index', 'branches.index',
     ]],
-    'representante comercial' => [SystemRole::SalesRep, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'orders.index', 'inventory.index', 'credit.index']],
+    'representante comercial' => [SystemRole::SalesRep, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index']],
     'estoque e expedição' => [SystemRole::Warehouse, ['dashboard', 'catalog.products', 'orders.index', 'inventory.index']],
     'financeiro e crédito' => [SystemRole::Finance, ['dashboard', 'buyers.index', 'orders.index', 'credit.index', 'finance.index', 'audit.index']],
-    'consulta' => [SystemRole::Viewer, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'orders.index', 'inventory.index', 'credit.index', 'finance.index']],
+    'consulta' => [SystemRole::Viewer, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index', 'finance.index']],
 ]);
 
 it('monta o menu do portal conforme as permissões do papel do comprador', function (SystemRole $role, array $expected): void {
@@ -89,7 +89,7 @@ it('reflete o ajuste de permissões feito pelo tenant em um papel', function ():
         ])->save();
     });
 
-    expect(($this->menuFor)($membership))->toBe(['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'orders.index', 'inventory.index']);
+    expect(($this->menuFor)($membership))->toBe(['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index']);
 });
 
 it('não exibe itens de navegação sem contexto ativo', function (): void {
