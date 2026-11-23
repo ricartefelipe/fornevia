@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+// Vencimento das propostas e das reservas de estoque das cotações (ADR-025).
+Schedule::command('quotes:expire')->everyMinute()->withoutOverlapping()->onOneServer();

@@ -15,8 +15,8 @@ use App\Models\Buyers\BuyerCompany;
 use App\Models\Catalog\Sku;
 use App\Models\Ordering\Cart;
 use App\Models\Ordering\CartItem;
+use App\Services\Inventory\StockAvailability;
 use App\Services\Pricing\PricingService;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
@@ -28,7 +28,10 @@ use InvalidArgumentException;
  */
 final readonly class CartPricing
 {
-    public function __construct(private PricingService $pricing) {}
+    public function __construct(
+        private PricingService $pricing,
+        private StockAvailability $availability,
+    ) {}
 
     public function quote(Cart $cart, BuyerCompany $buyer): CartQuote
     {
@@ -44,7 +47,7 @@ final readonly class CartPricing
             $items,
         ), 1, 0));
 
-        $available = $this->availableBySku(array_map(static fn (CartItem $i): string => $i->sku_id, $items));
+        $available = $this->availability->bySku(array_values(array_map(static fn (CartItem $i): string => $i->sku_id, $items)));
         $lines = [];
         $amounts = [];
 
@@ -113,31 +116,5 @@ final readonly class CartPricing
             $item->id, $sku->id, $sku->code, $sku->product->name, $sku->variant_label, $sku->salesUnit->code, $sku->package_label,
             $sku->conversion_factor, $item->quantity, $base, $violations, $price, $amounts, $availability, $sku->product->allow_backorder, $problems,
         );
-    }
-
-    /**
-     * Disponível (físico − reservado) somado nos depósitos que atendem vendas.
-     *
-     * @param  list<string>  $skuIds
-     * @return array<string, Quantity>
-     */
-    private function availableBySku(array $skuIds): array
-    {
-        $rows = DB::table('stock_levels as sl')
-            ->join('warehouses as w', 'w.id', '=', 'sl.warehouse_id')
-            ->where('w.is_active', true)
-            ->where('w.allows_sales', true)
-            ->whereIn('sl.sku_id', $skuIds)
-            ->groupBy('sl.sku_id')
-            ->selectRaw('sl.sku_id, sum(sl.on_hand - sl.reserved) as available')
-            ->get();
-
-        $result = [];
-
-        foreach ($rows as $row) {
-            $result[(string) $row->sku_id] = Quantity::of((string) $row->available);
-        }
-
-        return $result;
     }
 }

@@ -7,6 +7,13 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- Cotações: solicitação pelo carrinho, propostas da equipe em versões
+  imutáveis com preço do servidor e desconto avaliado pela política
+  comercial, aprovação comercial vinculada à versão, reserva de estoque
+  opcional com prazo, pedido de revisão, recusa, cancelamento, conversa e
+  notas internas, aceite que gera o pedido com os preços negociados e
+  expiração agendada; telas do portal e da equipe.
+
 - Aprovação interna de compras: regras por valor, centro de custo, unidade,
   categoria e perfil do solicitante; níveis com quórum; delegação com
   prazo; reatribuição de nível bloqueado; reavaliação de preços, condição

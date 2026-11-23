@@ -19,6 +19,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $warehouse_id
  * @property string $sku_id
  * @property string|null $order_item_id
+ * @property string|null $quote_item_id
+ * @property \Carbon\CarbonImmutable|null $expires_at
  * @property \App\Domain\Shared\Quantity $quantity
  * @property \App\Domain\Shared\Quantity $quantity_consumed
  * @property \App\Domain\Shared\Quantity $quantity_released

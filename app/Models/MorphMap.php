@@ -44,6 +44,8 @@ final class MorphMap
         'approval_rule' => Approvals\ApprovalRule::class,
         'approval_delegation' => Approvals\ApprovalDelegation::class,
         'cost_center_budget' => Approvals\CostCenterBudget::class,
+        'quote' => Quotes\Quote::class,
+        'quote_version' => Quotes\QuoteVersion::class,
         'plan' => Platform\Plan::class,
         'subscription' => Platform\Subscription::class,
     ];

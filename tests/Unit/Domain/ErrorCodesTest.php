@@ -125,6 +125,13 @@ it('mantém os códigos de erro das regras de negócio', function (): void {
         'App\Domain\Pricing\Exceptions\PriceNotAvailable' => 'price_not_available',
         'App\Domain\Pricing\Exceptions\SkuNotPriceable' => 'sku_not_priceable',
         'App\Domain\Pricing\Exceptions\SkuPackagingChanged' => 'sku_packaging_changed',
+        'App\Domain\Quotes\Exceptions\CommercialApprovalNotAllowed' => 'commercial_approval_not_allowed',
+        'App\Domain\Quotes\Exceptions\CommercialApprovalRequired' => 'commercial_approval_required',
+        'App\Domain\Quotes\Exceptions\InvalidQuote' => 'invalid_quote',
+        'App\Domain\Quotes\Exceptions\QuoteAlreadyAccepted' => 'quote_already_accepted',
+        'App\Domain\Quotes\Exceptions\QuoteExpired' => 'quote_expired',
+        'App\Domain\Quotes\Exceptions\QuoteNotOpen' => 'quote_not_open',
+        'App\Domain\Quotes\Exceptions\QuoteVersionOutdated' => 'quote_version_outdated',
         'App\Domain\Shared\AmountOutOfRange' => 'amount_out_of_range',
         'App\Domain\Shared\InvalidDocument' => 'invalid_document',
     ]);

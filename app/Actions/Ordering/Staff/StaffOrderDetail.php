@@ -121,6 +121,12 @@ final readonly class StaffOrderDetail
             $label .= ' · faixa a partir de '.Quantity::of($tier)->format().' '.$item->unit_code;
         }
 
+        $quote = $snapshot['quote'] ?? null;
+
+        if (is_array($quote) && is_string($quote['number'] ?? null)) {
+            $label .= ' · cotação '.$quote['number'].(is_int($quote['version_number'] ?? null) ? ' v'.$quote['version_number'] : '');
+        }
+
         return $label;
     }
 

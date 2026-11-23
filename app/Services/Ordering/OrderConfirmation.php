@@ -13,6 +13,7 @@ use App\Services\Approvals\BudgetLedger;
 use App\Services\Credit\CreditLedger;
 use App\Services\Inventory\StockLedger;
 use App\Services\Platform\PlanLimits;
+use App\Services\Quotes\QuoteStockHolds;
 use App\Support\Clock\Clock;
 use App\Support\Outbox\Outbox;
 use App\Support\Tenancy\CurrentContext;
@@ -44,6 +45,7 @@ final readonly class OrderConfirmation
         private CreditLedger $credit,
         private BudgetLedger $budgets,
         private PlanLimits $limits,
+        private QuoteStockHolds $holds,
         private OrderNumbering $numbering,
         private Outbox $outbox,
         private Clock $clock,
@@ -58,6 +60,9 @@ final readonly class OrderConfirmation
         $this->db->asSystem(function () use ($order): void {
             $items = OrderItem::query()->where('order_id', $order->id)->orderBy('line_number')->get();
 
+            // Pedido de cotação: a reserva com prazo da versão é transferida
+            // ao pedido sob o mesmo lock dos saldos (RN-043).
+            $this->holds->handOff($order);
             $this->snapshotCosts($items);
 
             $backorder = DB::table('skus')
