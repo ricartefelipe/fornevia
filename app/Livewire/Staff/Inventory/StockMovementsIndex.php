@@ -40,6 +40,7 @@ final class StockMovementsIndex extends Component
     /** @var array<string, string> */
     private const array REFERENCES = [
         'order' => 'Pedido',
+        'quote_version' => 'Cotação',
         'adjustment' => 'Ajuste de inventário',
         'manual' => 'Entrada manual',
         'transfer' => 'Transferência',
