@@ -64,4 +64,4 @@ return [
         });
     },
 
-] + (require __DIR__.'/ordering-scenarios.php') + (require __DIR__.'/credit-scenarios.php') + (require __DIR__.'/inventory-scenarios.php') + (require __DIR__.'/approval-scenarios.php');
+] + (require __DIR__.'/ordering-scenarios.php') + (require __DIR__.'/credit-scenarios.php') + (require __DIR__.'/inventory-scenarios.php') + (require __DIR__.'/approval-scenarios.php') + (require __DIR__.'/quote-scenarios.php');
