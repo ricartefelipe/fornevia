@@ -5,6 +5,8 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.2.0] - 2026-11-23
+
 ### Adicionado
 
 - Cotações: solicitação pelo carrinho, propostas da equipe em versões
@@ -13,7 +15,6 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   opcional com prazo, pedido de revisão, recusa, cancelamento, conversa e
   notas internas, aceite que gera o pedido com os preços negociados e
   expiração agendada; telas do portal e da equipe.
-
 - Aprovação interna de compras: regras por valor, centro de custo, unidade,
   categoria e perfil do solicitante; níveis com quórum; delegação com
   prazo; reatribuição de nível bloqueado; reavaliação de preços, condição
@@ -100,5 +101,6 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
 
-[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.1.0...develop
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.2.0...develop
+[0.2.0]: https://github.com/ricartefelipe/fornevia/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ricartefelipe/fornevia/releases/tag/v0.1.0
