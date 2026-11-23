@@ -99,6 +99,7 @@ final class CartPage extends Component
 
     public function mount(CheckoutOptions $options): void
     {
+        $this->quoteKey = self::newKey();
         $this->checkoutKey = self::newKey();
         $choices = $options->handle();
         $this->shippingAddressId = (string) $choices->defaultShippingAddressId;
@@ -197,7 +198,7 @@ final class CartPage extends Component
         try {
             $quote = $request->handle(new RequestQuoteData(
                 cartId: $this->displayedCartId,
-                idempotencyKey: $this->quoteKey !== '' ? $this->quoteKey : self::newKey(),
+                idempotencyKey: $this->quoteKey,
                 message: self::nullable(trim($this->quoteMessage)),
                 neededBy: self::nullable($this->quoteNeededBy),
                 removeFromCart: $this->quoteRemoveItems,

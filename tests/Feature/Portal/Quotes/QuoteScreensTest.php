@@ -15,6 +15,7 @@ use App\Models\Ordering\Order;
 use App\Models\Quotes\Quote;
 use App\Support\Clock\Clock;
 use App\Support\Clock\FrozenClock;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
@@ -219,4 +220,19 @@ it('recusa a proposta mesmo que a reserva tenha terminado depois da exibição',
     ($this->as)(fn () => $screen->call('reject')->assertSee('Proposta recusada'));
 
     expect(F::fresh($this->scenario, $quote)->status)->toBe(QuoteStatus::Rejected);
+});
+
+it('usa a mesma chave da solicitação de cotação aberta no carrinho', function (): void {
+    $key = ($this->as)(function (): string {
+        $screen = Livewire::test(CartPage::class);
+        $key = $screen->get('quoteKey');
+
+        expect($key)->toBeString()->not->toBe('');
+
+        $screen->set('quoteMessage', 'Entrega na obra')->call('requestQuote')->assertHasNoErrors();
+
+        return $key;
+    });
+
+    expect($this->scenario->system(fn (): mixed => DB::table('idempotency_keys')->where('scope', 'quote.request')->value('key')))->toBe($key);
 });
