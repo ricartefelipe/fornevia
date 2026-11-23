@@ -493,3 +493,47 @@ stateDiagram-v2
   exclusivo (ADR-006). A decisão por delegação bloqueia a delegação em
   modo compartilhado: a revogação concorrente termina antes ou espera.
 
+## 11. Cotações e negociação
+
+```mermaid
+stateDiagram-v2
+    [*] --> Solicitada: comprador solicita (carrinho)
+    Solicitada --> Proposta: equipe envia versão
+    Proposta --> Proposta: nova versão (anterior substituída)
+    Proposta --> Solicitada: pedido de revisão / retirada
+    Proposta --> Vencida: validade (job ou ação sob lock)
+    Vencida --> Proposta: nova versão
+    Vencida --> Solicitada: pedido de revalidação
+    Proposta --> Aceita: aceite gera o pedido
+    Proposta --> Recusada: comprador recusa
+    Solicitada --> Cancelada: cancelamento / encerramento
+    Vencida --> Cancelada: cancelamento / encerramento
+    Proposta --> Cancelada: encerramento pela equipe
+```
+
+| Etapa | Versão | Reserva de estoque | Pedido |
+|---|---|---|---|
+| Submissão dentro da política | pronta e enviada na mesma transação | criada no envio, se pedida (tudo ou nada) | — |
+| Submissão fora da política | em aprovação comercial (só a equipe vê) | — | — |
+| Aprovação comercial | pronta; enviada se "aprovar e enviar" | criada no envio | — |
+| Nova versão enviada | anterior substituída | anterior liberada, nova criada sob o mesmo lock | — |
+| Revisão, recusa, retirada, encerramento | encerrada | liberada com o motivo | — |
+| Aceite | aceita, cotação encerrada | mantida até o prazo (com aprovação interna) ou transferida | nasce pelo caminho do checkout |
+| Pedido rejeitado ou cancelado antes da confirmação | — | liberada | — |
+
+- Versões imutáveis (privilégio de coluna), itens conferidos com os totais
+  no COMMIT, numeração só no envio e no máximo uma versão em preparo, uma
+  com o comprador e uma aceita por cotação (ADR-025).
+- Preço de referência sempre do `PricingService`; a equipe informa o
+  desconto e a avaliação comercial aplica limite do papel, preço mínimo,
+  custo e margem (RN-032, RN-033, RN-041). A avaliação e as notas internas
+  não são legíveis pelo comprador (ADR-020).
+- Aceite, nova versão, aprovação e expiração bloqueiam a cotação primeiro;
+  operações do pedido bloqueiam o pedido e depois a cotação de origem
+  (ADR-006). A expiração usa `SKIP LOCKED` e nunca bloqueia pedidos;
+  verificado com processos concorrentes (`tests/Concurrency/Quotes`).
+- Telas: portal em `/portal/cotacoes` (`portal.quotes`; aceitar exige
+  `portal.orders.place`); equipe em `/cotacoes` (`quotes.view`, elaborar
+  com `quotes.manage`) e `/cotacoes/aprovacoes` (`pricing.approve`).
+- O comando `quotes:expire` roda a cada minuto no serviço `scheduler`.
+
