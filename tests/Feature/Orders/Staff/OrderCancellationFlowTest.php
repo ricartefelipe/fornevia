@@ -30,11 +30,7 @@ beforeEach(function (): void {
     $this->snapshot = function (User $user, Membership $membership): string {
         $page = $this->actingAs($user)->withSession(TenantScenario::sessionFor($membership))->get($this->url)->assertOk();
 
-        if (preg_match('/wire:snapshot="([^"]+)"/', (string) $page->getContent(), $match) !== 1) {
-            throw new RuntimeException('Snapshot do componente não encontrado na página.');
-        }
-
-        return html_entity_decode($match[1], ENT_QUOTES | ENT_HTML5);
+        return Tests\Support\LivewireSnapshot::page($page);
     };
 
     $this->call = fn (User $user, Membership $membership, string $snapshot, array $updates, string $method): TestResponse => $this
