@@ -67,6 +67,10 @@ final class QuoteShow extends Component
     #[Locked]
     public string $counterKey = '';
 
+    /** Versão cujas quantidades preenchem o pedido de revisão. */
+    #[Locked]
+    public string $counterVersionId = '';
+
     public string $shippingAddressId = '';
 
     public string $billingAddressId = '';
@@ -109,7 +113,7 @@ final class QuoteShow extends Component
 
         try {
             $order = $accept->handle($this->quoteId, new AcceptQuoteData(
-                reviewed: $this->reviewed(),
+                reviewed: $this->reviewed(withHold: true),
                 idempotencyKey: $this->acceptKey,
                 shippingAddressId: $this->shippingAddressId,
                 billingAddressId: self::nullable($this->billingAddressId),
@@ -209,15 +213,24 @@ final class QuoteShow extends Component
         // Só versões enviadas: a RLS esconde as demais do comprador.
         $versions = QuoteVersion::query()->with('items')->where('quote_id', $quote->id)->whereNotNull('version_number')->orderByDesc('version_number')->get();
         $current = $versions->first(static fn (QuoteVersion $v): bool => $v->status === QuoteVersionStatus::Sent);
+        // Cotação vencida: a última versão enviada é a exibida, para pedir
+        // revalidação.
+        $shown = $current ?? ($quote->status === QuoteStatus::Expired ? $versions->first() : null);
         $holdActive = $current !== null && $current->stock_hold_status === StockHoldStatus::Active && $current->stock_hold_until?->greaterThan($now) === true;
 
         // O que esta renderização mostra é o que uma ação enviada dela altera.
-        $this->reviewedVersionId = $current->id ?? '';
-        $this->reviewedFingerprint = $current->content_fingerprint ?? '';
+        $this->reviewedVersionId = $shown->id ?? '';
+        $this->reviewedFingerprint = $shown->content_fingerprint ?? '';
         $this->reviewedHoldActive = $current !== null && $current->stock_hold_status === StockHoldStatus::Active;
 
-        foreach ($current->items ?? [] as $item) {
-            $this->counterQuantities[$item->line_number] ??= $item->quantity->format();
+        // Quantidades do pedido de revisão sempre da versão exibida.
+        if ($this->counterVersionId !== $this->reviewedVersionId) {
+            $this->counterVersionId = $this->reviewedVersionId;
+            $this->counterQuantities = [];
+
+            foreach ($shown->items ?? [] as $item) {
+                $this->counterQuantities[$item->line_number] = $item->quantity->format();
+            }
         }
 
         $canAccept = $access->can(Permission::PortalOrdersPlace);
@@ -234,10 +247,10 @@ final class QuoteShow extends Component
 
         return view('livewire.portal.quotes.quote-show', [
             'quote' => $quote,
-            'current' => $current,
-            'expired' => $current !== null && $current->valid_until->lessThanOrEqualTo($now),
+            'current' => $shown,
+            'expired' => $shown !== null && ($shown->status === QuoteVersionStatus::Expired || $shown->valid_until->lessThanOrEqualTo($now)),
             'holdActive' => $holdActive,
-            'available' => $current !== null && ! $holdActive ? $availability->bySku(array_values($current->items->pluck('sku_id')->map(static fn (mixed $id): string => (string) $id)->all())) : [],
+            'available' => $shown !== null && ! $holdActive ? $availability->bySku(array_values($shown->items->pluck('sku_id')->map(static fn (mixed $id): string => (string) $id)->all())) : [],
             'history' => $versions,
             'requests' => QuoteRequest::query()->with('items')->where('quote_id', $quote->id)->orderBy('sequence')->get(),
             'comments' => QuoteComment::query()->where('quote_id', $quote->id)->where('visibility', QuoteCommentVisibility::Shared->value)->orderBy('created_at')->orderBy('id')->get(),
@@ -252,9 +265,14 @@ final class QuoteShow extends Component
         ])->title("Cotação {$quote->number}");
     }
 
-    private function reviewed(): ReviewedQuoteVersion
+    /**
+     * Versão exibida. A situação da reserva só conta para o aceite: recusar
+     * ou pedir revisão vale para o conteúdo, mesmo que a reserva tenha
+     * terminado depois da exibição.
+     */
+    private function reviewed(bool $withHold = false): ReviewedQuoteVersion
     {
-        return new ReviewedQuoteVersion($this->reviewedVersionId, $this->reviewedFingerprint, $this->reviewedHoldActive);
+        return new ReviewedQuoteVersion($this->reviewedVersionId, $this->reviewedFingerprint, $withHold ? $this->reviewedHoldActive : null);
     }
 
     private function closeError(BusinessRuleViolation $e): void

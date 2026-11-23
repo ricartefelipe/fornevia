@@ -27,7 +27,7 @@
     @if ($current)
         <section class="fv-card mb-6 p-5" aria-labelledby="cotacao-proposta">
             <div class="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 id="cotacao-proposta" class="text-lg font-semibold">Proposta vigente · versão {{ $current->version_number }}</h2>
+                <h2 id="cotacao-proposta" class="text-lg font-semibold">{{ $awaiting ? 'Proposta vigente' : 'Última proposta' }} · versão {{ $current->version_number }}</h2>
                 <p class="text-sm {{ $expired ? 'font-semibold text-red-700' : 'text-slate-700' }}">
                     {{ $expired ? 'Vencida em '.$at($current->valid_until) : 'Válida até '.$at($current->valid_until) }}
                 </p>
@@ -133,7 +133,7 @@
             </section>
         @endif
 
-        @if (($awaiting || $quote->status === \App\Enums\Quotes\QuoteStatus::Expired))
+        @if ($awaiting || $quote->status === \App\Enums\Quotes\QuoteStatus::Expired)
             <section class="fv-card mb-6 p-5" aria-labelledby="cotacao-revisao">
                 <h2 id="cotacao-revisao" class="text-lg font-semibold">{{ $expired || $quote->status === \App\Enums\Quotes\QuoteStatus::Expired ? 'Pedir revalidação' : 'Pedir revisão' }}</h2>
                 <p class="mt-1 text-sm text-slate-700">Ajuste as quantidades (zero remove o item) e explique o que precisa mudar. A proposta atual deixa de poder ser aceita.</p>

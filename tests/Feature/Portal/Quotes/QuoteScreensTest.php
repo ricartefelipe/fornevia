@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Quotes\System\ExpireDueQuotes;
+use App\Domain\Shared\Quantity;
 use App\Enums\Identity\SystemRole;
 use App\Enums\Quotes\QuoteStatus;
 use App\Livewire\Portal\Ordering\CartPage;
@@ -11,6 +13,8 @@ use App\Models\Identity\Membership;
 use App\Models\Identity\User;
 use App\Models\Ordering\Order;
 use App\Models\Quotes\Quote;
+use App\Support\Clock\Clock;
+use App\Support\Clock\FrozenClock;
 use Illuminate\Testing\TestResponse;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
@@ -47,6 +51,7 @@ beforeEach(function (): void {
             return $callback();
         });
     };
+    $this->travel = fn (string $interval) => app()->instance(Clock::class, new FrozenClock(now()->add($interval)->toImmutable()));
 });
 
 it('solicita cotação pelo carrinho e leva ao detalhe', function (): void {
@@ -166,4 +171,52 @@ it('protege a versão exibida contra alteração e esconde cotação de outra em
 
     ($this->page)(route('portal.quotes.show', $quote->id), $outsider['membership'])->assertNotFound();
     ($this->as)(fn () => Livewire::test(QuotesIndex::class)->assertDontSee($quote->number), $outsider['membership']);
+});
+
+it('mostra a última proposta da cotação vencida e pede revalidação', function (): void {
+    $quote = F::request($this->scenario, $this->buyer);
+    F::submit($this->scenario, $this->manager, $quote, overrides: ['validUntilDay' => now($this->tz)->toDateString()]);
+    ($this->travel)('P1D');
+    app(ExpireDueQuotes::class)->handle();
+
+    expect(F::fresh($this->scenario, $quote)->status)->toBe(QuoteStatus::Expired);
+
+    ($this->as)(fn () => Livewire::test(QuoteShow::class, ['quote' => $quote->id])
+        ->assertSee('Última proposta · versão 1')
+        ->assertSee('Vencida em')
+        ->assertSee('Pedir revalidação')
+        ->assertDontSee('Aceitar e gerar pedido')
+        ->assertSet('counterQuantities.1', Quantity::of('3')->format())
+        ->set('counterMessage', 'Podem revalidar o mesmo preço?')
+        ->call('counter')
+        ->assertHasNoErrors()
+        ->assertSee('Pedido de revisão enviado'));
+
+    expect(F::fresh($this->scenario, $quote)->status)->toBe(QuoteStatus::Requested);
+});
+
+it('refaz as quantidades do pedido de revisão quando chega outra versão', function (): void {
+    $quote = F::request($this->scenario, $this->buyer);
+    F::submit($this->scenario, $this->manager, $quote);
+    $screen = ($this->as)(fn () => Livewire::test(QuoteShow::class, ['quote' => $quote->id])->set('counterQuantities.1', '7'));
+    F::submit($this->scenario, $this->manager, $quote, quantity: '5');
+
+    ($this->as)(fn () => $screen->call('$refresh')
+        ->assertSee('Proposta vigente · versão 2')
+        ->assertSet('counterQuantities.1', Quantity::of('5')->format()));
+});
+
+it('recusa a proposta mesmo que a reserva tenha terminado depois da exibição', function (): void {
+    $quote = F::request($this->scenario, $this->buyer);
+    F::submit($this->scenario, $this->manager, $quote, overrides: ['stockHoldUntilDay' => now($this->tz)->toDateString()]);
+    $screen = ($this->as)(fn () => Livewire::test(QuoteShow::class, ['quote' => $quote->id])
+        ->assertSee('Estoque reservado para esta proposta até')
+        ->set('closeReasonCode', 'price'));
+    ($this->travel)('P1D');
+    app(ExpireDueQuotes::class)->handle();
+
+    // A recusa parte da tela exibida com a reserva ativa.
+    ($this->as)(fn () => $screen->call('reject')->assertSee('Proposta recusada'));
+
+    expect(F::fresh($this->scenario, $quote)->status)->toBe(QuoteStatus::Rejected);
 });
