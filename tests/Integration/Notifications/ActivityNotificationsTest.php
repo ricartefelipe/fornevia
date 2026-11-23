@@ -166,3 +166,13 @@ it('não avisa quem perdeu a associação e, sem representante, avisa quem elabo
         ->and(($this->inbox)($this->manager))->toBe([])
         ->and(($this->inbox)($this->scenario->tenant->ownerMembership))->toBe([['quote.requested', "/cotacoes/{$quote->id}"]]);
 });
+
+it('avisa quem fez o pedido quando a equipe cancela o pedido ainda em aprovação', function (): void {
+    $ana = $this->scenario->tenant->addBuyerUser($this->buyer['company'], SystemRole::Approver);
+    Fx::rule($this->scenario, $this->buyer['company'], [[1, [$ana]]]);
+    $order = Fx::place($this->scenario, $this->buyer);
+    $this->scenario->tenant->actingAs($this->manager, static fn () => app(App\Actions\Ordering\CancelOrderItems::class)->handle($order, null, 'Cliente desistiu por telefone'));
+    ($this->drain)();
+
+    expect(($this->inbox)($this->buyer['membership']))->toBe([['order.cancelled', "/portal/pedidos/{$order->id}"]]);
+});
