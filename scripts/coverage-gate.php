@@ -26,6 +26,7 @@ const CRITICAL_PATHS = [
     'app/Domain/Credit/',
     'app/Domain/Inventory/',
     'app/Domain/Approvals/',
+    'app/Domain/Quotes/',
     'app/Domain/Finance/',
 ];
 const EXCLUDED = [
