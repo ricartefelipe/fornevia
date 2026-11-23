@@ -22,8 +22,8 @@ final class RetryOutbox extends Command
     {
         $id = $this->argument('message');
 
-        if (! $this->option('all') && ! is_string($id)) {
-            $this->error('Informe o id da mensagem ou --all.');
+        if ($this->option('all') === is_string($id)) {
+            $this->error('Informe o id da mensagem ou --all, não os dois.');
 
             return self::INVALID;
         }

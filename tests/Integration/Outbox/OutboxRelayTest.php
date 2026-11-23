@@ -162,6 +162,13 @@ it('apaga em lotes até não restar publicada vencida', function (): void {
     expect(app(OutboxRelay::class)->prune(limit: 1, maxBatches: 2))->toBe(2);
 });
 
+it('espera mais a cada falha seguida da rodada, até 30 segundos', function (): void {
+    expect(App\Console\Commands\RelayOutbox::pauseMs(1000, 0))->toBe(1000)
+        ->and(App\Console\Commands\RelayOutbox::pauseMs(1000, 1))->toBe(2000)
+        ->and(App\Console\Commands\RelayOutbox::pauseMs(1000, 3))->toBe(8000)
+        ->and(App\Console\Commands\RelayOutbox::pauseMs(1000, 50))->toBe(30000);
+});
+
 it('mostra a situação da outbox', function (): void {
     ($this->record)();
     $dead = ($this->record)();
@@ -174,6 +181,9 @@ it('mostra a situação da outbox', function (): void {
     $this->artisan('outbox:status')->expectsOutputToContain('Pendentes')->assertSuccessful();
     $this->artisan('outbox:retry')->assertExitCode(2);
     $this->artisan('outbox:retry', ['message' => 'x'])->assertExitCode(2);
+    // Id e --all juntos: recusado, para não reenviar todas por engano.
+    $this->artisan('outbox:retry', ['message' => $dead, '--all' => true])->expectsOutputToContain('não os dois')->assertExitCode(2);
+    expect(($this->relayDb)()->where('id', $dead)->value('status'))->toBe('dead');
 });
 
 it('roda o relay pela linha de comando e encerra após o limite de rodadas', function (): void {

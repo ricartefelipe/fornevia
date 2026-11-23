@@ -34,6 +34,7 @@ final class RelayOutbox extends Command
         $pruneEvery = max(60, (int) config('outbox.prune_every_seconds', 3600));
         $lastPrune = 0;
         $rounds = 0;
+        $failures = 0;
         $totals = ['claimed' => 0, 'published' => 0, 'failed' => 0, 'dead' => 0];
 
         $this->trap([SIGTERM, SIGINT], function (): void {
@@ -48,6 +49,8 @@ final class RelayOutbox extends Command
                     $totals[$key] += $count;
                 }
 
+                $failures = 0;
+
                 if (time() - $lastPrune >= $pruneEvery) {
                     $pruned = $relay->prune();
                     $lastPrune = time();
@@ -58,7 +61,8 @@ final class RelayOutbox extends Command
                 }
             } catch (Throwable $e) {
                 // Banco ou fila indisponível: registra e tenta de novo depois.
-                Log::error('Falha na rodada do relay da outbox.', ['owner' => $owner, 'exception' => $e]);
+                $failures++;
+                Log::error('Falha na rodada do relay da outbox.', ['owner' => $owner, 'consecutive_failures' => $failures, 'exception' => $e]);
                 $result = ['claimed' => 0];
             }
 
@@ -71,12 +75,21 @@ final class RelayOutbox extends Command
             // Sem mensagens: espera antes da próxima rodada (um sinal recebido
             // durante a espera encerra o laço na volta).
             if ($result['claimed'] === 0) {
-                usleep($idle * 1000);
+                usleep(self::pauseMs($idle, $failures) * 1000);
             }
         }
 
         $this->info("Reivindicadas: {$totals['claimed']}; publicadas: {$totals['published']}; com falha: {$totals['failed']}; sem novas tentativas: {$totals['dead']}.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Pausa antes da próxima rodada: a espera ociosa, dobrando a cada falha
+     * seguida (banco ou fila indisponível), até 30 segundos.
+     */
+    public static function pauseMs(int $idleMs, int $consecutiveFailures): int
+    {
+        return (int) min(30_000, $idleMs * (2 ** min(15, max(0, $consecutiveFailures))));
     }
 }
