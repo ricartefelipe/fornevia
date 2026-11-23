@@ -28,9 +28,9 @@ use Throwable;
  *
  * Por tenant, no contexto de sistema, até um lote de cotações por rodada;
  * cada cotação em transação própria, com o lock tomado com SKIP LOCKED (a
- * ocupada fica para a próxima rodada). Nunca bloqueia pedidos. Falha em um
- * tenant é registrada e não interrompe os demais; rodar de novo não tem
- * efeito.
+ * ocupada fica para a próxima rodada). Nunca bloqueia pedidos. Falha em uma
+ * cotação ou em um tenant é registrada e não interrompe as demais; rodar de
+ * novo não tem efeito.
  */
 final readonly class ExpireDueQuotes
 {
@@ -50,16 +50,30 @@ final readonly class ExpireDueQuotes
         $totals = ['expired' => 0, 'holds_released' => 0, 'skipped' => 0];
 
         foreach (DB::table('organizations')->orderBy('id')->pluck('id') as $tenantId) {
-            try {
-                foreach ($this->dueQuotes((string) $tenantId) as $quoteId) {
-                    $result = $this->db->run(ExecutionContext::system((string) $tenantId), fn (): array => $this->expire($quoteId));
+            $tenantId = (string) $tenantId;
 
-                    foreach ($result as $key => $count) {
-                        $totals[$key] += $count;
-                    }
-                }
+            try {
+                $due = $this->dueQuotes($tenantId);
             } catch (Throwable $e) {
-                Log::error('Falha ao expirar cotações do tenant.', ['tenant_id' => (string) $tenantId, 'exception' => $e]);
+                Log::error('Falha ao listar cotações vencidas do tenant.', ['tenant_id' => $tenantId, 'exception' => $e]);
+
+                continue;
+            }
+
+            // Falha em uma cotação não impede as demais do mesmo tenant.
+            foreach ($due as $quoteId) {
+                try {
+                    $result = $this->db->run(ExecutionContext::system($tenantId), fn (): array => $this->expire($quoteId));
+                } catch (Throwable $e) {
+                    Log::error('Falha ao expirar a cotação.', ['tenant_id' => $tenantId, 'quote_id' => $quoteId, 'exception' => $e]);
+                    $totals['skipped']++;
+
+                    continue;
+                }
+
+                foreach ($result as $key => $count) {
+                    $totals[$key] += $count;
+                }
             }
         }
 

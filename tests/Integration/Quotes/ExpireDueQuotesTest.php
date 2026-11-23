@@ -93,6 +93,23 @@ it('vence a versão em preparo e processa vários distribuidores', function (): 
         ->and(F::fresh($other, $otherQuote)->status)->toBe(QuoteStatus::Expired);
 });
 
+it('segue com as demais cotações quando uma falha', function (): void {
+    $broken = F::request($this->scenario, $this->buyer);
+    F::submit($this->scenario, $this->manager, $broken, overrides: ['validUntilDay' => now($this->tz)->toDateString()]);
+    $healthy = F::request($this->scenario, $this->scenario->buyerWithCart(quantity: '2', sameCompany: true));
+    F::submit($this->scenario, $this->manager, $healthy, quantity: '2', overrides: ['validUntilDay' => now($this->tz)->toDateString()]);
+    ($this->travel)('P1D');
+    App\Models\Quotes\QuoteVersion::updating(static function (App\Models\Quotes\QuoteVersion $version) use ($broken): void {
+        if ($version->quote_id === $broken->id) {
+            throw new RuntimeException('falha simulada');
+        }
+    });
+
+    expect(app(ExpireDueQuotes::class)->handle())->toBe(['expired' => 1, 'holds_released' => 0, 'skipped' => 1])
+        ->and(F::fresh($this->scenario, $healthy)->status)->toBe(QuoteStatus::Expired)
+        ->and(F::fresh($this->scenario, $broken)->status)->toBe(QuoteStatus::Proposed);
+});
+
 it('está agendada a cada minuto', function (): void {
     $events = collect(app(Illuminate\Console\Scheduling\Schedule::class)->events())->map(static fn ($e): string => (string) $e->command);
 
