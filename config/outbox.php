@@ -22,5 +22,7 @@ return [
     // Intervalo da limpeza feita pelo relay, em segundos.
     'prune_every_seconds' => 3600,
     // Consumidores (OutboxConsumer), na ordem de execução.
-    'consumers' => [],
+    'consumers' => [
+        App\Services\Notifications\ActivityNotifier::class,
+    ],
 ];
