@@ -178,3 +178,15 @@ it('mantém o pedido aguardando quando a condição muda antes da confirmação'
         ->and(Fx::fresh($this->scenario, $order)->confirmation_issue)->toContain('solicite nova cotação')
         ->and($this->scenario->tenant->actingAs($this->buyer['membership'], fn () => app(RetryOrderConfirmation::class)->handle($order)))->toBe(ApprovalOutcome::AwaitingConfirmation);
 });
+
+it('mantém o pedido aguardando quando a embalagem do item muda antes da confirmação', function (): void {
+    $ana = $this->scenario->tenant->addBuyerUser($this->buyer['company'], SystemRole::Approver);
+    Fx::rule($this->scenario, $this->buyer['company'], [[1, [$ana]]]);
+    F::submit($this->scenario, $this->manager, $this->quote);
+    $order = F::accept($this->scenario, $this->buyer, $this->quote);
+    // O preço negociado valia para a embalagem da proposta.
+    $this->scenario->system(fn () => DB::table('skus')->where('id', $this->scenario->sku->id)->update(['conversion_factor' => '12']));
+
+    expect(Fx::decide($this->scenario, $ana, $order))->toBe(ApprovalOutcome::AwaitingConfirmation)
+        ->and(Fx::fresh($this->scenario, $order)->confirmation_issue)->toContain('embalagem do item '.$this->scenario->sku->code);
+});

@@ -22,6 +22,7 @@ use App\Models\Buyers\BuyerCompany;
 use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderItem;
 use App\Models\Pricing\PaymentTerm;
+use App\Models\Quotes\QuoteItem;
 use App\Services\Ordering\CheckoutReferences;
 use App\Services\Ordering\OrderConfirmation;
 use App\Services\Ordering\PurchaseEligibility;
@@ -36,8 +37,9 @@ use Illuminate\Support\Facades\DB;
  *
  * Antes de confirmar (RF-061): empresa com permissão de compra, condição de
  * pagamento ainda permitida e ativa, endereço de entrega ativo, itens ainda
- * visíveis para a empresa, vendáveis e dentro das regras de compra, e preço
- * vigente para todos. Qualquer falha deixa o pedido aprovado aguardando
+ * visíveis para a empresa, vendáveis e dentro das regras de compra (no
+ * pedido de cotação, com a mesma embalagem da proposta), e preço vigente
+ * para todos. Qualquer falha deixa o pedido aprovado aguardando
  * confirmação, com o motivo.
  *
  * Reavaliação (RN-054): preço vigente diferente do aprovado, definição da
@@ -81,8 +83,10 @@ final readonly class ApprovedOrderFinalizer
         }
 
         $items = OrderItem::query()->where('order_id', $order->id)->orderBy('line_number')->get();
+        $packaging = $this->quotedPackaging($order);
         $issue = $this->eligibility->itemsIssue($buyer, $items->map(static fn (OrderItem $item): array => [
             'sku_id' => $item->sku_id, 'sku_code' => $item->sku_code, 'quantity' => $item->quantity,
+            'packaging' => $packaging === null ? null : ($packaging[self::quoteItemId($item)] ?? ''),
         ])->all());
 
         if ($issue !== null) {
@@ -133,6 +137,35 @@ final readonly class ApprovedOrderFinalizer
         }
 
         return $this->confirmOrAwait($order);
+    }
+
+    /**
+     * Embalagem de cada item da proposta aceita (Sku::packagingFingerprint
+     * no envio), por id do item da cotação; null fora de pedido de cotação.
+     * O preço negociado vale para a embalagem da proposta: se ela mudou, o
+     * pedido não é confirmado.
+     *
+     * @return array<string, string>|null
+     */
+    private function quotedPackaging(Order $order): ?array
+    {
+        if ($order->source !== OrderSource::Quote) {
+            return null;
+        }
+
+        return QuoteItem::query()
+            ->where('quote_version_id', $order->source_quote_version_id)
+            ->where('buyer_company_id', $order->buyer_company_id)
+            ->pluck('packaging_fingerprint', 'id')
+            ->mapWithKeys(static fn (mixed $fingerprint, mixed $id): array => [(string) $id => (string) $fingerprint])
+            ->all();
+    }
+
+    private static function quoteItemId(OrderItem $item): string
+    {
+        $quote = $item->price_source['quote'] ?? null;
+
+        return is_array($quote) && is_string($quote['quote_item_id'] ?? null) ? $quote['quote_item_id'] : '';
     }
 
     private function confirmOrAwait(Order $order): ApprovalOutcome
