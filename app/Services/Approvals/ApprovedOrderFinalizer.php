@@ -18,14 +18,12 @@ use App\Enums\Ordering\CommercialStatus;
 use App\Models\Approvals\ApprovalRule;
 use App\Models\Buyers\BuyerAddress;
 use App\Models\Buyers\BuyerCompany;
-use App\Models\Catalog\Product;
-use App\Models\Catalog\Sku;
 use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderItem;
-use App\Models\Pricing\BuyerPaymentTerm;
 use App\Models\Pricing\PaymentTerm;
-use App\Services\Catalog\BuyerCatalogScope;
+use App\Services\Ordering\CheckoutReferences;
 use App\Services\Ordering\OrderConfirmation;
+use App\Services\Ordering\PurchaseEligibility;
 use App\Services\Pricing\PricingService;
 use App\Support\Clock\Clock;
 use Carbon\CarbonImmutable;
@@ -66,14 +64,15 @@ final readonly class ApprovedOrderFinalizer
         private BudgetLedger $budgets,
         private OrderConfirmation $confirmation,
         private ApprovalRuleResolver $rules,
-        private BuyerCatalogScope $catalog,
+        private PurchaseEligibility $eligibility,
+        private CheckoutReferences $references,
         private Clock $clock,
     ) {}
 
     public function finalize(Order $order): ApprovalOutcome
     {
         $buyer = BuyerCompany::query()->findOrFail($order->buyer_company_id);
-        $term = $this->allowedTerm($order);
+        $term = $this->references->allowedTerm($buyer, $order->payment_term_id);
         $issue = $this->conditionsIssue($order, $buyer, $term);
 
         if ($issue !== null || $term === null) {
@@ -81,7 +80,9 @@ final readonly class ApprovedOrderFinalizer
         }
 
         $items = OrderItem::query()->where('order_id', $order->id)->orderBy('line_number')->get();
-        $issue = $this->itemsIssue($buyer, $items);
+        $issue = $this->eligibility->itemsIssue($buyer, $items->map(static fn (OrderItem $item): array => [
+            'sku_id' => $item->sku_id, 'sku_code' => $item->sku_code, 'quantity' => $item->quantity,
+        ])->all());
 
         if ($issue !== null) {
             return $this->awaiting($order, $issue);
@@ -102,7 +103,7 @@ final readonly class ApprovedOrderFinalizer
             }
         }
 
-        if (self::termChanged($order, $term)) {
+        if (CheckoutReferences::termChanged($order->payment_term, $term)) {
             $changes['payment_term'] = true;
         }
 
@@ -127,20 +128,12 @@ final readonly class ApprovedOrderFinalizer
         return ApprovalOutcome::Confirmed;
     }
 
-    private function allowedTerm(Order $order): ?PaymentTerm
-    {
-        $allowed = BuyerPaymentTerm::query()
-            ->where('buyer_company_id', $order->buyer_company_id)
-            ->where('payment_term_id', $order->payment_term_id)
-            ->exists();
-
-        return $allowed ? PaymentTerm::query()->whereKey($order->payment_term_id)->where('is_active', true)->first() : null;
-    }
-
     private function conditionsIssue(Order $order, BuyerCompany $buyer, ?PaymentTerm $term): ?string
     {
-        if (! $buyer->status->canPurchase()) {
-            return 'A empresa compradora está '.mb_strtolower($buyer->status->label()).' para compras.';
+        $issue = $this->eligibility->companyIssue($buyer);
+
+        if ($issue !== null) {
+            return $issue;
         }
 
         if ($term === null) {
@@ -156,46 +149,6 @@ final readonly class ApprovedOrderFinalizer
             ->exists();
 
         return $addressActive ? null : 'O endereço de entrega do pedido não está mais ativo.';
-    }
-
-    /**
-     * Mesmas verificações do checkout (CartPricing), com a visibilidade
-     * calculada explicitamente para a empresa: aqui o contexto não é o do
-     * comprador e o RLS não filtra o catálogo.
-     *
-     * @param  Collection<int, OrderItem>  $items
-     */
-    private function itemsIssue(BuyerCompany $buyer, Collection $items): ?string
-    {
-        $skus = Sku::query()->with(['product', 'salesUnit'])->whereKey($items->pluck('sku_id')->all())->get()->keyBy('id');
-        $visible = $this->catalog->visibleProducts(Product::query(), $buyer)
-            ->whereKey($skus->pluck('product_id')->all())
-            ->pluck('products.id')
-            ->mapWithKeys(static fn (mixed $id): array => [(string) $id => true])
-            ->all();
-
-        foreach ($items as $item) {
-            $sku = $skus->get($item->sku_id);
-
-            if ($sku === null || ! isset($visible[$sku->product_id]) || ! $sku->isSellable()) {
-                return "O item {$item->sku_code} não está mais disponível para a empresa.";
-            }
-
-            if ($sku->purchaseRule()->violations($item->quantity) !== []) {
-                return "A quantidade do item {$item->sku_code} não atende mais às regras de compra (mínimo ou múltiplo).";
-            }
-        }
-
-        return null;
-    }
-
-    private static function termChanged(Order $order, PaymentTerm $term): bool
-    {
-        $snapshot = $order->payment_term;
-
-        return ($snapshot['code'] ?? null) !== $term->code
-            || ($snapshot['installment_days'] ?? null) !== $term->installment_days
-            || (bool) ($snapshot['requires_credit'] ?? false) !== $term->requires_credit;
     }
 
     private function awaiting(Order $order, string $issue): ApprovalOutcome
@@ -252,12 +205,7 @@ final readonly class ApprovedOrderFinalizer
             'discount_cents' => $totals->discount,
             'freight_cents' => $totals->freight,
             'total_cents' => $totals->total,
-            'payment_term' => [
-                'code' => $term->code,
-                'name' => $term->name,
-                'installment_days' => $term->installment_days,
-                'requires_credit' => $term->requires_credit,
-            ],
+            'payment_term' => CheckoutReferences::termSnapshot($term),
             'commercial_status' => CommercialStatus::PendingApproval,
             'approval_status' => ApprovalStatus::Pending,
             'approved_at' => null,
