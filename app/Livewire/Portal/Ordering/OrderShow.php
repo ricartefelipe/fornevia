@@ -204,6 +204,9 @@ final class OrderShow extends Component
             'canRetry' => $canPlace && OrderApprovalSummary::awaitsConfirmation($order),
             'canReorder' => $access->can(Permission::PortalCart),
             'approvalLevels' => OrderApprovalSummary::levels($order),
+            'quoteOrigin' => $order->source_quote_version_id !== null
+                ? \App\Models\Quotes\QuoteVersion::query()->with('quote')->find($order->source_quote_version_id)
+                : null,
         ])->title("Pedido {$order->number}");
     }
 

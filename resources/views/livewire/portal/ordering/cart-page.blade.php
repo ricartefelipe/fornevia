@@ -223,5 +223,33 @@
                 </div>
             </form>
         </section>
+
+        @if ($canQuote)
+            <section class="fv-card mt-6 p-5" aria-labelledby="carrinho-cotacao" x-data="{ aberto: false }">
+                <h2 id="carrinho-cotacao" class="text-lg font-semibold">Precisa negociar?</h2>
+                <p class="mt-1 text-sm text-slate-700">
+                    Solicite uma cotação destes itens: o distribuidor envia uma proposta com preços e validade. Itens sem preço ou sem estoque também podem ser cotados.
+                </p>
+                <x-ui.button variant="secondary" class="mt-3" x-on:click="aberto = ! aberto" x-bind:aria-expanded="aberto" aria-controls="carrinho-cotacao-form">Solicitar cotação</x-ui.button>
+
+                <form id="carrinho-cotacao-form" wire:submit="requestQuote" class="mt-4 grid gap-4 sm:grid-cols-2" x-show="aberto" x-cloak novalidate>
+                    <div class="sm:col-span-2">
+                        <x-ui.textarea label="Mensagem ao distribuidor (opcional)" name="quoteMessage" wire:model="quoteMessage" maxlength="2000" rows="3" />
+                    </div>
+                    <x-ui.input label="Preciso até (opcional)" name="quoteNeededBy" type="date" min="2000-01-01" max="2099-12-31" wire:model="quoteNeededBy" />
+                    <label class="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
+                        <input type="checkbox" wire:model="quoteRemoveItems" class="rounded border-slate-300">
+                        Remover estes itens do carrinho
+                    </label>
+                    @error('quote')
+                        <x-ui.alert type="error" class="sm:col-span-2">{{ $message }}</x-ui.alert>
+                    @enderror
+                    <div class="flex items-center gap-3 sm:col-span-2">
+                        <x-ui.button type="submit" wire:loading.attr="disabled" wire:target="requestQuote">Enviar solicitação de cotação</x-ui.button>
+                        <span wire:loading wire:target="requestQuote" class="text-sm text-slate-600" role="status">Enviando a solicitação…</span>
+                    </div>
+                </form>
+            </section>
+        @endif
     @endif
 </div>

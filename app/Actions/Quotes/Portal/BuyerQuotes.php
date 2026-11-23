@@ -10,9 +10,9 @@ use App\Enums\Identity\Permission;
 use App\Enums\Quotes\QuoteStatus;
 use App\Models\Quotes\Quote;
 use App\Support\Http\UntrustedId;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 /**
  * Cotações visíveis ao comprador: as próprias (solicitadas pela

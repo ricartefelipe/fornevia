@@ -14,6 +14,13 @@
         </x-slot:actions>
     </x-ui.page-header>
 
+    @if ($quoteOrigin)
+        <p class="mb-4 text-sm text-slate-700">
+            Origem: cotação <a href="{{ route('portal.quotes.show', $quoteOrigin->quote_id) }}" class="font-medium text-blue-800 underline">{{ $quoteOrigin->quote->number }}</a>,
+            versão {{ $quoteOrigin->version_number }}. Os preços negociados ficam mantidos.
+        </p>
+    @endif
+
     <div aria-live="polite" class="mb-4 space-y-2">
         @if ($message)
             <x-ui.alert :type="$messageType">{{ $message }}</x-ui.alert>

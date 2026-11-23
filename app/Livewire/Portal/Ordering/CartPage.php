@@ -9,10 +9,12 @@ use App\Actions\Ordering\Portal\CheckoutOptions;
 use App\Actions\Ordering\Portal\CurrentCart;
 use App\Actions\Ordering\Portal\RemoveCartItem;
 use App\Actions\Ordering\Portal\UpdateCartItem;
+use App\Actions\Quotes\Portal\RequestQuote;
 use App\Data\Ordering\CartLineQuote;
 use App\Data\Ordering\PlaceOrderData;
 use App\Data\Ordering\Portal\CartView;
 use App\Data\Ordering\Portal\CheckoutChoices;
+use App\Data\Quotes\RequestQuoteData;
 use App\Domain\Approvals\ApprovalContext;
 use App\Domain\Approvals\BudgetPosition;
 use App\Domain\Ordering\Exceptions\CartAlreadyConverted;
@@ -84,6 +86,16 @@ final class CartPage extends Component
 
     #[Locked]
     public ?string $message = null;
+
+    /** Pedido de cotação a partir do carrinho (RF-040). */
+    public string $quoteMessage = '';
+
+    public string $quoteNeededBy = '';
+
+    public bool $quoteRemoveItems = true;
+
+    #[Locked]
+    public string $quoteKey = '';
 
     public function mount(CheckoutOptions $options): void
     {
@@ -167,6 +179,43 @@ final class CartPage extends Component
         $this->message = 'Item removido do carrinho.';
     }
 
+    /**
+     * Solicita cotação dos itens do carrinho: sem preço; a proposta vem da
+     * equipe do distribuidor.
+     */
+    public function requestQuote(RequestQuote $request): void
+    {
+        $this->message = null;
+        $this->resetErrorBag();
+
+        if ($this->displayedCartId === null) {
+            $this->addError('quote', 'Adicione itens ao carrinho antes de solicitar a cotação.');
+
+            return;
+        }
+
+        try {
+            $quote = $request->handle(new RequestQuoteData(
+                cartId: $this->displayedCartId,
+                idempotencyKey: $this->quoteKey !== '' ? $this->quoteKey : self::newKey(),
+                message: self::nullable(trim($this->quoteMessage)),
+                neededBy: self::nullable($this->quoteNeededBy),
+                removeFromCart: $this->quoteRemoveItems,
+            ));
+        } catch (BusinessRuleViolation $e) {
+            $this->quoteKey = self::newKey();
+            $this->addError(match ($e->details()['field'] ?? null) {
+                'message' => 'quoteMessage',
+                'needed_by' => 'quoteNeededBy',
+                default => 'quote',
+            }, $e->getMessage());
+
+            return;
+        }
+
+        $this->redirectRoute('portal.quotes.show', ['quote' => $quote->id]);
+    }
+
     public function placeOrder(PlaceOrder $place, CheckoutOptions $options): void
     {
         $this->message = null;
@@ -231,6 +280,7 @@ final class CartPage extends Component
             'cart' => $cart,
             'choices' => $choices,
             'canPlace' => $access->can(Permission::PortalOrdersPlace),
+            'canQuote' => $access->can(Permission::PortalQuotes),
             'approval' => $cart->isReady() ? $this->approvalPreview($cart, $choices, $costCenterId, $access) : null,
             'budget' => $costCenterId !== null ? $this->budgetPosition($costCenterId) : null,
         ]);
