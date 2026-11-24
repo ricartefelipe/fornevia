@@ -1,0 +1,108 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Integrations;
+
+use App\Domain\Integrations\Exceptions\InvalidIntegration;
+use App\Models\Integrations\WebhookDelivery;
+use App\Models\Integrations\WebhookEndpoint;
+use App\Support\Clock\Clock;
+use App\Support\Integrations\WebhookUrlGuard;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Http;
+use JsonException;
+use Throwable;
+
+/**
+ * Envia uma entrega de webhook (RF-111), fora de transação: corpo JSON com
+ * o id estável do evento; cabeçalhos com o tipo, o id da entrega, o
+ * carimbo de tempo e a assinatura HMAC-SHA256 de "timestamp.corpo" com o
+ * segredo do endpoint; conexão no endereço conferido contra SSRF, sem
+ * seguir redirecionamentos. Devolve o resultado para a entrega registrar.
+ */
+final readonly class WebhookSender
+{
+    public function __construct(private Clock $clock) {}
+
+    /**
+     * @return array{ok: bool, status: int|null, error: string|null}
+     */
+    public function send(WebhookEndpoint $endpoint, WebhookDelivery $delivery): array
+    {
+        try {
+            $target = WebhookUrlGuard::resolve($endpoint->url);
+            [$body, $secret] = self::prepare($endpoint, $delivery);
+        } catch (InvalidIntegration $e) {
+            return self::failure(null, $e->getMessage());
+        }
+
+        $timestamp = (string) $this->clock->now()->getTimestamp();
+
+        try {
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'User-Agent' => 'Fornevia-Webhooks/1',
+                'X-Fornevia-Event' => $delivery->event_type,
+                'X-Fornevia-Delivery' => $delivery->id,
+                'X-Fornevia-Timestamp' => $timestamp,
+                'X-Fornevia-Signature' => 't='.$timestamp.',v1='.self::signature($secret, $timestamp, $body),
+            ])
+                ->withOptions([
+                    'allow_redirects' => false,
+                    'curl' => [CURLOPT_RESOLVE => [$target['host'].':'.$target['port'].':'.$target['ip']]],
+                ])
+                ->timeout((int) config('integrations.webhooks.timeout_seconds', 10))
+                ->connectTimeout(5)
+                ->withBody($body, 'application/json')
+                ->post($endpoint->url);
+        } catch (Throwable $e) {
+            $error = $e instanceof ConnectionException ? 'Sem resposta do endpoint: '.$e->getMessage() : $e::class.': '.$e->getMessage();
+
+            return self::failure(null, mb_substr($error, 0, 300));
+        }
+
+        return $response->successful()
+            ? ['ok' => true, 'status' => $response->status(), 'error' => null]
+            : self::failure($response->status(), 'Resposta '.$response->status().' do endpoint.');
+    }
+
+    /**
+     * Corpo e segredo. Segredo ilegível (chave da aplicação trocada) ou corpo
+     * inválido contam como falha da tentativa, com espera e desativação, sem
+     * repetir para sempre.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private static function prepare(WebhookEndpoint $endpoint, WebhookDelivery $delivery): array
+    {
+        try {
+            return [
+                json_encode($delivery->payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                Crypt::decryptString($endpoint->secret_encrypted),
+            ];
+        } catch (DecryptException) {
+            throw new InvalidIntegration('Segredo do endpoint ilegível; troque o segredo.');
+        } catch (JsonException $e) {
+            throw new InvalidIntegration('Evento não pôde ser codificado: '.mb_substr($e->getMessage(), 0, 200));
+        }
+    }
+
+    /**
+     * @return array{ok: false, status: int|null, error: string}
+     */
+    private static function failure(?int $status, string $error): array
+    {
+        return ['ok' => false, 'status' => $status, 'error' => $error];
+    }
+
+    /**
+     * Assinatura para o recebedor conferir (documentação e testes).
+     */
+    public static function signature(string $secret, string $timestamp, string $body): string
+    {
+        return hash_hmac('sha256', $timestamp.'.'.$body, $secret);
+    }
+}

@@ -64,4 +64,10 @@ return [
         });
     },
 
-] + (require __DIR__.'/ordering-scenarios.php') + (require __DIR__.'/credit-scenarios.php') + (require __DIR__.'/inventory-scenarios.php') + (require __DIR__.'/approval-scenarios.php') + (require __DIR__.'/quote-scenarios.php') + (require __DIR__.'/fulfillment-scenarios.php');
+] + Tests\Support\Concurrency\Scenarios\OrderingScenarios::all()
+    + Tests\Support\Concurrency\Scenarios\CreditScenarios::all()
+    + Tests\Support\Concurrency\Scenarios\InventoryScenarios::all()
+    + Tests\Support\Concurrency\Scenarios\ApprovalScenarios::all()
+    + Tests\Support\Concurrency\Scenarios\QuoteScenarios::all()
+    + Tests\Support\Concurrency\Scenarios\FulfillmentScenarios::all()
+    + Tests\Support\Concurrency\Scenarios\FinanceScenarios::all();

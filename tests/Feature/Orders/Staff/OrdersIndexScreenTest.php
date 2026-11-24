@@ -6,6 +6,7 @@ use App\Domain\Shared\Cnpj;
 use App\Enums\Identity\SystemRole;
 use App\Livewire\Staff\Orders\OrdersIndex;
 use App\Models\Ordering\Order;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Integration\Ordering\Staff\StaffOrderFixtures as Fx;
 use Tests\Support\Builders\OrderingScenario;
@@ -209,4 +210,46 @@ it('mostra estado vazio sem pedidos no distribuidor', function (): void {
     Fx::asMember($empty->tenant, $manager, static fn () => Livewire::test(OrdersIndex::class)
         ->assertSee('Nenhum pedido registrado')
         ->assertDontSee('Total desta página'));
+});
+
+/**
+ * Conteúdo do CSV baixado pela ação de exportação.
+ */
+function exportedCsv(Testable $component): string
+{
+    $download = $component->effects['download'] ?? null;
+    expect($download)->not->toBeNull();
+
+    return base64_decode((string) $download['content'], true) ?: '';
+}
+
+it('exporta em CSV os pedidos filtrados, com fórmulas neutralizadas e na auditoria', function (): void {
+    Fx::update($this->tenant, $this->a, ['purchase_order_reference' => '=HYPERLINK("http://x")']);
+
+    $csv = ($this->as)(null, fn () => exportedCsv(($this->screen)()->set('company', $this->serra->id)->call('export')));
+    $lines = explode("\r\n", trim($csv));
+
+    expect($csv)->toStartWith("\u{FEFF}numero;data;empresa;cnpj;ordem_de_compra;situacao;aprovacao;financeiro;atendimento;total")
+        ->and($lines)->toHaveCount(3)
+        ->and($csv)->toContain($this->a->number.';03/11/2026 10:00;Construtora Serra Azul;'.Cnpj::format($this->serra->document).";\"'=HYPERLINK(\"\"http://x\"\")\";")
+        ->and($csv)->toContain($this->c->number.';09/11/2026 23:30;')
+        ->and($csv)->toContain(';30,00')
+        ->and($csv)->not->toContain($this->b->number);
+
+    $audit = $this->tenant->system(fn () => App\Models\Audit\AuditLog::query()->where('action', 'orders.exported')->sole());
+    expect($audit->data)->toMatchArray(['rows' => 2, 'filters' => ['company' => $this->serra->id]]);
+});
+
+it('exporta só a carteira do representante e recusa volume acima do limite', function (): void {
+    $rep = $this->tenant->addStaff(SystemRole::SalesRep);
+    Fx::assignRep($this->tenant, $this->serra, $rep);
+
+    $csv = ($this->as)($rep, fn () => exportedCsv(($this->screen)()->call('export')));
+    expect($csv)->toContain($this->a->number)->toContain($this->c->number)->not->toContain($this->b->number);
+
+    config(['integrations.exports.max_rows' => 2]);
+    ($this->as)(null, fn () => ($this->screen)()->call('export')
+        ->assertNoFileDownloaded()
+        ->assertSee('A exportação aceita até 2 pedidos; refine os filtros.'));
+    expect($this->tenant->system(fn () => App\Models\Audit\AuditLog::query()->where('action', 'orders.exported')->count()))->toBe(1);
 });

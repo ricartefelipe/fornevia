@@ -24,5 +24,6 @@ return [
     // Consumidores (OutboxConsumer), na ordem de execução.
     'consumers' => [
         App\Services\Notifications\ActivityNotifier::class,
+        App\Services\Integrations\WebhookFanout::class,
     ],
 ];

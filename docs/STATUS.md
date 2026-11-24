@@ -436,3 +436,121 @@ equipe (o recebimento por webhook fica para o incremento de integrações);
 o valor a devolver é registrado para o financeiro, sem estorno automático
 (incremento financeiro); o SonarCloud aponta `require` no registro de
 cenários de concorrência, onde o valor de retorno do arquivo é necessário.
+
+## Incremento 9 — Contas a receber, gateway e indicadores (`feature/financeiro`)
+
+### Implementado
+
+- Faturas comerciais (não fiscais) do expedido ainda não faturado, com o
+  frete na primeira fatura e parcelas pela condição do pedido; o
+  comprometimento de crédito vira recebível no mesmo movimento (RF-100,
+  RN-081).
+- Pagamentos manuais e pelo gateway, parciais, com taxa; só o confirmado
+  reduz o recebível (RN-083). Créditos e ajustes por lançamentos
+  compensatórios (RN-100). Reembolsos reservados sob lock e limitados ao
+  pago também por CHECK (RN-101).
+- Gateway por distribuidor: Asaas e simulador local (só fora de produção).
+  Cobrança e reembolso em jobs depois do commit, pelo gateway de origem; sem
+  cobrança repetida após timeout (RF-101). Cartão pago na página do gateway
+  (RS-100).
+- Webhook do Asaas autenticado pelo token do distribuidor e deduplicado;
+  conciliação agendada; eventos com falha visíveis (RF-112).
+- Indicadores de ticket médio, conversão, margem e inadimplência com as
+  fórmulas documentadas e exibidas (RF-102).
+- Telas do financeiro, da fatura, do gateway e dos indicadores; faturas e
+  pagamento no portal; avisos de fatura, pagamento e reembolso.
+
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Testes do financeiro (unitários, integração, gateway com HTTP simulado, telas, concorrência) | aprovados; os 6 de regressão da revisão falham sem a correção correspondente |
+| Concorrência | dois reembolsos simultâneos do mesmo pagamento: só um efetivado; sem os locks do financeiro, o cenário falha |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+| Suíte completa na CI do PR #18, commit `5830984` | 2.263 testes e 11.099 asserções aprovados; cobertura de linhas total 94,6%, núcleo 97,40%, caminhos críticos 100%; migrations, imagem, segredos, frontend e SonarCloud aprovados |
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Simulador disponível em qualquer ambiente e a qualquer comprador da
+  empresa, permitindo marcar pagamento sem dinheiro.
+- Chamadas ao gateway dentro da transação da requisição, segurando locks e
+  perdendo o efeito num rollback.
+- Cobrança vencida tratada como encerrada, ignorando o pagamento em atraso.
+- Reembolso, cancelamento e conciliação pelo gateway ativo, e não pelo que
+  criou o pagamento; webhook recusado depois de trocar o gateway ativo.
+- Cobrança pendente com saldo ou forma desatualizados; excedente e
+  pagamento de parcela já quitada sem registro reembolsável.
+- Conciliação presa nos 100 pendentes mais antigos.
+- Reembolso sem resposta liberado para nova tentativa (risco de reembolso
+  duplo).
+- Evento do gateway com falha nunca marcado como falho.
+- Ticket médio contando pedidos cancelados.
+- Juros e multa recebidos sem registro.
+- Controller do webhook acessando o banco (regra de arquitetura, apontada
+  pela CI).
+
+Limitações registradas: a fatura é comercial, sem emissão de nota fiscal;
+cartão só pela página do gateway; o reembolso em verificação depende de
+conferência manual no painel do Asaas; os campos do Asaas seguem a API v3
+documentada e foram verificados com respostas simuladas, sem chamada real
+ao sandbox nos testes automatizados.
+
+## Incremento 10 — Integrações: API, webhooks e CSV (`feature/integracoes`)
+
+### Implementado
+
+- Clientes da API por distribuidor, com permissões de uma lista permitida
+  e tokens do Sanctum com prazo, mostrados uma vez e revogáveis; contexto
+  de integração do tenant e limite de requisições por cliente (RF-110).
+- API v1 só de leitura (pedidos, compradores, SKUs, estoque, faturas) e
+  registro de eventos de remessa, com filtros declarados, paginação
+  limitada, erros estruturados e contrato OpenAPI conferido por teste
+  (RF-110).
+- Webhooks enviados pela outbox, com id estável, só campos públicos,
+  assinatura HMAC com carimbo, proteção contra SSRF, novas tentativas com
+  espera crescente, desativação por falhas e envio de teste (RF-111).
+- Importação CSV de clientes, catálogo e estoque com prévia por linha,
+  limites, duplicidade no arquivo e no cadastro, políticas "só as válidas"
+  e "tudo ou nada", aplicação assíncrona e reprocessamento seguro
+  (RF-113).
+- Exportação CSV dos pedidos filtrados com neutralização de fórmulas
+  (RS-110).
+- Telas de clientes da API, webhooks e importação em `/integracoes`.
+
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Testes das integrações (API, contrato OpenAPI, webhooks com HTTP simulado, importação, exportação, telas, CSV) | aprovados; os 21 de regressão da revisão falham sem a correção correspondente |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+| Suíte completa na CI do PR #19, commit `391f655` | 2.342 testes e 11.455 asserções aprovados; cobertura de linhas total 94,5%, núcleo 97,32%, caminhos críticos 100%; migrations, imagem, segredos, frontend e SonarCloud aprovados |
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Entrega de webhook cuja primeira tentativa se perdia depois do commit
+  ficava pendente para sempre, fora da varredura de novas tentativas.
+- Segredo do endpoint ilegível (chave da aplicação trocada) repetia a
+  tentativa indefinidamente sem contar falha nem desativar o endpoint.
+- Proteção contra SSRF aceitava CGNAT (100.64.0.0/10), faixas reservadas
+  de testes e IPv6 com IPv4 interno embutido (mapeado, NAT64, 6to4).
+- Endpoint com endereço que deixou de ser aceito não podia ser desativado.
+- Eventos da transportadora e o filtro `updated_since` aceitavam datas
+  relativas ("now", "yesterday") e sem fuso.
+- Último uso do token gravado na transação da requisição, serializando
+  requisições simultâneas do mesmo cliente.
+- Cadastro alterado entre a prévia e a aplicação (depósito, SKU, unidade)
+  derrubava a importação inteira na política "só as válidas", sem como
+  retomar; agora recusa só a linha, e a importação interrompida pode ser
+  reprocessada sem repetir linhas aplicadas.
+- Número fora do intervalo suportado no CSV de catálogo recusava o arquivo
+  inteiro, sem apontar a linha.
+- Tempo limite do job de importação acima do `retry_after` da fila, o que
+  entregaria o mesmo job a outro worker.
+- Tabela de tokens com RLS sem FORCE, fora da guarda de schema das tabelas
+  de tenant (apontada pela CI).
+
+Limitações registradas: a API v1 é só de leitura, exceto eventos de
+remessa; a importação de catálogo não traz preço nem custo; o envio de
+webhooks foi verificado com HTTP simulado, sem chamada a um receptor real.

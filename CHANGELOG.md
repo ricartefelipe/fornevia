@@ -5,6 +5,44 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.4.0] - 2026-11-24
+
+### Adicionado
+
+- Contas a receber: faturas comerciais (não fiscais) do expedido, com o
+  frete na primeira fatura e parcelas pela condição do pedido; pagamentos
+  parciais, taxas, reembolsos, créditos e ajustes por lançamentos
+  compensatórios; o faturamento transfere o comprometimento de crédito para
+  recebível.
+- Gateway de pagamento por distribuidor: Asaas e, fora de produção, um
+  simulador local; cobrança criada depois do commit e sem repetição após
+  timeout; webhook autenticado e deduplicado; conciliação agendada;
+  pagamento de faturas pelo portal.
+- Indicadores de ticket médio, conversão de propostas, margem e
+  inadimplência, com as fórmulas exibidas.
+- API REST v1 só de leitura (pedidos, compradores, SKUs, estoque, faturas)
+  e registro de eventos de remessa, por cliente da API com permissões e
+  token próprios; contrato OpenAPI 3.1 em `docs/openapi.json`.
+- Webhooks enviados para pedidos, remessas, faturas, pagamentos e
+  devoluções, assinados com HMAC-SHA256, com novas tentativas, envio de
+  teste e histórico de entregas.
+- Importação CSV de clientes, catálogo e estoque com prévia por linha e
+  política "só as válidas" ou "tudo ou nada"; exportação CSV dos pedidos
+  filtrados.
+
+### Segurança
+
+- Nenhum dado de cartão armazenado: o cartão é pago na página do gateway.
+- Chave do gateway cifrada e token do webhook guardado só como hash; a
+  configuração é invisível ao comprador.
+- Reembolsos limitados ao valor pago também por CHECK no banco; reembolso
+  sem resposta do gateway fica em verificação, sem repetir.
+- Tokens da API guardados só como hash, com prazo, limite de requisições e
+  permissões restritas a uma lista; segredo dos webhooks cifrado.
+- Webhooks só para HTTPS em IP público conferido no envio, sem seguir
+  redirecionamentos (proteção contra SSRF).
+- Exportações CSV com neutralização de fórmulas de planilha.
+
 ## [0.3.0] - 2026-11-23
 
 ### Adicionado
@@ -135,7 +173,8 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
 
-[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.3.0...develop
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.4.0...develop
+[0.4.0]: https://github.com/ricartefelipe/fornevia/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ricartefelipe/fornevia/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ricartefelipe/fornevia/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ricartefelipe/fornevia/releases/tag/v0.1.0

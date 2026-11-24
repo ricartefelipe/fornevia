@@ -45,6 +45,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CommercialStatus $commercial_status
  * @property ApprovalStatus $approval_status
  * @property FulfillmentStatus $fulfillment_status
+ * @property bool $freight_invoiced
  * @property FinancialStatus $financial_status
  * @property \Carbon\CarbonImmutable|null $confirmed_at
  * @property \Carbon\CarbonImmutable|null $cancelled_at
@@ -83,6 +84,7 @@ class Order extends Model
             'commercial_status' => CommercialStatus::class,
             'approval_status' => ApprovalStatus::class,
             'fulfillment_status' => FulfillmentStatus::class,
+            'freight_invoiced' => 'boolean',
             'financial_status' => FinancialStatus::class,
             'confirmed_at' => 'immutable_datetime',
             'cancelled_at' => 'immutable_datetime',

@@ -50,6 +50,13 @@ final class MorphMap
         'return_request' => Fulfillment\ReturnRequest::class,
         'freight_rule' => Fulfillment\FreightRule::class,
         'buyer_freight_condition' => Fulfillment\BuyerFreightCondition::class,
+        'invoice' => Finance\Invoice::class,
+        'receivable_installment' => Finance\ReceivableInstallment::class,
+        'payment' => Finance\Payment::class,
+        'payment_refund' => Finance\PaymentRefund::class,
+        'api_client' => Integrations\ApiClient::class,
+        'webhook_endpoint' => Integrations\WebhookEndpoint::class,
+        'csv_import' => Integrations\CsvImport::class,
         'plan' => Platform\Plan::class,
         'subscription' => Platform\Subscription::class,
     ];

@@ -92,6 +92,39 @@ final readonly class CreditLedger
         $this->movement($account, CreditMovementType::CommitmentRelease, $amount->negated(), Money::zero(), 'order', $orderId, $reason);
     }
 
+    /**
+     * Faturamento (RN-081): o comprometimento do pedido faturado vira
+     * recebível no mesmo movimento, sem dupla contagem. Empresa sem conta de
+     * crédito (compra à vista) não tem exposição a acompanhar.
+     */
+    public function invoice(string $buyerCompanyId, string $invoiceId, Money $releasedCommitment, Money $receivable): void
+    {
+        $this->assertInTransaction();
+        $account = $this->account($buyerCompanyId, lock: true);
+
+        if ($account === null || ! $receivable->isPositive()) {
+            return;
+        }
+
+        $this->movement($account, CreditMovementType::Invoicing, $releasedCommitment->negated(), $receivable, 'invoice', $invoiceId, null);
+    }
+
+    /**
+     * Recebível que muda depois do faturamento: pagamento confirmado e
+     * crédito concedido reduzem (RN-083); reembolso e ajuste podem aumentar.
+     */
+    public function receivable(string $buyerCompanyId, CreditMovementType $type, string $referenceType, string $referenceId, Money $delta, ?string $reason = null): void
+    {
+        $this->assertInTransaction();
+        $account = $this->account($buyerCompanyId, lock: true);
+
+        if ($account === null || $delta->isZero()) {
+            return;
+        }
+
+        $this->movement($account, $type, Money::zero(), $delta, $referenceType, $referenceId, $reason);
+    }
+
     private function account(string $buyerCompanyId, bool $lock): ?CreditAccount
     {
         $query = CreditAccount::query()->where('buyer_company_id', $buyerCompanyId);

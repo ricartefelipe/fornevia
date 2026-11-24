@@ -705,3 +705,129 @@ monotônico da situação evitam regressões. A inspeção antes do retorno ao
 disponível (RF-091) impede vender item avariado. O frete calculado no
 servidor e rotulado como do distribuidor atende RF-092 sem prometer preço
 de transportadora.
+
+---
+
+## ADR-028 — Contas a receber por lançamentos, gateway sem cobrança repetida e webhooks deduplicados
+
+**Status:** aceita
+
+**Decisão.**
+- A fatura é comercial (não fiscal) e cobre o expedido ainda não faturado
+  de um pedido confirmado, com o frete na primeira fatura. As parcelas
+  seguem a condição de pagamento retratada no pedido, com a diferença de
+  centavos na última.
+- Na mesma transação da fatura, o comprometimento de crédito do valor
+  faturado vira recebível num único movimento (RN-081). Só pagamento
+  confirmado reduz o recebível (RN-083).
+- Parcela e fatura guardam valor, ajustes, pago e creditado. Toda mudança
+  passa por um único serviço, que grava o lançamento financeiro (somente
+  inclusão), move o recebível no crédito e recalcula a situação financeira
+  do pedido. Correção é sempre lançamento compensatório: crédito concedido
+  ou ajuste com motivo (RN-100).
+- Reembolso só de pagamento confirmado. O valor é reservado como pendente
+  sob o lock do pagamento antes de qualquer chamada ao gateway. A soma dos
+  pendentes e efetivados nunca passa do pago, por regra e por CHECK
+  (RN-101). Efetivado, o valor volta a ser devido na parcela.
+- O gateway é escolhido por distribuidor: Asaas ou, só fora de produção, o
+  simulador local. A chave fica cifrada e o token do webhook, só como hash.
+  Cada pagamento continua no gateway que o criou: reembolso, cancelamento e
+  conciliação usam esse gateway, e o token vale mesmo com outro ativo.
+- A cobrança pendente é gravada na transação da requisição, com o próprio id
+  como referência externa. A chamada ao gateway roda num job depois do
+  commit, sem segurar locks. O Asaas é consultado pela referência antes de
+  criar e de novo quando a criação esgota o tempo: timeout depois de criada
+  não gera outra cobrança (RF-101). Gateway indisponível deixa o pagamento
+  pendente com o motivo, e a conciliação cria a cobrança ou aplica a
+  situação depois.
+- Uma cobrança pendente por parcela, do saldo em aberto e na forma escolhida.
+  Mudou o saldo ou a forma, ela é cancelada aqui e no gateway. Vencida
+  continua pendente, porque ainda pode ser paga. Juros e multa recebidos
+  entram como ajuste da parcela. O que for pago além do saldo, ou numa
+  parcela já quitada, fica como valor não aplicado, reembolsável sem reabrir
+  a parcela.
+- O reembolso pelo gateway também roda em job depois do commit. Recusado,
+  a reserva é desfeita; sem resposta, fica em verificação com a reserva
+  mantida, até a equipe concluir depois de conferir no painel do gateway.
+- Cartão é pago na página do gateway; nenhum dado de cartão chega ao
+  Fornevia (RS-100).
+- Eventos recebidos (webhook do Asaas, autenticado pelo token do
+  distribuidor, e página do simulador) são gravados uma vez por provedor e
+  identificador e processados pela fila. Pagamento já confirmado ou
+  encerrado não muda com evento repetido.
+- Lock: pedido → fatura → parcela → pagamento → conta de crédito →
+  contador.
+
+**Motivo.** Saldos derivados de lançamentos tornam cada centavo rastreável e
+impedem correções destrutivas. Reservar o reembolso antes do gateway fecha
+a janela de dois reembolsos simultâneos. Procurar pela referência antes de
+criar é a única forma de tolerar timeout sem cobrar duas vezes, já que o
+gateway pode ter criado a cobrança sem responder. A configuração por
+distribuidor mantém o isolamento entre tenants também no recebimento.
+
+## ADR-029 — API por cliente com permissões próprias, webhooks assinados contra SSRF e importação CSV em duas etapas
+
+**Status:** aceita
+
+**Decisão.**
+- Cada sistema externo é um cliente da API do distribuidor, com as
+  permissões concedidas a ele (só leitura de pedidos, compradores,
+  catálogo, estoque e financeiro, e o registro de eventos de remessa). O
+  token do Sanctum (`id|fvk_…`, guardado só como hash SHA-256) tem prazo
+  de 1 a 365 dias e é mostrado uma única vez. A busca do token, antes de
+  haver contexto, usa uma função `security definer` que devolve só o
+  necessário para conferi-lo; depois, a requisição roda no contexto de
+  integração do tenant, com as permissões do cliente. Limite de 300
+  requisições por minuto por cliente.
+- A API v1 é só de leitura, com filtros declarados por recurso (filtro
+  desconhecido é erro 422), paginação de até 100 registros e erros no
+  mesmo formato das telas. O contrato fica em `docs/openapi.json`, e um
+  teste confere rotas e enums contra ele.
+- Webhooks enviados saem da outbox: um consumidor cria uma entrega por
+  evento e endpoint (identificador estável, sem duplicar) e a fila
+  `integrations` envia. O corpo traz só os campos públicos de cada evento.
+  A assinatura é `t=<carimbo>,v1=HMAC-SHA256(segredo, "carimbo.corpo")`,
+  com o segredo cifrado no banco e mostrado só na criação ou na troca.
+- Contra SSRF, o endereço precisa ser HTTPS (HTTP só fora de produção),
+  sem credenciais, e o nome é resolvido antes do envio: rede privada,
+  loopback, link-local e faixas reservadas são recusadas. O envio usa o
+  IP já conferido (`CURLOPT_RESOLVE`) e não segue redirecionamentos.
+- Falha agenda nova tentativa com espera crescente (1 min a 24 h, até 8
+  tentativas); 20 falhas seguidas desativam o endpoint, com o motivo. A
+  tentativa é reservada antes do envio, para que a varredura de pendentes
+  não envie a mesma entrega duas vezes.
+- A importação CSV tem duas etapas. Na prévia, o arquivo (UTF-8, até 2 MB
+  e 5.000 linhas) é lido e cada linha é validada pelas regras do cadastro,
+  com duplicidade no arquivo e no cadastro, e o resultado é gravado por
+  linha. Na confirmação, a política escolhida decide: "só as válidas"
+  aplica cada linha na própria transação, e a recusada fica com o motivo;
+  "tudo ou nada" recusa se houver linha inválida e aplica tudo numa
+  transação, que uma recusa desfaz.
+- A aplicação roda em fila, com a associação de quem confirmou: as próprias
+  Actions de compradores, catálogo e estoque conferem de novo permissões e
+  regras. Linha aplicada guarda o registro criado e não é aplicada de
+  novo, por isso reprocessar é seguro.
+- Exportações CSV (pedidos filtrados, na carteira de quem exporta) saem
+  com separador `;`, BOM, datas no fuso comercial e textos iniciados por
+  `=`, `+`, `-`, `@`, tabulação ou retorno prefixados com apóstrofo
+  (RS-110). Ficam na auditoria e têm limite configurável de linhas.
+
+**Alternativas consideradas.**
+- Tokens de usuário para integrações: misturariam pessoas e sistemas e
+  dariam à integração as permissões do usuário, não as do sistema.
+- Webhooks enviados direto da transação de negócio: chamada externa
+  segurando locks e perdendo o evento num rollback; a outbox já garante a
+  entrega depois do commit.
+- Bloquear endereços internos só pela URL digitada: o nome pode resolver
+  para um IP interno (DNS rebinding); por isso o IP conferido é o usado na
+  conexão.
+- Importação aplicada na própria requisição: arquivos grandes estourariam
+  o tempo da requisição e não haveria prévia nem reprocessamento seguro.
+
+**Consequências.**
+- O distribuidor controla o que cada sistema acessa, e revogar um cliente
+  invalida todos os tokens dele na hora.
+- O receptor confere a assinatura e o carimbo e deduplica pelo id da
+  entrega; eventos podem chegar mais de uma vez e fora de ordem.
+- A importação de catálogo cria produto pelo nome quando não existe e
+  reaproveita o existente; preço e custo não entram pelo CSV.

@@ -232,3 +232,17 @@ it('avisa quem fez o pedido sobre expedição, entrega e ocorrência e a equipe 
 
     expect(collect(($this->inbox)($this->buyer['membership']))->pluck(0)->slice(-2)->values()->all())->toBe(['return.decided', 'return.closed']);
 });
+
+it('avisa quem fez o pedido da fatura emitida, do pagamento confirmado e do reembolso', function (): void {
+    $order = Fx::place($this->scenario, $this->buyer);
+    Tests\Integration\Fulfillment\FulfillmentFlow::shipAll($this->scenario, $this->scenario->tenant->addStaff(SystemRole::Warehouse), $order, '3');
+    $finance = $this->scenario->tenant->addStaff(SystemRole::Finance);
+    $invoice = Tests\Integration\Finance\FinanceFlow::invoice($this->scenario, $finance, $order);
+    $payment = Tests\Integration\Finance\FinanceFlow::pay($this->scenario, $finance, Tests\Integration\Finance\FinanceFlow::firstInstallment($this->scenario, $invoice), '300,00');
+    $this->scenario->tenant->actingAs($finance, fn () => app(App\Actions\Finance\Staff\RefundPayment::class)->handle($payment->id, '10,00', 'Diferença de preço'));
+    ($this->drain)();
+
+    $path = "/portal/faturas/{$invoice->id}";
+    expect(collect(($this->inbox)($this->buyer['membership']))->filter(fn (array $n): bool => $n[1] === $path)->pluck(0)->values()->all())
+        ->toBe(['invoice.issued', 'payment.confirmed', 'payment.refunded']);
+});
