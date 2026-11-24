@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Quotes\Staff;
 
 use App\Enums\Identity\Permission;
-use App\Enums\Identity\SystemRole;
-use App\Models\Buyers\BuyerCompany;
 use App\Models\Quotes\Quote;
 use App\Support\Auth\Access;
+use App\Support\Auth\SalesPortfolio;
 use App\Support\Http\UntrustedId;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -19,7 +18,7 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final readonly class StaffQuoteQuery
 {
-    public function __construct(private Access $access) {}
+    public function __construct(private Access $access, private SalesPortfolio $portfolio) {}
 
     /**
      * @return Builder<Quote>
@@ -27,14 +26,8 @@ final readonly class StaffQuoteQuery
     public function quotes(): Builder
     {
         $this->access->authorize(Permission::QuotesView);
-        $membership = $this->access->membership();
-        $query = Quote::query();
 
-        if ($membership->role->key === SystemRole::SalesRep->value) {
-            $query->whereIn('buyer_company_id', BuyerCompany::query()->select('id')->where('sales_rep_membership_id', $membership->id));
-        }
-
-        return $query;
+        return $this->portfolio->restrict(Quote::query());
     }
 
     public function find(mixed $quoteId): Quote

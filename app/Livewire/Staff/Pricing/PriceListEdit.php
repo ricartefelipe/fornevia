@@ -22,6 +22,7 @@ use App\Models\Pricing\PriceList;
 use App\Models\Pricing\PriceListItem;
 use App\Models\Pricing\PriceTier;
 use App\Support\Auth\Access;
+use App\Support\Auth\SalesPortfolio;
 use App\Support\Http\UntrustedId;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -70,6 +71,8 @@ final class PriceListEdit extends Component
 
     public function mount(PriceList $priceList): void
     {
+        // Tabela de empresa fora da carteira do representante equivale a inexistente.
+        abort_unless(app(SalesPortfolio::class)->covers($priceList->buyer_company_id) || $priceList->buyer_company_id === null, 404);
         $this->priceListId = $priceList->id;
         $this->fillHeader($priceList);
     }

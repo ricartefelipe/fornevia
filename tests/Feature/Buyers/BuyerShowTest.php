@@ -83,7 +83,8 @@ it('exibe dados, situação, seções e histórico ao representante, sem ações
     $this->tenant->actingAs($this->manager, fn () => app(ChangeBuyerCompanyStatus::class)
         ->handle($this->company, BuyerCompanyStatus::Blocked, 'Inadimplência acima de 60 dias'));
 
-    [$user, $membership] = Fixtures::staffUser($this->tenant, SystemRole::SalesRep);
+    // O próprio representante da empresa consulta (a empresa está na carteira dele).
+    [$user, $membership] = [User::query()->findOrFail($rep->user_id), $rep];
 
     $this->actingAs($user)
         ->withSession(TenantScenario::sessionFor($membership))
@@ -136,6 +137,7 @@ it('edita os dados cadastrais pela tela e incrementa a versão de preços ao tro
 
 it('não abre a edição para quem não gerencia empresas e refaz a autorização ao salvar', function (): void {
     $seller = $this->tenant->addStaff(SystemRole::SalesRep);
+    Tests\Integration\Ordering\Staff\StaffOrderFixtures::assignRep($this->tenant, $this->company, $seller);
 
     Fixtures::livewireAs($this->tenant, $seller, fn () => Livewire::test(BuyerShow::class, ['buyer' => $this->company])
         ->call('startEditing')

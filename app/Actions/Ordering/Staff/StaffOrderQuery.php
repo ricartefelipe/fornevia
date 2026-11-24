@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Ordering\Staff;
 
 use App\Enums\Identity\Permission;
-use App\Enums\Identity\SystemRole;
 use App\Models\Buyers\BuyerCompany;
 use App\Models\Ordering\Order;
 use App\Support\Auth\Access;
+use App\Support\Auth\SalesPortfolio;
 use App\Support\Http\UntrustedId;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -28,21 +28,16 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final readonly class StaffOrderQuery
 {
-    public function __construct(private Access $access) {}
+    public function __construct(private Access $access, private SalesPortfolio $portfolio) {}
 
     /**
      * @return Builder<Order>
      */
     public function orders(): Builder
     {
-        $portfolio = $this->portfolioMembershipId();
-        $query = Order::query();
+        $this->access->authorize(Permission::OrdersView);
 
-        if ($portfolio !== null) {
-            $query->whereIn('buyer_company_id', BuyerCompany::query()->select('id')->where('sales_rep_membership_id', $portfolio));
-        }
-
-        return $query;
+        return $this->portfolio->restrict(Order::query());
     }
 
     /**
@@ -61,14 +56,9 @@ final readonly class StaffOrderQuery
      */
     public function companies(): Builder
     {
-        $portfolio = $this->portfolioMembershipId();
-        $query = BuyerCompany::query();
+        $this->access->authorize(Permission::OrdersView);
 
-        if ($portfolio !== null) {
-            $query->where('sales_rep_membership_id', $portfolio);
-        }
-
-        return $query;
+        return $this->portfolio->companies(BuyerCompany::query());
     }
 
     /**
@@ -78,8 +68,7 @@ final readonly class StaffOrderQuery
     public function portfolioMembershipId(): ?string
     {
         $this->access->authorize(Permission::OrdersView);
-        $membership = $this->access->membership();
 
-        return $membership->role->key === SystemRole::SalesRep->value ? $membership->id : null;
+        return $this->portfolio->membershipId();
     }
 }

@@ -27,6 +27,7 @@ beforeEach(function (): void {
     $this->rep = $this->tenant->addStaff(SystemRole::SalesRep);
     $this->viewer = $this->tenant->addStaff(SystemRole::Viewer);
     $this->company = Fx::company($this->tenant, 'Casa & Obra Materiais');
+    Tests\Integration\Ordering\Staff\StaffOrderFixtures::assignRep($this->tenant, $this->company, $this->rep);
     $this->sku = Fx::sku($this->tenant, 'PAR-6', 'Parafuso sextavado 6 mm');
 });
 

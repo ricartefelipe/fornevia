@@ -12,6 +12,7 @@ use App\Enums\Identity\Permission;
 use App\Livewire\Staff\Buyers\Forms\BuyerCompanyForm;
 use App\Models\Buyers\BuyerCompany;
 use App\Support\Auth\Access;
+use App\Support\Auth\SalesPortfolio;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -100,6 +101,7 @@ final class BuyersIndex extends Component
 
         return view('livewire.staff.buyers.buyers-index', [
             'companies' => $this->companies(),
+            'portfolioOnly' => app(SalesPortfolio::class)->isRestricted(),
             'statuses' => BuyerCompanyStatus::cases(),
             'canManage' => $canManage,
             'groupOptions' => $canManage && $this->creating ? BuyerOptions::customerGroups() : [],
@@ -113,7 +115,7 @@ final class BuyersIndex extends Component
      */
     private function companies(): LengthAwarePaginator
     {
-        $query = BuyerCompany::query()
+        $query = app(SalesPortfolio::class)->companies(BuyerCompany::query())
             ->with(['customerGroup', 'salesRep.user'])
             ->orderBy('trade_name')
             ->orderBy('id');
