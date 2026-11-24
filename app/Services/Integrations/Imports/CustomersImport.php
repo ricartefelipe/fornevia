@@ -43,49 +43,19 @@ final readonly class CustomersImport implements ImportKind
 
     public function validate(array $rows): array
     {
-        $documents = [];
-
-        foreach ($rows as $line => $row) {
-            try {
-                $documents[$line] = Cnpj::fromString($row['cnpj'] ?? '')->digits;
-            } catch (InvalidArgumentException|InvalidDocument) {
-                $documents[$line] = null;
-            }
-        }
-
+        $documents = array_map(static fn (array $row): ?string => self::document($row['cnpj'] ?? ''), $rows);
         $existing = BuyerCompany::query()->whereIn('document', array_values(array_filter($documents)))->pluck('document')->all();
         $seen = [];
         /** @var array<int, list<string>> $errors */
         $errors = [];
 
         foreach ($rows as $line => $row) {
-            /** @var list<string> $rowErrors */
-            $rowErrors = [];
             $document = $documents[$line];
+            $errors[$line] = [...self::nameErrors($row), ...self::documentErrors($document, $existing, $seen), ...self::emailErrors($row)];
 
-            if (($row['razao_social'] ?? '') === '' || mb_strlen($row['razao_social']) > 200) {
-                $rowErrors[] = 'Razão social obrigatória (até 200 caracteres).';
-            }
-
-            if (($row['nome_fantasia'] ?? '') === '' || mb_strlen($row['nome_fantasia']) > 120) {
-                $rowErrors[] = 'Nome fantasia obrigatório (até 120 caracteres).';
-            }
-
-            if ($document === null) {
-                $rowErrors[] = 'CNPJ inválido.';
-            } elseif (in_array($document, $existing, true)) {
-                $rowErrors[] = 'CNPJ já cadastrado.';
-            } elseif (isset($seen[$document])) {
-                $rowErrors[] = "CNPJ repetido no arquivo (linha {$seen[$document]}).";
-            } else {
+            if ($document !== null && ! isset($seen[$document])) {
                 $seen[$document] = $line;
             }
-
-            if (($row['email'] ?? '') !== '' && filter_var($row['email'], FILTER_VALIDATE_EMAIL) === false) {
-                $rowErrors[] = 'E-mail inválido.';
-            }
-
-            $errors[$line] = $rowErrors;
         }
 
         return $errors;
@@ -100,5 +70,59 @@ final readonly class CustomersImport implements ImportKind
             email: ($row['email'] ?? '') !== '' ? $row['email'] : null,
             phone: ($row['telefone'] ?? '') !== '' ? $row['telefone'] : null,
         ))->id;
+    }
+
+    private static function document(string $value): ?string
+    {
+        try {
+            return Cnpj::fromString($value)->digits;
+        } catch (InvalidArgumentException|InvalidDocument) {
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<string, string>  $row
+     * @return list<string>
+     */
+    private static function nameErrors(array $row): array
+    {
+        $errors = [];
+
+        if (($row['razao_social'] ?? '') === '' || mb_strlen($row['razao_social']) > 200) {
+            $errors[] = 'Razão social obrigatória (até 200 caracteres).';
+        }
+
+        if (($row['nome_fantasia'] ?? '') === '' || mb_strlen($row['nome_fantasia']) > 120) {
+            $errors[] = 'Nome fantasia obrigatório (até 120 caracteres).';
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @param  array<string, string>  $row
+     * @return list<string>
+     */
+    private static function emailErrors(array $row): array
+    {
+        $invalid = ($row['email'] ?? '') !== '' && filter_var($row['email'], FILTER_VALIDATE_EMAIL) === false;
+
+        return $invalid ? ['E-mail inválido.'] : [];
+    }
+
+    /**
+     * @param  array<mixed>  $existing  CNPJs já cadastrados
+     * @param  array<string, int>  $seen  CNPJ => primeira linha do arquivo
+     * @return list<string>
+     */
+    private static function documentErrors(?string $document, array $existing, array $seen): array
+    {
+        return match (true) {
+            $document === null => ['CNPJ inválido.'],
+            in_array($document, $existing, true) => ['CNPJ já cadastrado.'],
+            isset($seen[$document]) => ["CNPJ repetido no arquivo (linha {$seen[$document]})."],
+            default => [],
+        };
     }
 }

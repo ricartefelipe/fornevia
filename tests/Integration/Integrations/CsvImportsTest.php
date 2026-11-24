@@ -22,6 +22,9 @@ use Tests\Support\Builders\OrderingScenario;
 | aplicação e reprocessamento sem repetir o que já foi aplicado.
 */
 
+const IMPORT_ALFA = 'Alfa Indústria Ltda';
+const IMPORT_DELTA = 'Delta Ltda';
+
 beforeEach(function (): void {
     config(['queue.default' => 'sync', 'integrations.imports.max_rows' => 5000, 'integrations.imports.max_bytes' => 2 * 1024 * 1024]);
     $this->scenario = OrderingScenario::create(stock: '10', unitPriceCents: 10_000);
@@ -50,10 +53,10 @@ it('mostra o resultado de cada linha na prévia, sem gravar cadastro', function 
     $before = ($this->companies)();
 
     $import = ($this->preview)('customers', customersCsv([
-        ['Alfa Indústria Ltda', 'Alfa', BrazilianDocuments::cnpj(), 'compras@alfa.com.br', '1133334444'],
+        [IMPORT_ALFA, 'Alfa', BrazilianDocuments::cnpj(), 'compras@alfa.com.br', '1133334444'],
         ['Beta Comércio Ltda', 'Beta', $repeated, '', ''],
         ['Gama Comércio Ltda', 'Gama', $repeated, '', ''],
-        ['Delta Ltda', 'Delta', '11.111.111/1111-11', 'sem-arroba', ''],
+        [IMPORT_DELTA, 'Delta', '11.111.111/1111-11', 'sem-arroba', ''],
         ['', 'Sem razão', BrazilianDocuments::cnpj(), '', ''],
     ]).($existing !== null ? "Já Cadastrada Ltda;Já;{$existing};;\n" : ''));
 
@@ -89,8 +92,8 @@ it('recusa arquivo fora dos limites, sem as colunas ou fora de UTF-8', function 
 
 it('aplica só as linhas válidas na política só as válidas', function (): void {
     $import = ($this->preview)('customers', customersCsv([
-        ['Alfa Indústria Ltda', 'Alfa', BrazilianDocuments::cnpj(), '', ''],
-        ['Delta Ltda', 'Delta', '123', '', ''],
+        [IMPORT_ALFA, 'Alfa', BrazilianDocuments::cnpj(), '', ''],
+        [IMPORT_DELTA, 'Delta', '123', '', ''],
         ['Ômega Distribuidora Ltda', 'Ômega', BrazilianDocuments::cnpj(), '', ''],
     ]));
 
@@ -100,14 +103,14 @@ it('aplica só as linhas válidas na política só as válidas', function (): vo
     expect($fresh->status)->toBe('done')->and($fresh->rows_applied)->toBe(2)->and($fresh->finished_at)->not->toBeNull()
         ->and($rows->pluck('status')->all())->toBe(['applied', 'invalid', 'applied'])
         ->and($rows[0]->entity_id)->not->toBeNull()
-        ->and(($this->companies)())->toContain('Alfa Indústria Ltda', 'Ômega Distribuidora Ltda')->not->toContain('Delta Ltda');
+        ->and(($this->companies)())->toContain(IMPORT_ALFA, 'Ômega Distribuidora Ltda')->not->toContain(IMPORT_DELTA);
 });
 
 it('recusa a importação inteira na política tudo ou nada quando há linha inválida', function (): void {
     $before = ($this->companies)();
     $import = ($this->preview)('customers', customersCsv([
-        ['Alfa Indústria Ltda', 'Alfa', BrazilianDocuments::cnpj(), '', ''],
-        ['Delta Ltda', 'Delta', '123', '', ''],
+        [IMPORT_ALFA, 'Alfa', BrazilianDocuments::cnpj(), '', ''],
+        [IMPORT_DELTA, 'Delta', '123', '', ''],
     ]), 'all_or_none');
 
     ($this->confirm)($import);

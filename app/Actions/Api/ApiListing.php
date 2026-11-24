@@ -7,6 +7,7 @@ namespace App\Actions\Api;
 use App\Support\Integrations\Iso8601;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -25,7 +26,7 @@ final class ApiListing
      */
     public static function filters(array $query, array $filters): array
     {
-        $errors = [];
+        $errors = self::pageErrors($query);
         $values = [];
 
         foreach ($query as $key => $value) {
@@ -33,26 +34,12 @@ final class ApiListing
                 continue;
             }
 
-            if (! isset($filters[$key])) {
-                $errors[$key] = ['Filtro não permitido neste recurso. Permitidos: '.implode(', ', array_keys($filters)).'.'];
+            $error = self::filterError((string) $key, $value, $filters);
 
-                continue;
-            }
-
-            if (! is_string($value) || $value === '' || mb_strlen($value) > 100 || ! self::matches($filters[$key], $value)) {
-                $errors[$key] = ['Valor inválido para o filtro.'];
-
-                continue;
-            }
-
-            $values[$key] = $value;
-        }
-
-        foreach (['page', 'per_page'] as $key) {
-            $value = $query[$key] ?? null;
-
-            if ($value !== null && (! is_string($value) || preg_match('/^\d{1,6}$/D', $value) !== 1 || (int) $value < 1 || ($key === 'per_page' && (int) $value > self::MAX_PER_PAGE))) {
-                $errors[$key] = [$key === 'per_page' ? 'Informe de 1 a '.self::MAX_PER_PAGE.' registros por página.' : 'Página inválida.'];
+            if ($error !== null) {
+                $errors[$key] = [$error];
+            } else {
+                $values[(string) $key] = (string) $value;
             }
         }
 
@@ -78,10 +65,44 @@ final class ApiListing
         return $query->paginate(min(self::MAX_PER_PAGE, max(1, $perPage)), ['*'], 'page', max(1, $page));
     }
 
+    /**
+     * @param  array<string, string>  $filters
+     */
+    private static function filterError(string $key, mixed $value, array $filters): ?string
+    {
+        if (! isset($filters[$key])) {
+            return 'Filtro não permitido neste recurso. Permitidos: '.implode(', ', array_keys($filters)).'.';
+        }
+
+        $valid = is_string($value) && $value !== '' && mb_strlen($value) <= 100 && self::matches($filters[$key], $value);
+
+        return $valid ? null : 'Valor inválido para o filtro.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $query
+     * @return array<string, list<string>>
+     */
+    private static function pageErrors(array $query): array
+    {
+        $errors = [];
+
+        foreach (['page' => 'Página inválida.', 'per_page' => 'Informe de 1 a '.self::MAX_PER_PAGE.' registros por página.'] as $key => $message) {
+            $value = $query[$key] ?? null;
+            $max = $key === 'per_page' ? self::MAX_PER_PAGE : PHP_INT_MAX;
+
+            if ($value !== null && (! is_string($value) || preg_match('/^\d{1,6}$/D', $value) !== 1 || (int) $value < 1 || (int) $value > $max)) {
+                $errors[$key] = [$message];
+            }
+        }
+
+        return $errors;
+    }
+
     private static function matches(string $rule, string $value): bool
     {
         return match (true) {
-            $rule === 'uuid' => \Illuminate\Support\Str::isUuid($value),
+            $rule === 'uuid' => Str::isUuid($value),
             $rule === 'datetime' => Iso8601::parse($value) !== null,
             $rule === 'string' => true,
             str_starts_with($rule, 'enum:') => in_array($value, explode('|', substr($rule, 5)), true),

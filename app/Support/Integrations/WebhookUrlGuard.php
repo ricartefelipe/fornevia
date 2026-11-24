@@ -64,28 +64,25 @@ final class WebhookUrlGuard
             return false;
         }
 
-        $binary = inet_pton($ip);
+        $embedded = self::embeddedIpv4($ip);
 
-        if ($binary === false) {
-            return false;
-        }
+        return $embedded === null || self::isPublic($embedded);
+    }
 
-        if (strlen($binary) === 16) {
-            $embedded = match (true) {
-                str_starts_with($binary, str_repeat("\0", 10)."\xff\xff") => substr($binary, 12, 4),
-                str_starts_with($binary, "\x00\x64\xff\x9b".str_repeat("\0", 8)) => substr($binary, 12, 4),
-                str_starts_with($binary, "\x20\x02") => substr($binary, 2, 4),
-                default => null,
-            };
+    /** IPv4 embutido num IPv6 mapeado, NAT64 ou 6to4; null quando não há. */
+    private static function embeddedIpv4(string $ip): ?string
+    {
+        $binary = (string) inet_pton($ip);
+        $bytes = match (true) {
+            strlen($binary) !== 16 => null,
+            str_starts_with($binary, str_repeat("\0", 10)."\xff\xff"),
+            str_starts_with($binary, "\x00\x64\xff\x9b".str_repeat("\0", 8)) => substr($binary, 12, 4),
+            str_starts_with($binary, "\x20\x02") => substr($binary, 2, 4),
+            default => null,
+        };
 
-            if ($embedded !== null) {
-                $ipv4 = inet_ntop($embedded);
-
-                return $ipv4 !== false && self::isPublic($ipv4);
-            }
-        }
-
-        return true;
+        // Bytes que não formam IPv4 contam como endereço não público.
+        return $bytes === null ? null : (inet_ntop($bytes) ?: '0.0.0.0');
     }
 
     /**

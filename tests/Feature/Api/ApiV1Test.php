@@ -19,6 +19,8 @@ use Tests\Support\Builders\OrderingScenario;
 | estruturados e eventos de transportadora idempotentes.
 */
 
+const API_ORDERS = '/orders';
+
 beforeEach(function (): void {
     $this->scenario = OrderingScenario::create(stock: '10', unitPriceCents: 10_000);
     $this->buyer = $this->scenario->buyerWithCart(quantity: '4', sameCompany: true);
@@ -30,7 +32,7 @@ beforeEach(function (): void {
 });
 
 it('lista e mostra pedidos do tenant do token, com paginação e filtros permitidos', function (): void {
-    ($this->api)('GET', '/orders?per_page=10')
+    ($this->api)('GET', API_ORDERS.'?per_page=10')
         ->assertOk()
         ->assertJsonPath('data.0.number', $this->order->number)
         ->assertJsonPath('meta.per_page', 10)
@@ -42,10 +44,10 @@ it('lista e mostra pedidos do tenant do token, com paginação e filtros permiti
         ->assertJsonPath('data.total_cents', 40_000)
         ->assertJsonMissingPath('data.items.0.price_source');
 
-    ($this->api)('GET', '/orders?commercial_status=cancelled')->assertOk()->assertJsonCount(0, 'data');
-    ($this->api)('GET', '/orders?per_page=101')->assertUnprocessable()->assertJsonPath('error.code', 'validation_failed')->assertJsonStructure(['error' => ['fields' => ['per_page']], 'request_id']);
-    ($this->api)('GET', '/orders?cor=azul')->assertUnprocessable()->assertJsonStructure(['error' => ['fields' => ['cor']]]);
-    ($this->api)('GET', '/orders?commercial_status=inexistente')->assertUnprocessable();
+    ($this->api)('GET', API_ORDERS.'?commercial_status=cancelled')->assertOk()->assertJsonCount(0, 'data');
+    ($this->api)('GET', API_ORDERS.'?per_page=101')->assertUnprocessable()->assertJsonPath('error.code', 'validation_failed')->assertJsonStructure(['error' => ['fields' => ['per_page']], 'request_id']);
+    ($this->api)('GET', API_ORDERS.'?cor=azul')->assertUnprocessable()->assertJsonStructure(['error' => ['fields' => ['cor']]]);
+    ($this->api)('GET', API_ORDERS.'?commercial_status=inexistente')->assertUnprocessable();
 });
 
 it('isola o tenant: o pedido de outro distribuidor não existe para o token', function (): void {
@@ -53,28 +55,28 @@ it('isola o tenant: o pedido de outro distribuidor não existe para o token', fu
     $foreign = Fx::place($other, $other->buyerWithCart(quantity: '1'));
 
     ($this->api)('GET', "/orders/{$foreign->id}")->assertNotFound()->assertJsonPath('error.code', 'not_found');
-    ($this->api)('GET', '/orders')->assertOk()->assertJsonCount(1, 'data');
+    ($this->api)('GET', API_ORDERS)->assertOk()->assertJsonCount(1, 'data');
     ($this->api)('GET', '/orders/nao-e-uuid')->assertNotFound();
 });
 
 it('recusa token ausente, inválido, vencido ou de cliente revogado', function (): void {
     $this->getJson('/api/v1/orders')->assertUnauthorized()->assertJsonPath('error.code', 'unauthenticated');
-    ($this->api)('GET', '/orders', [], 'lixo')->assertUnauthorized();
+    ($this->api)('GET', API_ORDERS, [], 'lixo')->assertUnauthorized();
     [$id] = explode('|', $this->token);
-    ($this->api)('GET', '/orders', [], $id.'|fvk_errado')->assertUnauthorized();
+    ($this->api)('GET', API_ORDERS, [], $id.'|fvk_errado')->assertUnauthorized();
 
     app()->instance(Clock::class, new FrozenClock(now()->addDays(31)->toImmutable()));
-    ($this->api)('GET', '/orders')->assertUnauthorized();
+    ($this->api)('GET', API_ORDERS)->assertUnauthorized();
     app()->instance(Clock::class, new FrozenClock(now()->toImmutable()));
 
     $this->scenario->tenant->actingAs($this->owner, fn () => app(ManageApiClients::class)->revoke($this->apiClient->id));
-    ($this->api)('GET', '/orders')->assertUnauthorized();
+    ($this->api)('GET', API_ORDERS)->assertUnauthorized();
 });
 
 it('aplica as permissões do cliente a cada recurso', function (): void {
     [, $catalogOnly] = ($this->client)(['catalog.view']);
 
-    ($this->api)('GET', '/orders', [], $catalogOnly)->assertForbidden()->assertJsonPath('error.code', 'forbidden');
+    ($this->api)('GET', API_ORDERS, [], $catalogOnly)->assertForbidden()->assertJsonPath('error.code', 'forbidden');
     ($this->api)('GET', '/skus', [], $catalogOnly)->assertOk()->assertJsonPath('data.0.code', $this->scenario->sku->code);
     ($this->api)('GET', '/stock')->assertOk()->assertJsonPath('data.0.reserved', '4.000');
     ($this->api)('GET', '/buyers')->assertOk()->assertJsonPath('data.0.id', $this->buyer['company']->id);
@@ -97,11 +99,11 @@ it('registra eventos da transportadora uma vez por identificador externo', funct
 });
 
 it('limita as requisições por cliente', function (): void {
-    foreach (range(1, ApiClientAuthenticator::PER_MINUTE) as $ignored) {
+    for ($hit = 0; $hit < ApiClientAuthenticator::PER_MINUTE; $hit++) {
         RateLimiter::hit('api:'.$this->apiClient->id, 60);
     }
 
-    ($this->api)('GET', '/orders')->assertStatus(429)->assertJsonPath('error.code', 'too_many_requests');
+    ($this->api)('GET', API_ORDERS)->assertStatus(429)->assertJsonPath('error.code', 'too_many_requests');
 });
 
 it('exige data e hora ISO 8601 com fuso, recusando textos relativos', function (string $value): void {
@@ -109,12 +111,12 @@ it('exige data e hora ISO 8601 com fuso, recusando textos relativos', function (
 
     ($this->api)('POST', "/shipments/{$shipment->id}/events", ['external_id' => 'TRK-9', 'kind' => 'in_transit', 'occurred_at' => $value])
         ->assertUnprocessable()->assertJsonStructure(['error' => ['fields' => ['occurred_at']]]);
-    ($this->api)('GET', '/orders?updated_since='.urlencode($value))->assertUnprocessable();
+    ($this->api)('GET', API_ORDERS.'?updated_since='.urlencode($value))->assertUnprocessable();
 })->with(['now', 'yesterday', '+1 hour', '2026-11-24 10:00', '2026-11-24T10:00:00', '2026-02-30T10:00:00Z', '2026-11-24T25:00:00Z']);
 
 it('aceita data e hora ISO 8601 com fuso no filtro de alteração', function (): void {
-    ($this->api)('GET', '/orders?updated_since='.urlencode('2000-01-01T00:00:00-03:00'))->assertOk()->assertJsonPath('data.0.number', $this->order->number);
-    ($this->api)('GET', '/orders?updated_since=2099-01-01T00:00:00Z')->assertOk()->assertJsonCount(0, 'data');
+    ($this->api)('GET', API_ORDERS.'?updated_since='.urlencode('2000-01-01T00:00:00-03:00'))->assertOk()->assertJsonPath('data.0.number', $this->order->number);
+    ($this->api)('GET', API_ORDERS.'?updated_since=2099-01-01T00:00:00Z')->assertOk()->assertJsonCount(0, 'data');
 });
 
 it('registra o último uso no máximo uma vez por minuto, mesmo em resposta de erro', function (): void {
@@ -125,15 +127,15 @@ it('registra o último uso no máximo uma vez por minuto, mesmo em resposta de e
     $start = now()->toImmutable();
 
     app()->instance(Clock::class, new FrozenClock($start));
-    ($this->api)('GET', '/orders?cor=azul')->assertUnprocessable();
+    ($this->api)('GET', API_ORDERS.'?cor=azul')->assertUnprocessable();
     $first = $lastUsed();
     expect($first[0])->not->toBe('')->and($first[1])->not->toBe('');
 
     app()->instance(Clock::class, new FrozenClock($start->addSeconds(30)));
-    ($this->api)('GET', '/orders')->assertOk();
+    ($this->api)('GET', API_ORDERS)->assertOk();
     expect($lastUsed())->toBe($first);
 
     app()->instance(Clock::class, new FrozenClock($start->addMinutes(2)));
-    ($this->api)('GET', '/orders')->assertOk();
+    ($this->api)('GET', API_ORDERS)->assertOk();
     expect($lastUsed()[0])->not->toBe($first[0])->and($lastUsed()[1])->not->toBe($first[1]);
 });

@@ -6,8 +6,8 @@ use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Route as Router;
 
 /*
-| Contrato da API (docs/openapi.json): toda rota da API v1 está documentada
-| e todo caminho documentado existe, com os mesmos métodos.
+| Contrato da API (docs/openapi.json): cada rota da API v1 está documentada
+| e cada caminho documentado existe, com os mesmos métodos.
 */
 
 it('documenta exatamente as rotas da API v1', function (): void {

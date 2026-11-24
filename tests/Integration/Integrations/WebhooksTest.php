@@ -23,6 +23,14 @@ use Tests\Support\Builders\OrderingScenario;
 | tentativas com espera, desativação por falhas e envio de teste.
 */
 
+const WEBHOOK_PRIVATE_URL = 'https://10.0.0.5/hook';
+
+/** Endereço com o esquema informado (os testes de recusa usam esquemas sem TLS de propósito). */
+function webhookUrl(string $scheme, string $host = '93.184.216.34'): string
+{
+    return $scheme.'://'.$host.'/hook';
+}
+
 beforeEach(function (): void {
     config(['queue.default' => 'sync', 'integrations.webhooks.allow_private_networks' => false, 'integrations.webhooks.allow_http' => false]);
     $this->scenario = OrderingScenario::create(stock: '10', unitPriceCents: 10_000);
@@ -36,7 +44,7 @@ it('recusa endereço interno, sem TLS, com credenciais ou eventos fora da lista'
     expect(fn () => ($this->manage)(fn ($m) => $m->create($url, ['order.confirmed'])))->toThrow(InvalidIntegration::class);
 })->with([
     'loopback' => ['https://127.0.0.1/hook'],
-    'rede privada' => ['https://10.0.0.5/hook'],
+    'rede privada' => [WEBHOOK_PRIVATE_URL],
     'link-local (metadados de nuvem)' => ['https://169.254.169.254/latest/meta-data'],
     'IPv6 loopback' => ['https://[::1]/hook'],
     'CGNAT' => ['https://100.100.100.200/hook'],
@@ -44,18 +52,19 @@ it('recusa endereço interno, sem TLS, com credenciais ou eventos fora da lista'
     'IPv4 mapeado em IPv6' => ['https://[::ffff:10.0.0.5]/hook'],
     'NAT64 para rede privada' => ['https://[64:ff9b::a00:5]/hook'],
     '6to4 para loopback' => ['https://[2002:7f00:1::1]/hook'],
-    'sem TLS' => ['http://93.184.216.34/hook'],
+    'sem TLS' => [webhookUrl('http')],
     'com credenciais' => ['https://user:senha@93.184.216.34/hook'],
-    'outro esquema' => ['ftp://93.184.216.34/hook'],
+    'outro esquema' => [webhookUrl('ftp')],
 ]);
 
 it('aceita endereço interno só quando a configuração permite', function (): void {
     expect(fn () => ($this->manage)(fn ($m) => $m->create($this->url, ['pedido.inexistente'])))->toThrow(InvalidIntegration::class, 'evento');
 
     config(['integrations.webhooks.allow_private_networks' => true, 'integrations.webhooks.allow_http' => true]);
-    [$endpoint] = ($this->manage)(fn ($m) => $m->create('http://10.0.0.5/hook', ['order.confirmed']));
+    $plain = webhookUrl('http', '10.0.0.5');
+    [$endpoint] = ($this->manage)(fn ($m) => $m->create($plain, ['order.confirmed']));
 
-    expect($endpoint->url)->toBe('http://10.0.0.5/hook');
+    expect($endpoint->url)->toBe($plain);
 });
 
 it('entrega o evento assinado, com id estável e só os campos públicos', function (): void {
@@ -174,10 +183,10 @@ it('conta segredo ilegível como falha da tentativa, com nova espera', function 
 it('desativa endpoint cujo endereço deixou de ser aceito, mas não o reativa', function (): void {
     [$endpoint] = ($this->manage)(fn ($m) => $m->create($this->url, ['order.confirmed']));
     // O endereço passou a apontar para a rede interna depois do cadastro.
-    $this->scenario->system(fn () => WebhookEndpoint::query()->whereKey($endpoint->id)->update(['url' => 'https://10.0.0.5/hook']));
+    $this->scenario->system(fn () => WebhookEndpoint::query()->whereKey($endpoint->id)->update(['url' => WEBHOOK_PRIVATE_URL]));
 
-    ($this->manage)(fn ($m) => $m->update($endpoint->id, 'https://10.0.0.5/hook', ['order.confirmed'], false));
+    ($this->manage)(fn ($m) => $m->update($endpoint->id, WEBHOOK_PRIVATE_URL, ['order.confirmed'], false));
     expect($this->scenario->system(fn () => WebhookEndpoint::query()->findOrFail($endpoint->id)->is_active))->toBeFalse()
-        ->and(fn () => ($this->manage)(fn ($m) => $m->update($endpoint->id, 'https://10.0.0.5/hook', ['order.confirmed'], true)))
+        ->and(fn () => ($this->manage)(fn ($m) => $m->update($endpoint->id, WEBHOOK_PRIVATE_URL, ['order.confirmed'], true)))
         ->toThrow(InvalidIntegration::class, 'rede interna');
 });

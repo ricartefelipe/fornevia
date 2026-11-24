@@ -59,35 +59,9 @@ final readonly class ProductsImport implements ImportKind
         $errors = [];
 
         foreach ($rows as $line => $row) {
-            /** @var list<string> $rowErrors */
-            $rowErrors = [];
             $code = $codes[$line];
-
-            if (preg_match('/^[A-Z0-9][A-Z0-9._\/-]{0,39}$/D', $code) !== 1) {
-                $rowErrors[] = 'Código do SKU inválido (até 40 letras, números, ponto, hífen, barra ou sublinhado).';
-            } elseif (in_array($code, $existing, true)) {
-                $rowErrors[] = 'Código de SKU já cadastrado.';
-            } elseif (isset($seen[$code])) {
-                $rowErrors[] = "Código de SKU repetido no arquivo (linha {$seen[$code]}).";
-            } else {
-                $seen[$code] = $line;
-            }
-
-            if (($row['produto'] ?? '') === '' || mb_strlen($row['produto']) > 200) {
-                $rowErrors[] = 'Nome do produto obrigatório (até 200 caracteres).';
-            }
-
-            if (! isset($units[mb_strtoupper($row['unidade'] ?? '')])) {
-                $rowErrors[] = 'Unidade de medida não cadastrada.';
-            }
-
-            foreach (['fator_conversao' => 'Fator de conversão', 'quantidade_minima' => 'Quantidade mínima', 'multiplo' => 'Múltiplo'] as $field => $label) {
-                if (self::quantity($row[$field] ?? '') === null) {
-                    $rowErrors[] = "{$label} inválido (número positivo).";
-                }
-            }
-
-            $errors[$line] = $rowErrors;
+            $errors[$line] = [...self::codeErrors($code, $existing, $seen), ...self::fieldErrors($row, $units)];
+            $seen[$code] ??= $line;
         }
 
         return $errors;
@@ -125,5 +99,46 @@ final readonly class ProductsImport implements ImportKind
         }
 
         return $quantity->isPositive() ? $quantity : null;
+    }
+
+    /**
+     * @param  array<string>  $existing  códigos já cadastrados
+     * @param  array<string, int>  $seen  código => primeira linha do arquivo
+     * @return list<string>
+     */
+    private static function codeErrors(string $code, array $existing, array $seen): array
+    {
+        return match (true) {
+            preg_match('/^[A-Z0-9][A-Z0-9._\/-]{0,39}$/D', $code) !== 1 => ['Código do SKU inválido (até 40 letras, números, ponto, hífen, barra ou sublinhado).'],
+            in_array($code, $existing, true) => ['Código de SKU já cadastrado.'],
+            isset($seen[$code]) => ["Código de SKU repetido no arquivo (linha {$seen[$code]})."],
+            default => [],
+        };
+    }
+
+    /**
+     * @param  array<string, string>  $row
+     * @param  array<string, string>  $units  código da unidade => id
+     * @return list<string>
+     */
+    private static function fieldErrors(array $row, array $units): array
+    {
+        $errors = [];
+
+        if (($row['produto'] ?? '') === '' || mb_strlen($row['produto']) > 200) {
+            $errors[] = 'Nome do produto obrigatório (até 200 caracteres).';
+        }
+
+        if (! isset($units[mb_strtoupper($row['unidade'] ?? '')])) {
+            $errors[] = 'Unidade de medida não cadastrada.';
+        }
+
+        foreach (['fator_conversao' => 'Fator de conversão', 'quantidade_minima' => 'Quantidade mínima', 'multiplo' => 'Múltiplo'] as $field => $label) {
+            if (self::quantity($row[$field] ?? '') === null) {
+                $errors[] = "{$label} inválido (número positivo).";
+            }
+        }
+
+        return $errors;
     }
 }
