@@ -6,6 +6,7 @@ namespace App\Services\Inventory;
 
 use App\Data\Inventory\ReservationOutcome;
 use App\Data\Inventory\ReservationRequest;
+use App\Domain\Fulfillment\Exceptions\ShipmentNotAllowed;
 use App\Domain\Inventory\StockAllocator;
 use App\Domain\Inventory\WarehouseStock;
 use App\Domain\Shared\Quantity;
@@ -193,7 +194,10 @@ final readonly class StockLedger
         return $reservations->count();
     }
 
-    public function releaseForOrderItem(string $orderItemId, Quantity $quantity, string $reason, string $referenceType, string $referenceId): Quantity
+    /**
+     * @param  array<string, Quantity>  $keep  warehouse_id => quantidade base que continua reservada (remessas em separação)
+     */
+    public function releaseForOrderItem(string $orderItemId, Quantity $quantity, string $reason, string $referenceType, string $referenceId, array $keep = []): Quantity
     {
         $this->assertInTransaction();
         $remaining = $quantity;
@@ -212,7 +216,10 @@ final readonly class StockLedger
             }
 
             $open = $reservation->quantity->minus($reservation->quantity_consumed)->minus($reservation->quantity_released);
-            $release = Quantity::min($open, $remaining);
+            // Parte da reserva do depósito comprometida com remessas em separação.
+            $kept = Quantity::min($open, $keep[$reservation->warehouse_id] ?? Quantity::zero());
+            $keep[$reservation->warehouse_id] = ($keep[$reservation->warehouse_id] ?? Quantity::zero())->minus($kept);
+            $release = Quantity::min($open->minus($kept), $remaining);
 
             if (! $release->isPositive()) {
                 continue;
@@ -275,7 +282,7 @@ final readonly class StockLedger
         }
 
         if ($remaining->isPositive()) {
-            throw new LogicException('Reserva insuficiente no depósito para expedir o item.');
+            throw new ShipmentNotAllowed('O item não tem mais reserva suficiente no depósito desta remessa. Cancele a separação e abra outra remessa.');
         }
     }
 

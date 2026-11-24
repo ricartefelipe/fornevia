@@ -175,3 +175,43 @@ it('exige permissão de expedição e pedido confirmado', function (): void {
 
     expect(fn () => S::create($this->scenario, $this->staff, $pending, [S::item($this->scenario, $pending)->id => '1']))->toThrow(ShipmentNotAllowed::class, 'confirmados');
 });
+
+it('não libera no cancelamento a reserva de que a separação depende', function (): void {
+    // Item de 10: 5 reservados em cada depósito.
+    $scenario = OrderingScenario::create(stock: '5', unitPriceCents: 10_000);
+    $second = $scenario->system(function () use ($scenario): Warehouse {
+        $warehouse = new Warehouse;
+        $warehouse->forceFill(['branch_id' => $scenario->warehouse->branch_id, 'code' => 'CD2', 'name' => 'Depósito 2', 'priority' => 5, 'allows_sales' => true, 'is_active' => true])->save();
+        DB::transaction(fn () => app(StockLedger::class)->receive($warehouse->id, $scenario->sku->id, Quantity::of('5'), 'Saldo inicial'));
+
+        return $warehouse;
+    });
+    $buyer = $scenario->buyerWithCart(quantity: '10', sameCompany: true);
+    $order = Fx::place($scenario, $buyer);
+    $staff = $scenario->tenant->addStaff(SystemRole::Warehouse);
+    $item = S::item($scenario, $order);
+    // A separação fica no depósito que a liberação percorreria primeiro.
+    $first = strcmp($scenario->warehouse->id, $second->id) < 0 ? $scenario->warehouse->id : $second->id;
+    $shipment = S::create($scenario, $staff, $order, [$item->id => '5'], $first);
+    $manager = $scenario->tenant->addStaff(SystemRole::SalesManager);
+
+    $scenario->tenant->actingAs($manager, fn () => app(CancelOrderItems::class)->handle($order, null, 'Cliente reduziu o pedido'));
+
+    S::check($scenario, $staff, $shipment);
+    S::ship($scenario, $staff, $shipment);
+
+    $item = S::item($scenario, $order);
+    expect($item->quantity_shipped->toDatabase())->toBe('5.000')
+        ->and($item->quantity_cancelled->toDatabase())->toBe('5.000')
+        ->and(S::level($scenario, warehouseId: $first)['reserved'])->toBe('0.000');
+});
+
+it('recusa com mensagem a expedição sem reserva no depósito', function (): void {
+    $shipment = S::create($this->scenario, $this->staff, $this->order, [$this->item->id => '4']);
+    S::check($this->scenario, $this->staff, $shipment);
+    // Reserva liberada por fora da separação.
+    $this->scenario->system(fn () => DB::transaction(fn () => app(StockLedger::class)->releaseForOrderItem($this->item->id, Quantity::of('6'), 'Ajuste', 'order', $this->order->id)));
+
+    expect(fn () => S::ship($this->scenario, $this->staff, $shipment))->toThrow(ShipmentNotAllowed::class, 'Cancele a separação')
+        ->and(S::fresh($this->scenario, $shipment)->status)->toBe(ShipmentStatus::Preparing);
+});

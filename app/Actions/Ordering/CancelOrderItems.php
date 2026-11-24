@@ -19,6 +19,7 @@ use App\Services\Approvals\BudgetLedger;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Credit\CreditLedger;
 use App\Services\Fulfillment\OrderFulfillment;
+use App\Services\Fulfillment\PickingAllocations;
 use App\Services\Inventory\StockLedger;
 use App\Services\Ordering\OrderConfirmation;
 use App\Services\Quotes\QuoteLocks;
@@ -55,6 +56,7 @@ final readonly class CancelOrderItems
         private QuoteLocks $quoteLocks,
         private QuoteStockHolds $quoteHolds,
         private OrderFulfillment $fulfillment,
+        private PickingAllocations $picking,
         private Clock $clock,
     ) {}
 
@@ -119,7 +121,7 @@ final readonly class CancelOrderItems
             $fromReservation = $base->minus($fromBackorder);
 
             $released = $fromReservation->isPositive()
-                ? $this->stock->releaseForOrderItem($item->id, $fromReservation, $reason, 'order', $locked->id)
+                ? $this->stock->releaseForOrderItem($item->id, $fromReservation, $reason, 'order', $locked->id, $this->picking->byWarehouse($item))
                 : Quantity::zero();
 
             $item->forceFill([

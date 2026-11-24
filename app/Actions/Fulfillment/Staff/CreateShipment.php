@@ -19,6 +19,7 @@ use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderItem;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Fulfillment\FulfillmentNumbering;
+use App\Services\Fulfillment\PickingAllocations;
 use App\Services\Ordering\OrderConfirmation;
 use App\Support\Auth\Access;
 use App\Support\Http\UntrustedId;
@@ -42,6 +43,7 @@ final readonly class CreateShipment
         private IdempotencyGuard $idempotency,
         private FulfillmentNumbering $numbering,
         private OrderConfirmation $orders,
+        private PickingAllocations $picking,
         private AuditRecorder $audit,
     ) {}
 
@@ -140,15 +142,7 @@ final readonly class CreateShipment
             ->get()
             ->reduce(static fn (Quantity $sum, StockReservation $r): Quantity => $sum->plus($r->quantity->minus($r->quantity_consumed)->minus($r->quantity_released)), Quantity::zero());
 
-        $picking = ShipmentItem::query()
-            ->join('shipments', 'shipments.id', '=', 'shipment_items.shipment_id')
-            ->where('shipment_items.order_item_id', $item->id)
-            ->where('shipments.warehouse_id', $warehouseId)
-            ->where('shipments.status', ShipmentStatus::Preparing->value)
-            ->get(['shipment_items.quantity'])
-            ->reduce(static fn (Quantity $sum, ShipmentItem $si): Quantity => $sum->plus($si->quantity), Quantity::zero());
-
-        return $open->minus($picking->convertedBy($item->conversion_factor));
+        return $open->minus($this->picking->byWarehouse($item)[$warehouseId] ?? Quantity::zero());
     }
 
     /**
