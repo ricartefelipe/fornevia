@@ -1,0 +1,68 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fornevia.fullname" . }}-migrate-{{ .Release.Revision }}
+  labels: {{- include "fornevia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    # Antes de instalar ou atualizar: a nova versão só sobe com o schema pronto.
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "fornevia.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        fsGroup: 82
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "fornevia.appImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["fornevia-start", "php", "artisan", "migrate", "--force"]
+          env:
+            # Papel de manutenção (tem precedência sobre o ConfigMap): só as migrations alteram o schema.
+            - {name: DB_CONNECTION, value: pgsql_owner}
+          envFrom:
+            - configMapRef:
+                name: {{ include "fornevia.fullname" . }}-config-migrate
+            - secretRef:
+                name: {{ .Values.existingSecret }}
+          {{- include "fornevia.phpSecurityContext" . | nindent 10 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: bootstrap-cache, mountPath: /var/www/html/bootstrap/cache}
+            - {name: framework, mountPath: /var/www/html/storage/framework}
+            - {name: logs, mountPath: /var/www/html/storage/logs}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        - {name: bootstrap-cache, emptyDir: {}}
+        - {name: framework, emptyDir: {}}
+        - {name: logs, emptyDir: {}}
+---
+# Cópia da configuração para o hook (o ConfigMap principal só existe depois da instalação).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fornevia.fullname" . }}-config-migrate
+  labels: {{- include "fornevia.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-1"
+    helm.sh/hook-delete-policy: before-hook-creation
+data:
+  {{- range $key, $value := .Values.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}

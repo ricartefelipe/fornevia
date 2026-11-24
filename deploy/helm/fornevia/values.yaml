@@ -1,0 +1,140 @@
+# Valores do chart do Fornevia (docs/runbooks/kubernetes.md).
+# PostgreSQL e Redis são externos (gerenciados ou com réplica) e não fazem
+# parte do chart; os segredos vêm de um Secret existente.
+
+image:
+  app:
+    repository: fornevia-app
+    tag: ""            # padrão: appVersion do chart
+  web:
+    repository: fornevia-web
+    tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Secret existente com APP_KEY, APP_PREVIOUS_KEYS, DB_PASSWORD,
+# DB_OWNER_PASSWORD, DB_RELAY_PASSWORD, REDIS_PASSWORD, METRICS_TOKEN,
+# MAIL_USERNAME e MAIL_PASSWORD (docs/runbooks/kubernetes.md). As chaves do
+# gateway de pagamento ficam cifradas no banco, por distribuidor.
+existingSecret: fornevia-secrets
+
+# Configuração não sigilosa (ConfigMap); APP_URL precisa ser o endereço público.
+config:
+  APP_NAME: Fornevia
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_URL: https://app.exemplo.com.br
+  APP_LOCALE: pt_BR
+  APP_FALLBACK_LOCALE: pt_BR
+  APP_TIMEZONE_DISPLAY: America/Sao_Paulo
+  LOG_CHANNEL: stack
+  LOG_STACK: json
+  LOG_LEVEL: info
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres.exemplo.internal
+  DB_PORT: "5432"
+  DB_DATABASE: fornevia
+  DB_SSLMODE: require
+  REDIS_HOST: redis.exemplo.internal
+  REDIS_PORT: "6379"
+  REDIS_CLIENT: phpredis
+  SESSION_DRIVER: database
+  SESSION_LIFETIME: "120"
+  SESSION_ENCRYPT: "true"
+  SESSION_SECURE_COOKIE: "true"
+  SESSION_SAME_SITE: lax
+  CACHE_STORE: redis
+  CACHE_PREFIX: fornevia-cache-
+  QUEUE_CONNECTION: redis
+  REDIS_QUEUE_RETRY_AFTER: "330"
+  FILESYSTEM_DISK: private
+  MAIL_MAILER: smtp
+  MAIL_HOST: ""
+  MAIL_PORT: "587"
+  MAIL_FROM_ADDRESS: nao-responda@exemplo.com.br
+  MAIL_FROM_NAME: Fornevia
+  HORIZON_ALLOWED_EMAILS: ""
+  PAYMENTS_SIMULATOR: "false"
+  ASAAS_BASE_URL: https://api.asaas.com/v3
+  ASAAS_TIMEOUT_SECONDS: "15"
+  # Hosts aceitos na raspagem de /metrics (o Service web, pelo nome interno).
+  METRICS_SCRAPE_HOSTS: ""
+  METRICS_PER_TENANT: "false"
+  METRICS_TENANT_LIMIT: "20"
+  TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+app:
+  replicas: 2
+  resources:
+    requests: {cpu: 250m, memory: 256Mi}
+    limits: {memory: 512Mi}
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+
+web:
+  replicas: 2
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 128Mi}
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+horizon:
+  replicas: 2
+  terminationGracePeriodSeconds: 90
+  resources:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {memory: 768Mi}
+
+outbox:
+  # O relay reivindica mensagens com SKIP LOCKED: várias réplicas são seguras.
+  replicas: 2
+  terminationGracePeriodSeconds: 45
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+
+scheduler:
+  # Uma réplica; as tarefas usam onOneServer como proteção adicional.
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+
+migrations:
+  # Job antes de cada instalação e atualização, com o papel de manutenção.
+  enabled: true
+  backoffLimit: 1
+  activeDeadlineSeconds: 900
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Arquivos enviados (mídia e anexos): volume compartilhado entre as réplicas
+# (ReadWriteMany), por exemplo NFS, EFS ou Filestore.
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteMany
+  size: 20Gi
+  existingClaim: ""
+
+ingress:
+  enabled: true
+  className: nginx
+  host: app.exemplo.com.br
+  tlsSecretName: fornevia-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 14m
+
+# Anotações extras dos pods (por exemplo, para forçar um novo rollout).
+podAnnotations: {}
+topologySpreadConstraints: true
+nodeSelector: {}
+tolerations: []

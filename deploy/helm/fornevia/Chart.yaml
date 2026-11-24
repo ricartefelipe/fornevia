@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fornevia
+description: Fornevia em Kubernetes com alta disponibilidade (aplicação, web, Horizon, relay da outbox e agendador).
+type: application
+version: 1.0.0
+appVersion: "1.1.0"

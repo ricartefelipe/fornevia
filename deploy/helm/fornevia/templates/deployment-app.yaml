@@ -1,0 +1,52 @@
+{{- $c := dict "root" . "component" "app" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fornevia.fullname" . }}-app
+  labels: {{- include "fornevia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  {{- if not .Values.app.autoscaling.enabled }}
+  replicas: {{ .Values.app.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels: {{- include "fornevia.selector" $c | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "fornevia.selector" $c | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "fornevia.podCommon" $c | nindent 6 }}
+      containers:
+        - name: php-fpm
+          image: {{ include "fornevia.appImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - {name: fastcgi, containerPort: 9000}
+          {{- include "fornevia.phpEnv" . | nindent 10 }}
+          {{- include "fornevia.phpSecurityContext" . | nindent 10 }}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "SCRIPT_NAME=/fpm-ping SCRIPT_FILENAME=/fpm-ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q pong"]
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "SCRIPT_NAME=/fpm-ping SCRIPT_FILENAME=/fpm-ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q pong"]
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              exec:
+                # Tempo para o Service deixar de enviar requisições antes de encerrar o FPM.
+                command: ["sh", "-c", "sleep 5"]
+          resources: {{- toYaml .Values.app.resources | nindent 12 }}
+      {{- include "fornevia.phpVolumes" . | nindent 6 }}

@@ -1,0 +1,14 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- range $component := list "app" "web" "horizon" "outbox" }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fornevia.fullname" $ }}-{{ $component }}
+  labels: {{- include "fornevia.labels" $ | nindent 4 }}
+spec:
+  minAvailable: {{ $.Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "fornevia.selector" (dict "root" $ "component" $component) | nindent 6 }}
+{{- end }}
+{{- end }}
