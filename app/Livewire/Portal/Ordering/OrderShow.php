@@ -6,6 +6,7 @@ namespace App\Livewire\Portal\Ordering;
 
 use App\Actions\Approvals\RetryOrderConfirmation;
 use App\Actions\Approvals\Support\OrderApprovalSummary;
+use App\Actions\Fulfillment\Portal\RequestReturn;
 use App\Actions\Ordering\CancelOrderItems;
 use App\Actions\Ordering\Portal\BuyerOrders;
 use App\Actions\Ordering\Portal\Reorder;
@@ -15,11 +16,15 @@ use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Money;
 use App\Domain\Shared\Quantity;
 use App\Enums\Approvals\ApprovalOutcome;
+use App\Enums\Fulfillment\ReturnReason;
+use App\Enums\Fulfillment\ShipmentStatus;
 use App\Enums\Identity\Permission;
 use App\Enums\Ordering\CommercialStatus;
 use App\Models\Buyers\BuyerUnit;
 use App\Models\Buyers\CostCenter;
 use App\Models\Catalog\UnitOfMeasure;
+use App\Models\Fulfillment\ReturnRequest;
+use App\Models\Fulfillment\Shipment;
 use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderEvent;
 use App\Models\Ordering\OrderItem;
@@ -64,8 +69,23 @@ final class OrderShow extends Component
         'order.confirmed' => 'Pedido confirmado',
         'order.items_cancelled' => 'Itens cancelados',
         'order.cancelled' => 'Pedido cancelado',
+        'order.shipment_created' => 'Separação iniciada',
+        'order.shipment_cancelled' => 'Separação cancelada',
+        'order.shipped' => 'Remessa expedida',
+        'order.delivered' => 'Remessa entregue',
+        'order.return_requested' => 'Devolução pedida',
         ...OrderApprovalSummary::EVENT_LABELS,
     ];
+
+    /** @var array<string, string> quantidade a devolver por item (entrada não confiável) */
+    public array $returnQuantities = [];
+
+    public string $returnReasonCode = '';
+
+    public string $returnReason = '';
+
+    #[Locked]
+    public string $returnKey = '';
 
     #[Locked]
     public string $orderId = '';
@@ -91,6 +111,29 @@ final class OrderShow extends Component
     public function mount(string $order, BuyerOrders $orders): void
     {
         $this->orderId = $orders->find($orders->actor(), $order)->id;
+        $this->returnKey = (string) Str::uuid7();
+    }
+
+    public function requestReturn(RequestReturn $request): mixed
+    {
+        $this->resetErrorBag();
+        $this->failure = null;
+
+        try {
+            $return = $request->handle($this->orderId, $this->returnQuantities, $this->returnReasonCode, $this->returnReason, $this->returnKey);
+        } catch (BusinessRuleViolation $e) {
+            $field = $e->details()['field'] ?? null;
+            match (true) {
+                $field === 'reason_code' => $this->addError('returnReasonCode', $e->getMessage()),
+                $field === 'reason' => $this->addError('returnReason', $e->getMessage()),
+                is_string($field) && str_starts_with($field, 'quantities.') => $this->addError('returnQuantities.'.substr($field, 11), $e->getMessage()),
+                default => $this->failure = $e->getMessage(),
+            };
+
+            return null;
+        }
+
+        return $this->redirectRoute('portal.returns.show', $return->id);
     }
 
     /**
@@ -210,6 +253,10 @@ final class OrderShow extends Component
             'canRetry' => $canPlace && OrderApprovalSummary::awaitsConfirmation($order),
             'canReorder' => $access->can(Permission::PortalCart),
             'approvalLevels' => OrderApprovalSummary::levels($order),
+            'shipments' => Shipment::query()->with(['items', 'events'])->where('order_id', $order->id)->where('status', '<>', ShipmentStatus::Cancelled->value)->orderBy('created_at')->get(),
+            'returns' => ReturnRequest::query()->where('order_id', $order->id)->orderByDesc('created_at')->get(),
+            'canRequestReturn' => $canPlace && $order->items->contains(static fn (OrderItem $item): bool => $item->returnable()->isPositive()),
+            'returnReasons' => collect(ReturnReason::cases())->mapWithKeys(static fn (ReturnReason $r): array => [$r->value => $r->label()])->all(),
             'quoteOrigin' => $quoteOrigin,
             // Link só para quem pode abrir a cotação; os demais veem o número.
             'canOpenQuote' => $quoteOrigin !== null && $quotes->canOpen($actor, $quoteOrigin->quote_id),
