@@ -8,14 +8,12 @@ use App\Domain\Integrations\Exceptions\InvalidIntegration;
 use App\Enums\Identity\Permission;
 use App\Jobs\ApplyCsvImport;
 use App\Models\Integrations\CsvImport;
-use App\Models\Integrations\CsvImportRow;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Integrations\Imports\ImportKinds;
 use App\Support\Auth\Access;
 use App\Support\Clock\Clock;
 use App\Support\Http\UntrustedId;
 use App\Support\Integrations\Csv;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -111,13 +109,5 @@ final readonly class CsvImports
 
             return $import;
         });
-    }
-
-    /**
-     * @return Builder<CsvImportRow>
-     */
-    public static function rows(CsvImport $import): Builder
-    {
-        return CsvImportRow::query()->where('csv_import_id', $import->id)->orderBy('line');
     }
 }
