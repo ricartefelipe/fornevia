@@ -764,3 +764,70 @@ a janela de dois reembolsos simultâneos. Procurar pela referência antes de
 criar é a única forma de tolerar timeout sem cobrar duas vezes, já que o
 gateway pode ter criado a cobrança sem responder. A configuração por
 distribuidor mantém o isolamento entre tenants também no recebimento.
+
+## ADR-029 — API por cliente com permissões próprias, webhooks assinados contra SSRF e importação CSV em duas etapas
+
+**Status:** aceita
+
+**Decisão.**
+- Cada sistema externo é um cliente da API do distribuidor, com as
+  permissões concedidas a ele (só leitura de pedidos, compradores,
+  catálogo, estoque e financeiro, e o registro de eventos de remessa). O
+  token do Sanctum (`id|fvk_…`, guardado só como hash SHA-256) tem prazo
+  de 1 a 365 dias e é mostrado uma única vez. A busca do token, antes de
+  haver contexto, usa uma função `security definer` que devolve só o
+  necessário para conferi-lo; depois, a requisição roda no contexto de
+  integração do tenant, com as permissões do cliente. Limite de 300
+  requisições por minuto por cliente.
+- A API v1 é só de leitura, com filtros declarados por recurso (filtro
+  desconhecido é erro 422), paginação de até 100 registros e erros no
+  mesmo formato das telas. O contrato fica em `docs/openapi.json`, e um
+  teste confere rotas e enums contra ele.
+- Webhooks enviados saem da outbox: um consumidor cria uma entrega por
+  evento e endpoint (identificador estável, sem duplicar) e a fila
+  `integrations` envia. O corpo traz só os campos públicos de cada evento.
+  A assinatura é `t=<carimbo>,v1=HMAC-SHA256(segredo, "carimbo.corpo")`,
+  com o segredo cifrado no banco e mostrado só na criação ou na troca.
+- Contra SSRF, o endereço precisa ser HTTPS (HTTP só fora de produção),
+  sem credenciais, e o nome é resolvido antes do envio: rede privada,
+  loopback, link-local e faixas reservadas são recusadas. O envio usa o
+  IP já conferido (`CURLOPT_RESOLVE`) e não segue redirecionamentos.
+- Falha agenda nova tentativa com espera crescente (1 min a 24 h, até 8
+  tentativas); 20 falhas seguidas desativam o endpoint, com o motivo. A
+  tentativa é reservada antes do envio, para que a varredura de pendentes
+  não envie a mesma entrega duas vezes.
+- A importação CSV tem duas etapas. Na prévia, o arquivo (UTF-8, até 2 MB
+  e 5.000 linhas) é lido e cada linha é validada pelas regras do cadastro,
+  com duplicidade no arquivo e no cadastro, e o resultado é gravado por
+  linha. Na confirmação, a política escolhida decide: "só as válidas"
+  aplica cada linha na própria transação, e a recusada fica com o motivo;
+  "tudo ou nada" recusa se houver linha inválida e aplica tudo numa
+  transação, que uma recusa desfaz.
+- A aplicação roda em fila, com a associação de quem confirmou: as próprias
+  Actions de compradores, catálogo e estoque conferem de novo permissões e
+  regras. Linha aplicada guarda o registro criado e não é aplicada de
+  novo, por isso reprocessar é seguro.
+- Exportações CSV (pedidos filtrados, na carteira de quem exporta) saem
+  com separador `;`, BOM, datas no fuso comercial e textos iniciados por
+  `=`, `+`, `-`, `@`, tabulação ou retorno prefixados com apóstrofo
+  (RS-110). Ficam na auditoria e têm limite configurável de linhas.
+
+**Alternativas consideradas.**
+- Tokens de usuário para integrações: misturariam pessoas e sistemas e
+  dariam à integração as permissões do usuário, não as do sistema.
+- Webhooks enviados direto da transação de negócio: chamada externa
+  segurando locks e perdendo o evento num rollback; a outbox já garante a
+  entrega depois do commit.
+- Bloquear endereços internos só pela URL digitada: o nome pode resolver
+  para um IP interno (DNS rebinding); por isso o IP conferido é o usado na
+  conexão.
+- Importação aplicada na própria requisição: arquivos grandes estourariam
+  o tempo da requisição e não haveria prévia nem reprocessamento seguro.
+
+**Consequências.**
+- O distribuidor controla o que cada sistema acessa, e revogar um cliente
+  invalida todos os tokens dele na hora.
+- O receptor confere a assinatura e o carimbo e deduplica pelo id da
+  entrega; eventos podem chegar mais de uma vez e fora de ordem.
+- A importação de catálogo cria produto pelo nome quando não existe e
+  reaproveita o existente; preço e custo não entram pelo CSV.

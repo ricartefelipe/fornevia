@@ -54,6 +54,9 @@ final class MorphMap
         'receivable_installment' => Finance\ReceivableInstallment::class,
         'payment' => Finance\Payment::class,
         'payment_refund' => Finance\PaymentRefund::class,
+        'api_client' => Integrations\ApiClient::class,
+        'webhook_endpoint' => Integrations\WebhookEndpoint::class,
+        'csv_import' => Integrations\CsvImport::class,
         'plan' => Platform\Plan::class,
         'subscription' => Platform\Subscription::class,
     ];

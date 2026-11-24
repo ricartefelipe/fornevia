@@ -9,3 +9,6 @@ Schedule::command('quotes:expire')->everyMinute()->withoutOverlapping()->onOneSe
 
 // Conciliação dos pagamentos pendentes no gateway (ADR-028).
 Schedule::command('payments:reconcile')->everyFifteenMinutes()->withoutOverlapping()->onOneServer();
+
+// Novas tentativas dos webhooks enviados (ADR-029).
+Schedule::command('webhooks:retry')->everyMinute()->withoutOverlapping()->onOneServer();

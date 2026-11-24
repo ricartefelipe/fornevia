@@ -1,0 +1,1064 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Fornevia API",
+    "version": "1.0.0",
+    "description": "API v1 do distribuidor. Autenticação por token de cliente de API (Authorization: Bearer <id>|<segredo>), emitido em Integrações. Cada requisição roda no tenant do token, com as permissões do cliente. Valores em centavos (inteiros); quantidades como texto decimal com três casas; datas em ISO 8601 (UTC). Erros: { error: { code, message, details?, fields? }, request_id }."
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "paths": {
+    "/orders": {
+      "get": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Lista pedidos",
+        "description": "Exige a permissão `orders.view`. Filtros fora da lista são recusados (422).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "commercial_status",
+            "in": "query",
+            "required": false,
+            "description": "Situação comercial",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending_approval",
+                "approved",
+                "confirmed",
+                "partially_cancelled",
+                "cancelled",
+                "completed",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "name": "buyer_company_id",
+            "in": "query",
+            "required": false,
+            "description": "Empresa compradora",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "updated_since",
+            "in": "query",
+            "required": false,
+            "description": "Alterados a partir de",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de resultados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Order"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/orders/{order}": {
+      "get": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Mostra um pedido com os itens",
+        "description": "Exige a permissão `orders.view`.",
+        "parameters": [
+          {
+            "name": "order",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pedido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OrderWithItems"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/buyers": {
+      "get": {
+        "tags": [
+          "Compradores"
+        ],
+        "summary": "Lista empresas compradoras",
+        "description": "Exige a permissão `buyers.view`. Filtros fora da lista são recusados (422).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "document",
+            "in": "query",
+            "required": false,
+            "description": "CNPJ (só dígitos ou formatado)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "updated_since",
+            "in": "query",
+            "required": false,
+            "description": "Alteradas a partir de",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de resultados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Buyer"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/skus": {
+      "get": {
+        "tags": [
+          "Catálogo"
+        ],
+        "summary": "Lista SKUs",
+        "description": "Exige a permissão `catalog.view`. Filtros fora da lista são recusados (422).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "description": "Código do SKU",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Situação",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive",
+                "archived"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de resultados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Sku"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/stock": {
+      "get": {
+        "tags": [
+          "Estoque"
+        ],
+        "summary": "Lista saldos por depósito e SKU",
+        "description": "Exige a permissão `inventory.view`. Filtros fora da lista são recusados (422).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "sku_id",
+            "in": "query",
+            "required": false,
+            "description": "SKU",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "warehouse_id",
+            "in": "query",
+            "required": false,
+            "description": "Depósito",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de resultados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/StockLevel"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/invoices": {
+      "get": {
+        "tags": [
+          "Financeiro"
+        ],
+        "summary": "Lista faturas comerciais com parcelas",
+        "description": "Exige a permissão `finance.view`. Filtros fora da lista são recusados (422).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Situação",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "paid"
+              ]
+            }
+          },
+          {
+            "name": "order_id",
+            "in": "query",
+            "required": false,
+            "description": "Pedido",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "buyer_company_id",
+            "in": "query",
+            "required": false,
+            "description": "Empresa compradora",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de resultados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Invoice"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/shipments/{shipment}/events": {
+      "post": {
+        "tags": [
+          "Expedição"
+        ],
+        "summary": "Registra evento da transportadora",
+        "description": "Exige a permissão `fulfillment.manage`. O identificador externo é único por remessa: o mesmo evento enviado de novo devolve o registro existente, sem efeito. A situação da remessa só avança (expedida → entregue).",
+        "parameters": [
+          {
+            "name": "shipment",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "external_id",
+                  "kind",
+                  "occurred_at"
+                ],
+                "properties": {
+                  "external_id": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "in_transit",
+                      "out_for_delivery",
+                      "delivered",
+                      "exception"
+                    ]
+                  },
+                  "occurred_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Obrigatória para exception."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Evento registrado (ou o já existente)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ShipmentEvent"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "<id>|<segredo> do token do cliente de API"
+      }
+    },
+    "parameters": {
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "PerPage": {
+        "name": "per_page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error",
+          "request_id"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              },
+              "fields": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PageMeta": {
+        "type": "object",
+        "required": [
+          "page",
+          "per_page",
+          "total",
+          "last_page"
+        ],
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "last_page": {
+            "type": "integer"
+          }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "number": {
+            "type": "string"
+          },
+          "buyer_company_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "cart",
+              "quote"
+            ]
+          },
+          "commercial_status": {
+            "type": "string"
+          },
+          "approval_status": {
+            "type": "string"
+          },
+          "fulfillment_status": {
+            "type": "string"
+          },
+          "financial_status": {
+            "type": "string"
+          },
+          "purchase_order_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subtotal_cents": {
+            "type": "integer"
+          },
+          "discount_cents": {
+            "type": "integer"
+          },
+          "freight_cents": {
+            "type": "integer"
+          },
+          "total_cents": {
+            "type": "integer"
+          },
+          "payment_term": {
+            "type": "object"
+          },
+          "shipping_address": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "confirmed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "OrderWithItems": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Order"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "line_number": {
+                      "type": "integer"
+                    },
+                    "sku_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "sku_code": {
+                      "type": "string"
+                    },
+                    "product_name": {
+                      "type": "string"
+                    },
+                    "unit_code": {
+                      "type": "string"
+                    },
+                    "quantity": {
+                      "type": "string"
+                    },
+                    "unit_net_price_cents": {
+                      "type": "integer"
+                    },
+                    "line_total_cents": {
+                      "type": "integer"
+                    },
+                    "quantity_cancelled": {
+                      "type": "string"
+                    },
+                    "quantity_shipped": {
+                      "type": "string"
+                    },
+                    "quantity_delivered": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Buyer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "legal_name": {
+            "type": "string"
+          },
+          "trade_name": {
+            "type": "string"
+          },
+          "document": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "Sku": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "gtin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "variant_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sales_unit": {
+            "type": "string"
+          },
+          "conversion_factor": {
+            "type": "string"
+          },
+          "min_order_quantity": {
+            "type": "string"
+          },
+          "order_multiple": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "StockLevel": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sku_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "on_hand": {
+            "type": "string"
+          },
+          "reserved": {
+            "type": "string"
+          },
+          "available": {
+            "type": "string"
+          }
+        }
+      },
+      "Invoice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "number": {
+            "type": "string"
+          },
+          "order_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "buyer_company_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "paid"
+            ]
+          },
+          "issue_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "total_cents": {
+            "type": "integer"
+          },
+          "paid_cents": {
+            "type": "integer"
+          },
+          "credited_cents": {
+            "type": "integer"
+          },
+          "adjusted_cents": {
+            "type": "integer"
+          },
+          "installments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sequence": {
+                  "type": "integer"
+                },
+                "due_date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "amount_cents": {
+                  "type": "integer"
+                },
+                "paid_cents": {
+                  "type": "integer"
+                },
+                "credited_cents": {
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ShipmentEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "shipment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "external_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "applied": {
+            "type": "boolean",
+            "description": "Se o evento mudou a situação da remessa"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthenticated": {
+        "description": "Token ausente, inválido, vencido ou de cliente revogado",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "O cliente não tem a permissão do recurso",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Recurso inexistente no tenant do token",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Situação não permite a operação",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ValidationFailed": {
+        "description": "Filtros, paginação ou corpo inválidos",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Limite de requisições do cliente excedido",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

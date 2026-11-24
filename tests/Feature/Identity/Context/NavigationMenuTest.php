@@ -17,8 +17,7 @@ use Tests\Support\Builders\TenantScenario;
 |
 | Rotas de módulos ainda não implementados (financeiro, auditoria,
 | assinatura, cotações e usuários do portal) são registradas aqui para exercitar
-| o filtro por permissão; os módulos já implementados usam as rotas reais, e
-| cotações, expedição, devoluções e integrações permanecem ausentes.
+| o filtro por permissão; os módulos já implementados usam as rotas reais.
 */
 
 beforeEach(function (): void {
@@ -53,11 +52,11 @@ it('monta o menu da equipe conforme as permissões do papel', function (SystemRo
 })->with([
     'proprietário' => [SystemRole::Owner, [
         'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index',
-        'fulfillment.index', 'returns.index', 'finance.index', 'reports.indicators', 'audit.index', 'team.index', 'branches.index', 'subscription.show',
+        'fulfillment.index', 'returns.index', 'finance.index', 'reports.indicators', 'integrations.index', 'audit.index', 'team.index', 'branches.index', 'subscription.show',
     ]],
     'administrador' => [SystemRole::Admin, [
         'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index',
-        'fulfillment.index', 'returns.index', 'finance.index', 'reports.indicators', 'audit.index', 'team.index', 'branches.index',
+        'fulfillment.index', 'returns.index', 'finance.index', 'reports.indicators', 'integrations.index', 'audit.index', 'team.index', 'branches.index',
     ]],
     'representante comercial' => [SystemRole::SalesRep, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index']],
     'estoque e expedição' => [SystemRole::Warehouse, ['dashboard', 'catalog.products', 'orders.index', 'inventory.index', 'fulfillment.index', 'returns.index']],

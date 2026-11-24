@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Livewire\Staff\Orders;
 
+use App\Actions\Ordering\Staff\ExportOrders;
 use App\Actions\Ordering\Staff\StaffOrderQuery;
+use App\Domain\Integrations\Exceptions\InvalidIntegration;
 use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\Cnpj;
 use App\Domain\Shared\Money;
@@ -24,11 +26,13 @@ use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Pedidos do distribuidor (RN-062): filtros pelos quatro estados
  * independentes, empresa compradora, período (data do pedido no fuso
- * comercial) e busca por número ou ordem de compra, com totais da página.
+ * comercial) e busca por número ou ordem de compra, com totais da página
+ * e exportação CSV do resultado filtrado.
  * A aprovação interna do comprador aparece com o nível em análise, somente
  * para leitura.
  *
@@ -116,11 +120,41 @@ final class OrdersIndex extends Component
     }
 
     /**
+     * Exporta em CSV os pedidos que atendem aos filtros (RF-113).
+     */
+    public function export(StaffOrderQuery $query, ExportOrders $export): ?StreamedResponse
+    {
+        try {
+            $csv = $export->handle($this->filtered($query), array_combine(self::FILTERS, array_map(fn (string $f): string => (string) $this->{$f}, self::FILTERS)));
+        } catch (InvalidIntegration $e) {
+            $this->addError('export', $e->getMessage());
+
+            return null;
+        }
+
+        $name = 'pedidos-'.CarbonImmutable::now((string) config('app.business_timezone'))->format('Ymd-His').'.csv';
+
+        return response()->streamDownload(static function () use ($csv): void {
+            echo $csv;
+        }, $name, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    /**
      * @return LengthAwarePaginator<int, Order>
      */
     private function orders(StaffOrderQuery $query): LengthAwarePaginator
     {
-        $orders = $query->orders()->with(['buyerCompany', 'approvalSteps'])->orderByDesc('created_at')->orderByDesc('id');
+        return $this->filtered($query)->with(['buyerCompany', 'approvalSteps'])->orderByDesc('created_at')->orderByDesc('id')->paginate(self::PER_PAGE);
+    }
+
+    /**
+     * Pedidos visíveis que atendem aos filtros, sem ordenação.
+     *
+     * @return Builder<Order>
+     */
+    private function filtered(StaffOrderQuery $query): Builder
+    {
+        $orders = $query->orders();
 
         foreach ([
             'commercial_status' => CommercialStatus::tryFrom($this->commercialStatus),
@@ -156,7 +190,7 @@ final class OrdersIndex extends Component
             $orders->where(static fn (Builder $q) => $q->where('number', 'ilike', $like)->orWhere('purchase_order_reference', 'ilike', $like));
         }
 
-        return $orders->paginate(self::PER_PAGE);
+        return $orders;
     }
 
     /**

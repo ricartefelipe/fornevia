@@ -495,3 +495,47 @@ cartão só pela página do gateway; o reembolso em verificação depende de
 conferência manual no painel do Asaas; os campos do Asaas seguem a API v3
 documentada e foram verificados com respostas simuladas, sem chamada real
 ao sandbox nos testes automatizados.
+
+## Incremento 10 — Integrações: API, webhooks e CSV (`feature/integracoes`)
+
+### Implementado
+
+- Clientes da API por distribuidor, com permissões de uma lista permitida
+  e tokens do Sanctum com prazo, mostrados uma vez e revogáveis; contexto
+  de integração do tenant e limite de requisições por cliente (RF-110).
+- API v1 só de leitura (pedidos, compradores, SKUs, estoque, faturas) e
+  registro de eventos de remessa, com filtros declarados, paginação
+  limitada, erros estruturados e contrato OpenAPI conferido por teste
+  (RF-110).
+- Webhooks enviados pela outbox, com id estável, só campos públicos,
+  assinatura HMAC com carimbo, proteção contra SSRF, novas tentativas com
+  espera crescente, desativação por falhas e envio de teste (RF-111).
+- Importação CSV de clientes, catálogo e estoque com prévia por linha,
+  limites, duplicidade no arquivo e no cadastro, políticas "só as válidas"
+  e "tudo ou nada", aplicação assíncrona e reprocessamento seguro
+  (RF-113).
+- Exportação CSV dos pedidos filtrados com neutralização de fórmulas
+  (RS-110).
+- Telas de clientes da API, webhooks e importação em `/integracoes`.
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Entrega de webhook cuja primeira tentativa se perdia depois do commit
+  ficava pendente para sempre, fora da varredura de novas tentativas.
+- Segredo do endpoint ilegível (chave da aplicação trocada) repetia a
+  tentativa indefinidamente sem contar falha nem desativar o endpoint.
+- Proteção contra SSRF aceitava CGNAT (100.64.0.0/10), faixas reservadas
+  de testes e IPv6 com IPv4 interno embutido (mapeado, NAT64, 6to4).
+- Endpoint com endereço que deixou de ser aceito não podia ser desativado.
+- Eventos da transportadora e o filtro `updated_since` aceitavam datas
+  relativas ("now", "yesterday") e sem fuso.
+- Último uso do token gravado na transação da requisição, serializando
+  requisições simultâneas do mesmo cliente.
+- Cadastro alterado entre a prévia e a aplicação (depósito, SKU, unidade)
+  derrubava a importação inteira na política "só as válidas", sem como
+  retomar; agora recusa só a linha, e a importação interrompida pode ser
+  reprocessada sem repetir linhas aplicadas.
+- Número fora do intervalo suportado no CSV de catálogo recusava o arquivo
+  inteiro, sem apontar a linha.
+- Tempo limite do job de importação acima do `retry_after` da fila, o que
+  entregaria o mesmo job a outro worker.

@@ -1,7 +1,15 @@
 @php($timezone = (string) config('app.business_timezone'))
 <div>
     <x-ui.page-header title="Pedidos"
-        description="Pedidos das empresas compradoras, com situação comercial, aprovação interna do comprador, atendimento e financeiro acompanhados separadamente." />
+        description="Pedidos das empresas compradoras, com situação comercial, aprovação interna do comprador, atendimento e financeiro acompanhados separadamente.">
+        <x-slot:actions>
+            <x-ui.button variant="secondary" wire:click="export" wire:loading.attr="disabled" wire:target="export">Exportar CSV</x-ui.button>
+        </x-slot:actions>
+    </x-ui.page-header>
+
+    @error('export')
+        <x-ui.alert type="error" class="mb-4">{{ $message }}</x-ui.alert>
+    @enderror
 
     @if ($portfolioOnly)
         <x-ui.alert type="info" class="mb-4">Você vê os pedidos das empresas da sua carteira.</x-ui.alert>
