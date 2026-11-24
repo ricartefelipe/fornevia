@@ -18,6 +18,10 @@ const BROWSER_PASSWORD = 'senha-segura-123';
 
 function browserLogin(Browser $browser, User $user): Browser
 {
+    // O Chrome é o mesmo para os testes do arquivo: cada um começa sem sessão.
+    $browser->visit('/login');
+    $browser->driver->manage()->deleteAllCookies();
+
     return $browser->visit('/login')
         ->type('email', $user->email)
         ->type('password', BROWSER_PASSWORD)
@@ -29,6 +33,8 @@ it('recusa senha errada sem revelar se o e-mail existe', function (): void {
     $user = $scenario->tenant->owner;
 
     $this->browse(function (Browser $browser) use ($user): void {
+        $browser->visit('/login');
+        $browser->driver->manage()->deleteAllCookies();
         $browser->visit('/login')->type('email', $user->email)->type('password', 'senha-incorreta')->press('Entrar')
             ->waitForText('Credenciais inválidas.')
             ->assertPathIs('/login')
@@ -49,7 +55,8 @@ it('o comprador ajusta a quantidade no catálogo e confirma o pedido pelo carrin
             ->type('#quantidade-'.$sku->id, '3')
             ->waitForText('Total para 3')
             ->press('Adicionar ao carrinho')
-            ->waitForText('carrinho')
+            // A mensagem só aparece depois que o Livewire gravou o item.
+            ->waitForText('adicionado ao carrinho')
             ->visit('/portal/carrinho')
             ->waitForText('Confirmar pedido')
             // 2 já no carrinho + 3 adicionadas pelo catálogo, a R$ 25,00.

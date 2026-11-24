@@ -37,7 +37,7 @@
         <env name="SESSION_DRIVER" value="array" force="true"/>
         <env name="PASSWORD_BREACH_CHECK" value="false" force="true"/>
         <env name="PAYMENTS_GATEWAY" value="simulator" force="true"/>
-        <env name="REDIS_PREFIX" value="fornevia-test-" force="true"/>
+        <env name="REDIS_PREFIX" value="fornevia-browser-" force="true"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
