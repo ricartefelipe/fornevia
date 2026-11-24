@@ -5,6 +5,13 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Alterado
+
+- Carteira do representante comercial aplicada a todas as telas da equipe:
+  empresas, grupos, crédito, condições negociadas, tabelas e frete por
+  empresa, catálogos privados, simulador de preço e painel, além de pedidos
+  e cotações.
+
 ## [1.0.1] - 2026-11-24
 
 ### Segurança

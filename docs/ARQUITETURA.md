@@ -462,10 +462,15 @@ no cancelamento total).
 | Portal: regras e delegações | `portal.approval-rules`, `portal.approval-rules.create`, `portal.approval-rules.edit`, `portal.delegations` | regras com `portal.approval_rules`; delegações com `portal.approval_rules` (todas) ou `portal.approvals` (as próprias) |
 | Portal: orçamentos | `portal.budgets`, `portal.budgets.show` | `portal.budgets` |
 
-- O representante comercial (papel `sales_rep`) consulta apenas pedidos das
-  empresas da própria carteira (`buyer_companies.sales_rep_membership_id`),
-  regra aplicada na consulta de pedidos da equipe. Cadastro de empresas,
-  crédito e estoque seguem as permissões do papel, sem recorte de carteira.
+- O representante comercial (papel `sales_rep`) vê apenas as empresas da
+  própria carteira (`buyer_companies.sales_rep_membership_id`) e os dados
+  ligados a elas em todas as telas da equipe: empresas e grupos (contagem),
+  pedidos, cotações, crédito, condições negociadas, tabelas de preço por
+  empresa, frete por empresa, catálogos privados atribuídos, simulador de
+  preço e painel. Empresa fora da carteira equivale a inexistente (404). A
+  regra fica em `SalesPortfolio`, usada por todas essas consultas; os demais
+  papéis veem todas as empresas. Estoque e catálogo não têm recorte (não são
+  dados de uma empresa).
 - O checkout exibe o total calculado no servidor e o envia como valor
   esperado: se preços mudarem até a confirmação, ela é recusada
   (`PricesChanged`). A chave de idempotência é gerada no servidor a cada
