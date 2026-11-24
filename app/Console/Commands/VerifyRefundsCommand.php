@@ -19,7 +19,7 @@ final class VerifyRefundsCommand extends Command
     public function handle(VerifyRefunds $verify): int
     {
         $result = $verify->handle();
-        $this->info("Conferidos: {$result['checked']}; efetivados: {$result['done']}; desfeitos: {$result['failed']}; aguardando: {$result['waiting']}.");
+        $this->info("Conferidos: {$result['checked']}; efetivados: {$result['done']}; desfeitos: {$result['failed']}; aguardando: {$result['waiting']}; com erro: {$result['errors']}.");
 
         return self::SUCCESS;
     }

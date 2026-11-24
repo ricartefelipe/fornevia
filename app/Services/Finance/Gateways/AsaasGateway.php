@@ -100,31 +100,44 @@ final readonly class AsaasGateway implements PaymentGateway
         return (string) ($response->json('id') ?? $chargeId);
     }
 
-    /**
-     * Estornos da cobrança no Asaas (GET /payments/{id}/refunds), localizados
-     * pela referência na descrição. Sem estorno com a referência: Missing.
-     */
-    public function refundOutcome(string $chargeId, string $reference): RefundOutcome
-    {
-        try {
-            $refunds = (array) $this->client()->get('/payments/'.rawurlencode($chargeId).'/refunds')->throw()->json('data', []);
-        } catch (ConnectionException) {
-            throw new GatewayUnavailable('O Asaas não respondeu à consulta dos estornos.');
-        } catch (RequestException $e) {
-            throw new GatewayUnavailable('O Asaas recusou a consulta dos estornos: '.self::error($e->response).'.');
-        }
+    /** Páginas consultadas no máximo por cobrança (100 estornos cada). */
+    public const int REFUND_PAGES = 20;
 
-        foreach ($refunds as $refund) {
-            if (is_array($refund) && str_contains((string) ($refund['description'] ?? ''), self::refundDescription($reference))) {
-                return match (strtoupper((string) ($refund['status'] ?? ''))) {
-                    'DONE' => RefundOutcome::Done,
-                    'CANCELLED', 'REFUSED', 'FAILED' => RefundOutcome::Failed,
-                    default => RefundOutcome::Pending,
-                };
+    /**
+     * Estornos da cobrança no Asaas (GET /payments/{id}/refunds, paginado),
+     * localizados pela referência na descrição. Sem estorno com a
+     * referência em nenhuma página: Missing.
+     */
+    public function refundOutcome(string $chargeId, string $reference): GatewayRefund
+    {
+        for ($page = 0; $page < self::REFUND_PAGES; $page++) {
+            try {
+                $response = $this->client()->get('/payments/'.rawurlencode($chargeId).'/refunds', ['offset' => $page * 100, 'limit' => 100])->throw();
+            } catch (ConnectionException) {
+                throw new GatewayUnavailable('O Asaas não respondeu à consulta dos estornos.');
+            } catch (RequestException $e) {
+                throw new GatewayUnavailable('O Asaas recusou a consulta dos estornos: '.self::error($e->response).'.');
+            }
+
+            foreach ((array) $response->json('data', []) as $refund) {
+                if (is_array($refund) && str_contains((string) ($refund['description'] ?? ''), self::refundDescription($reference))) {
+                    $outcome = match (strtoupper((string) ($refund['status'] ?? ''))) {
+                        'DONE' => RefundOutcome::Done,
+                        'CANCELLED', 'REFUSED', 'FAILED' => RefundOutcome::Failed,
+                        default => RefundOutcome::Pending,
+                    };
+
+                    return new GatewayRefund($outcome, isset($refund['id']) ? (string) $refund['id'] : null);
+                }
+            }
+
+            if ($response->json('hasMore') !== true) {
+                return new GatewayRefund(RefundOutcome::Missing);
             }
         }
 
-        return RefundOutcome::Missing;
+        // Páginas demais: sem conclusão nesta rodada.
+        return new GatewayRefund(RefundOutcome::Pending);
     }
 
     private static function refundDescription(string $reference): string

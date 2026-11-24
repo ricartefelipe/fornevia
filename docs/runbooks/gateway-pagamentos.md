@@ -22,8 +22,12 @@
 Reembolso sem resposta do gateway fica "em verificação", com o valor
 reservado, para não reembolsar duas vezes. `payments:verify-refunds` (a
 cada 15 minutos) consulta os estornos da cobrança no Asaas pela referência
-do reembolso: efetivado conclui; recusado desfaz a reserva; sem registro
-depois de 30 minutos, o pedido não chegou e a reserva é desfeita (o
-reembolso pode ser pedido de novo). Para antecipar:
+do reembolso (todas as páginas): efetivado conclui; recusado desfaz a
+reserva; sem registro só desfaz quando o pedido levou a referência e a
+verificação começou há mais de 24 horas (o reembolso pode ser pedido de
+novo). Reembolsos em verificação de antes da conferência automática não
+levaram a referência e ficam para a conclusão manual. Divergência entre o
+gateway e uma conclusão manual aparece na auditoria como
+`payment.refund_conflict`. Para antecipar:
 `fv exec app php artisan payments:verify-refunds`. A equipe financeira ainda
 pode concluir manualmente pela tela da fatura.

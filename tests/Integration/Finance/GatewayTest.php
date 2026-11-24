@@ -329,8 +329,12 @@ it('envia a referência do reembolso e conclui o efetivado na conferência', fun
     $this->artisan('payments:verify-refunds')->expectsOutputToContain('aguardando: 1')->assertSuccessful();
     expect($this->scenario->system(fn () => App\Models\Finance\PaymentRefund::query()->findOrFail($refund->id)->status))->toBe(App\Enums\Finance\RefundStatus::Verifying);
 
-    $this->asaasResponse = static fn () => Http::response(['data' => [['description' => 'Fornevia reembolso '.$refund->id, 'status' => 'DONE', 'value' => 100.0]]]);
+    // Na segunda página do Asaas.
+    $this->asaasResponse = static fn (Request $request) => str_contains($request->url(), 'offset=0')
+        ? Http::response(['hasMore' => true, 'data' => [['id' => 'ref_outro', 'description' => 'Outro estorno', 'status' => 'DONE']]])
+        : Http::response(['hasMore' => false, 'data' => [['id' => 'ref_555', 'description' => 'Fornevia reembolso '.$refund->id, 'status' => 'DONE', 'value' => 100.0]]]);
     $this->artisan('payments:verify-refunds')->expectsOutputToContain('efetivados: 1')->assertSuccessful();
+    expect($this->scenario->system(fn () => App\Models\Finance\PaymentRefund::query()->findOrFail($refund->id)->gateway_refund_id))->toBe('ref_555');
 
     $row = $this->scenario->system(fn () => DB::table('payments')->where('id', $payment->id)->first(['refunded_cents', 'refund_pending_cents']));
     expect($this->scenario->system(fn () => App\Models\Finance\PaymentRefund::query()->findOrFail($refund->id)->status))->toBe(App\Enums\Finance\RefundStatus::Done)
@@ -345,7 +349,7 @@ it('desfaz o reembolso recusado e o que não chegou ao gateway depois do prazo',
     // Sem registro, mas ainda dentro do prazo: continua em verificação.
     $this->artisan('payments:verify-refunds')->expectsOutputToContain('aguardando: 1')->assertSuccessful();
 
-    app()->instance(Clock::class, new FrozenClock(now()->addMinutes(31)->toImmutable()));
+    app()->instance(Clock::class, new FrozenClock(now()->addHours(25)->toImmutable()));
     $this->artisan('payments:verify-refunds')->expectsOutputToContain('desfeitos: 1')->assertSuccessful();
 
     $row = $this->scenario->system(fn () => DB::table('payments')->where('id', $payment->id)->first(['refunded_cents', 'refund_pending_cents']));
@@ -366,4 +370,59 @@ it('mantém em verificação quando o gateway não responde à consulta', functi
 
     $this->artisan('payments:verify-refunds')->expectsOutputToContain('aguardando: 1')->assertSuccessful();
     expect($this->scenario->system(fn () => App\Models\Finance\PaymentRefund::query()->findOrFail($refund->id)->status))->toBe(App\Enums\Finance\RefundStatus::Verifying);
+});
+
+it('nunca desfaz sozinho o reembolso cujo pedido não levou a referência', function (): void {
+    [, $refund] = unverifiedAsaasRefund($this);
+    // Reembolso em verificação de antes da conferência automática.
+    $this->scenario->system(fn () => DB::table('payment_refunds')->where('id', $refund->id)->update(['gateway_reference_sent' => false]));
+    $this->asaasResponse = static fn () => Http::response(['data' => []]);
+    app()->instance(Clock::class, new FrozenClock(now()->addDays(10)->toImmutable()));
+
+    $this->artisan('payments:verify-refunds')->expectsOutputToContain('aguardando: 1')->assertSuccessful();
+    expect($this->scenario->system(fn () => App\Models\Finance\PaymentRefund::query()->findOrFail($refund->id)->status))->toBe(App\Enums\Finance\RefundStatus::Verifying);
+});
+
+it('conta o prazo a partir da entrada em verificação, não do pedido', function (): void {
+    [, $refund] = unverifiedAsaasRefund($this);
+    // O pedido é antigo, mas a verificação começou agora (fila atrasada).
+    $this->scenario->system(fn () => DB::table('payment_refunds')->where('id', $refund->id)->update(['created_at' => now()->subDays(3)]));
+    $this->asaasResponse = static fn () => Http::response(['data' => []]);
+
+    $this->artisan('payments:verify-refunds')->expectsOutputToContain('aguardando: 1')->assertSuccessful();
+});
+
+it('respeita a conclusão manual e registra quando o gateway diverge', function (): void {
+    [, $refund] = unverifiedAsaasRefund($this);
+    // A equipe conclui como não efetivado enquanto a conferência consultava o gateway.
+    $this->scenario->tenant->actingAs($this->finance, fn () => app(App\Actions\Finance\Staff\RefundPayment::class)->resolve($refund->id, false));
+
+    $verify = app(App\Actions\Finance\System\VerifyRefunds::class);
+    $settle = Closure::bind(fn (...$args) => $this->settle(...$args), $verify, $verify);
+    $result = $settle(App\Support\Tenancy\ExecutionContext::system($this->scenario->tenant->organization->id), $refund->id, true,
+        new App\Services\Finance\Gateways\GatewayRefund(App\Enums\Finance\RefundOutcome::Done, 'ref_x'), 'conferência');
+
+    expect($result)->toBe('waiting')
+        ->and($this->scenario->system(fn () => App\Models\Finance\PaymentRefund::query()->findOrFail($refund->id)->status))->toBe(App\Enums\Finance\RefundStatus::Failed)
+        ->and($this->scenario->system(fn () => App\Models\Audit\AuditLog::query()->where('action', 'payment.refund_conflict')->count()))->toBe(1);
+});
+
+it('segue conferindo os demais quando um reembolso falha', function (): void {
+    [, $refund] = unverifiedAsaasRefund($this);
+    $broken = $this->scenario->system(function () use ($refund): string {
+        $copy = (array) DB::table('payment_refunds')->where('id', $refund->id)->first();
+        $copy['id'] = (string) Illuminate\Support\Str::uuid7();
+        // Valor acima do reservado: concluir viola a restrição do pagamento.
+        $copy['amount_cents'] = 50_000;
+        DB::table('payment_refunds')->insert($copy);
+
+        return $copy['id'];
+    });
+    $this->asaasResponse = static fn () => Http::response(['data' => [
+        ['id' => 'ref_1', 'description' => 'Fornevia reembolso '.$broken, 'status' => 'DONE'],
+        ['id' => 'ref_2', 'description' => 'Fornevia reembolso '.$refund->id, 'status' => 'DONE'],
+    ]]);
+
+    $this->artisan('payments:verify-refunds')->expectsOutputToContain('efetivados: 1; desfeitos: 0; aguardando: 0; com erro: 1.')->assertSuccessful();
+    expect($this->scenario->system(fn () => App\Models\Finance\PaymentRefund::query()->findOrFail($refund->id)->status))->toBe(App\Enums\Finance\RefundStatus::Done);
 });

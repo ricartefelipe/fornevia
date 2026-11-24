@@ -39,8 +39,8 @@ final class SimulatorGateway implements PaymentGateway
     }
 
     /** O simulador sempre efetiva o reembolso. */
-    public function refundOutcome(string $chargeId, string $reference): RefundOutcome
+    public function refundOutcome(string $chargeId, string $reference): GatewayRefund
     {
-        return RefundOutcome::Done;
+        return new GatewayRefund(RefundOutcome::Done, 'sim_refund_'.$reference);
     }
 }
