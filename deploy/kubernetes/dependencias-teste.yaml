@@ -1,0 +1,89 @@
+# PostgreSQL e Redis de TESTE para validar o chart em um cluster local
+# (scripts/k8s-smoke.sh). Uma réplica, sem backup e sem alta disponibilidade:
+# em produção, use serviços gerenciados ou operadores com réplica.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18.7-alpine3.24
+          env:
+            - {name: POSTGRES_USER, value: postgres}
+            - {name: FORNEVIA_DATABASES, value: fornevia}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: fornevia-teste-db, key: DB_SUPERUSER_PASSWORD}}
+            - name: FORNEVIA_OWNER_PASSWORD
+              valueFrom: {secretKeyRef: {name: fornevia-secrets, key: DB_OWNER_PASSWORD}}
+            - name: FORNEVIA_APP_PASSWORD
+              valueFrom: {secretKeyRef: {name: fornevia-secrets, key: DB_PASSWORD}}
+            - name: FORNEVIA_RELAY_PASSWORD
+              valueFrom: {secretKeyRef: {name: fornevia-secrets, key: DB_RELAY_PASSWORD}}
+          ports:
+            - {containerPort: 5432}
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "fornevia"]
+            periodSeconds: 3
+          volumeMounts:
+            - {name: init, mountPath: /docker-entrypoint-initdb.d}
+            - {name: data, mountPath: /var/lib/postgresql}
+      volumes:
+        - name: init
+          # Executável, como no compose: o entrypoint roda o script em processo próprio.
+          configMap: {name: fornevia-teste-db-init, defaultMode: 0755}
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: {app: postgres}
+  ports:
+    - {port: 5432}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: redis}
+  template:
+    metadata:
+      labels: {app: redis}
+    spec:
+      containers:
+        - name: redis
+          image: redis:8.8.4-alpine3.23
+          command: ["sh", "-c", "umask 077 && printf 'requirepass %s\\n' \"$REDIS_PASSWORD\" > /tmp/redis.conf && exec redis-server /tmp/redis.conf"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom: {secretKeyRef: {name: fornevia-secrets, key: REDIS_PASSWORD}}
+          ports:
+            - {containerPort: 6379}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+            periodSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector: {app: redis}
+  ports:
+    - {port: 6379}

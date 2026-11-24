@@ -901,3 +901,44 @@ distribuidor mantém o isolamento entre tenants também no recebimento.
 - A elevação continua restrita: só para o contexto de sistema do mesmo
   tenant e depois da autorização da Action.
 
+
+## ADR-032 — Alta disponibilidade em Kubernetes com chart Helm
+
+**Status:** aceita (complementa a implantação de referência em um único host)
+
+**Decisão.**
+- A implantação com alta disponibilidade é um chart Helm
+  (`deploy/helm/fornevia`) com as mesmas imagens `prod` e `web` do
+  `compose.prod.yaml`: PHP-FPM e nginx em Deployments separados, com
+  autoescala por CPU (2 a 8 e 2 a 6 réplicas), Horizon e relay da outbox
+  com duas réplicas e o scheduler com uma.
+- O scheduler fica com uma réplica e estratégia `Recreate`; as tarefas já
+  usam `onOneServer` e `withoutOverlapping` com travas no Redis, que
+  protegem contra duas instâncias durante a troca de pod. O relay da outbox
+  reivindica mensagens com `SKIP LOCKED` e roda com várias réplicas.
+- Migrations rodam num Job de hook `pre-install`/`pre-upgrade`, com o papel
+  de manutenção, antes de qualquer pod da nova versão. Por isso toda
+  migration precisa ser compatível com a versão anterior, que continua
+  atendendo durante o rollout, e o rollback não desfaz migrations.
+- PostgreSQL, Redis, certificado TLS e controlador de Ingress ficam fora do
+  chart: a alta disponibilidade deles depende do provedor (serviço
+  gerenciado ou operador) e não deve ser reimplementada pela aplicação.
+- Rollout com `maxUnavailable: 0`, espera de 5 s antes do encerramento,
+  PodDisruptionBudget com `minAvailable: 1` e distribuição entre nós. A
+  prontidão do nginx usa `/health/ready` (PHP, banco, Redis); a vivacidade
+  usa só a porta, para que a falha de uma dependência não reinicie os
+  proxies.
+- Arquivos enviados ficam num volume `ReadWriteMany` compartilhado; o
+  restante do sistema de arquivos é somente leitura, com `emptyDir` para os
+  caches locais de cada pod.
+- O chart é verificado com `helm lint --strict`, validação de esquema
+  (kubeconform) e um teste em k3s local (`scripts/k8s-smoke.sh`) que remove
+  um pod e faz um `helm upgrade` sob requisições contínuas, sem aceitar
+  nenhuma falha.
+
+**Consequências.**
+- A perda de um nó ou de um pod e a atualização de versão não interrompem
+  o atendimento, desde que banco e Redis também sejam redundantes.
+- Migrations destrutivas passam a exigir duas versões (expandir e depois
+  contrair), o que já era a prática recomendada no runbook de implantação.
+- O `compose.prod.yaml` continua como referência para um único host.

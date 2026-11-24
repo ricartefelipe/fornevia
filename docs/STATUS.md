@@ -20,8 +20,9 @@ Limitações conhecidas (atualizadas na versão 1.1.0):
 - API v1 sem criação de pedidos: depende de definir o comprador
   responsável e a aplicação das regras de aprovação interna a pedidos
   vindos do ERP do distribuidor.
-- Implantação de referência em um único host; alta disponibilidade e TLS
-  ficam com a infraestrutura à frente do serviço web.
+- Alta disponibilidade em Kubernetes pelo chart Helm, verificada em k3s
+  local de um nó; não houve teste em cluster gerenciado com vários nós. A
+  redundância do PostgreSQL e do Redis e o TLS ficam com o provedor.
 - Aprovação humana nas proteções de branch não exigida (mantenedor único);
   os checks automatizados são obrigatórios.
 

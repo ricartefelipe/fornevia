@@ -26,6 +26,8 @@ RUN apk upgrade --no-cache \
     && apk add --no-cache fcgi tini
 COPY docker/php/conf.d/app.ini /usr/local/etc/php/conf.d/zz-app.ini
 COPY docker/php/php-fpm.d/zz-app.conf /usr/local/etc/php-fpm.d/zz-app.conf
+# Processos do FPM por contêiner (o chart reduz por pod, com várias réplicas).
+ENV FPM_MAX_CHILDREN=20
 WORKDIR /var/www/html
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["php-fpm"]
