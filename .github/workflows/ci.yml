@@ -360,3 +360,23 @@ jobs:
       - name: Verificar que a imagem não contém segredos de desenvolvimento
         run: |
           docker run --rm --entrypoint sh fornevia-app:ci -c 'test ! -f /var/www/html/.env && test ! -d /var/www/html/tests'
+      - name: Implantação de referência (compose.prod.yaml)
+        env:
+          FORNEVIA_IMAGE: fornevia-app
+          FORNEVIA_WEB_IMAGE: fornevia-web
+          FORNEVIA_TAG: ci
+          WEB_PORT: '18080'
+        run: |
+          sed -e "s|^APP_KEY=$|APP_KEY=base64:$(openssl rand -base64 32)|" \
+            -e 's/^DB_PASSWORD=$/DB_PASSWORD=app-ci/' -e 's/^DB_OWNER_PASSWORD=$/DB_OWNER_PASSWORD=owner-ci/' \
+            -e 's/^DB_RELAY_PASSWORD=$/DB_RELAY_PASSWORD=relay-ci/' -e 's/^DB_SUPERUSER_PASSWORD=$/DB_SUPERUSER_PASSWORD=super-ci/' \
+            -e 's/^REDIS_PASSWORD=$/REDIS_PASSWORD=redis-ci/' -e 's|^APP_URL=.*|APP_URL=http://localhost:18080|' \
+            .env.production.example > .env.production
+          C="docker compose -f compose.prod.yaml --env-file .env.production"
+          $C config --quiet
+          $C up -d --no-build postgres redis
+          $C run --rm migrate
+          $C up -d --no-build --wait app web horizon outbox scheduler
+          curl -fsS -H 'Host: localhost:18080' http://127.0.0.1:18080/health/ready
+          curl -fsS -o /dev/null -H 'Host: localhost:18080' http://127.0.0.1:18080/login
+          $C down -v
