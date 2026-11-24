@@ -77,6 +77,7 @@ chave, backup, outbox, gateway e alertas em [docs/runbooks](docs/runbooks/README
 - [Arquitetura](docs/ARQUITETURA.md)
 - [Decisões](docs/DECISOES.md)
 - [Status da implementação](docs/STATUS.md)
+- [Rastreabilidade dos requisitos](docs/RASTREABILIDADE.md)
 - [Runbooks de operação](docs/runbooks/README.md)
 - [Contrato da API v1 (OpenAPI)](docs/openapi.json)
 - [Contribuição e GitFlow](CONTRIBUTING.md)
