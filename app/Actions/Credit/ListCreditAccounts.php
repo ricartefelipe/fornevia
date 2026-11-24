@@ -6,6 +6,7 @@ namespace App\Actions\Credit;
 
 use App\Data\Credit\CreditAccountFilters;
 use App\Data\Credit\CreditAccountSummary;
+use App\Domain\Shared\Cnpj;
 use App\Enums\Credit\CreditAccountStatus;
 use App\Enums\Identity\Permission;
 use App\Models\Buyers\BuyerCompany;
@@ -99,9 +100,9 @@ final readonly class ListCreditAccounts
         }
 
         $like = '%'.addcslashes($term, '\\%_').'%';
-        $digits = (string) preg_replace('/\D/', '', $term);
-        // Busca por CNPJ quando o termo tem apenas dígitos e pontuação do documento.
-        $byDocument = $digits !== '' && preg_match('/^[\d.\/\s-]+$/u', $term) === 1;
+        // Busca por CNPJ (numérico ou alfanumérico) quando o termo parece um documento.
+        $digits = (string) Cnpj::searchKey($term);
+        $byDocument = $digits !== '';
 
         $query->where(static function (Builder $query) use ($like, $digits, $byDocument): void {
             $query->where('buyer_companies.legal_name', 'ilike', $like)->orWhere('buyer_companies.trade_name', 'ilike', $like);

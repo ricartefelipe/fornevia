@@ -6,6 +6,7 @@ namespace App\Livewire\Staff\Buyers;
 
 use App\Actions\Buyers\SaveBuyerCompany;
 use App\Domain\Shared\BusinessRuleViolation;
+use App\Domain\Shared\Cnpj;
 use App\Enums\Buyers\BuyerCompanyStatus;
 use App\Enums\Identity\Permission;
 use App\Livewire\Staff\Buyers\Forms\BuyerCompanyForm;
@@ -121,9 +122,9 @@ final class BuyersIndex extends Component
 
         if ($term !== '') {
             $like = '%'.addcslashes($term, '\\%_').'%';
-            $digits = (string) preg_replace('/\D/', '', $term);
-            // Busca por CNPJ quando o termo tem apenas dígitos e pontuação do documento.
-            $byDocument = $digits !== '' && preg_match('/^[\d.\/\s-]+$/u', $term) === 1;
+            // Busca por CNPJ (numérico ou alfanumérico) quando o termo parece um documento.
+            $digits = (string) Cnpj::searchKey($term);
+            $byDocument = $digits !== '';
 
             $query->where(static function (Builder $query) use ($like, $digits, $byDocument): void {
                 $query->where('legal_name', 'ilike', $like)->orWhere('trade_name', 'ilike', $like);

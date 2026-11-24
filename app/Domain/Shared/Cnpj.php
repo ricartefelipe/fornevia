@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Shared;
 
 /**
- * CNPJ com validação dos dígitos verificadores. Armazenado só com dígitos.
+ * CNPJ com validação dos dígitos verificadores, no formato numérico e no
+ * alfanumérico emitido pela Receita Federal a partir de julho de 2026: 12
+ * caracteres de raiz e ordem (0-9 e A-Z) e 2 dígitos verificadores
+ * numéricos, calculados pelo módulo 11 com o valor de cada caractere igual
+ * ao código ASCII menos 48. Armazenado sem pontuação, em maiúsculas.
  */
 final readonly class Cnpj
 {
@@ -13,7 +17,7 @@ final readonly class Cnpj
 
     public static function fromString(string $value): self
     {
-        $digits = preg_replace('/\D/', '', $value) ?? '';
+        $digits = self::normalize($value);
 
         if (! self::isValid($digits)) {
             throw new InvalidDocument('CNPJ inválido.', ['field' => 'document']);
@@ -24,7 +28,7 @@ final readonly class Cnpj
 
     public static function isValid(string $digits): bool
     {
-        if (preg_match('/^\d{14}$/D', $digits) !== 1 || preg_match('/^(\d)\1{13}$/D', $digits) === 1) {
+        if (preg_match('/^[0-9A-Z]{12}\d{2}$/D', $digits) !== 1 || preg_match('/^(\d)\1{13}$/D', $digits) === 1) {
             return false;
         }
 
@@ -38,11 +42,11 @@ final readonly class Cnpj
     }
 
     /**
-     * Formata 14 dígitos já persistidos, sem revalidar.
+     * Formata os 14 caracteres já persistidos, sem revalidar.
      */
     public static function format(string $digits): string
     {
-        if (preg_match('/^\d{14}$/D', $digits) !== 1) {
+        if (preg_match('/^[0-9A-Z]{12}\d{2}$/D', $digits) !== 1) {
             return $digits;
         }
 
@@ -64,11 +68,31 @@ final readonly class Cnpj
         $sum = 0;
 
         foreach (str_split($base) as $i => $char) {
-            $sum += (int) $char * $weights[$i];
+            $sum += (ord($char) - 48) * $weights[$i];
         }
 
         $rest = $sum % 11;
 
         return (string) ($rest < 2 ? 0 : 11 - $rest);
+    }
+
+    /** Sem pontuação nem espaços, em maiúsculas. */
+    public static function normalize(string $value): string
+    {
+        return mb_strtoupper((string) preg_replace('/[\s.\/-]+/u', '', $value));
+    }
+
+    /**
+     * Chave para buscar pelo documento quando o termo parece um CNPJ (letras,
+     * números e a pontuação do documento, com ao menos um número); null
+     * quando não parece.
+     */
+    public static function searchKey(string $term): ?string
+    {
+        if (preg_match('/^[0-9A-Za-z.\/\s-]+$/D', $term) !== 1 || preg_match('/\d/', $term) !== 1) {
+            return null;
+        }
+
+        return self::normalize($term);
     }
 }

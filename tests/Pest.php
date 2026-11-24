@@ -10,8 +10,10 @@ use Tests\TestCase;
 /*
 | Unit: regras puras, sem Laravel, banco, Redis ou rede.
 | Feature/Integration/Concurrency: aplicação + PostgreSQL real.
+| Browser: Chrome real contra um servidor da aplicação (phpunit.browser.xml).
 */
 pest()->extend(TestCase::class)->in('Feature', 'Integration', 'Concurrency');
+pest()->extend(Tests\Browser\BrowserTestCase::class)->in('Browser');
 
 /**
  * Executa o callback no contexto de sistema do tenant (transação com RLS).

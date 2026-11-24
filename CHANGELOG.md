@@ -12,6 +12,15 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   pendente e idade da mensagem mais antiga, jobs com falha e conflitos de
   concorrência no banco.
 - Tela de auditoria com filtros por ação, autor, registro e período.
+- Testes de navegador (Dusk) dos fluxos de login, compra pelo catálogo e
+  carrinho e lista de pedidos da equipe, na CI e no ambiente local.
+- Testes de mutação do domínio na CI, com nota mínima de 90%.
+
+### Alterado
+
+- CNPJ alfanumérico da Receita Federal (a partir de julho de 2026) aceito
+  no cadastro de distribuidores e compradores, na importação CSV, nas
+  buscas e na API; os CNPJs numéricos continuam válidos.
 
 ## [0.4.0] - 2026-11-24
 

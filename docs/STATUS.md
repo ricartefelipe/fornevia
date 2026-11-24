@@ -579,3 +579,42 @@ webhooks foi verificado com HTTP simulado, sem chamada a um receptor real.
 - Opções de filtro da auditoria recalculadas sobre o histórico inteiro a
   cada interação; identificador com espaços ignorado no filtro.
 
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Testes da tela de auditoria e do endpoint de métricas | aprovados; os 6 de regressão da revisão falham sem a correção correspondente |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| Suíte completa na CI do PR #23, commit `76b7d8f` | 2.354 testes e 11.524 asserções aprovados; cobertura de linhas total 94,5%, núcleo 97,32%, caminhos críticos 100% |
+
+## Incremento 12 — Navegador e mutação (`feature/navegador-mutacao`)
+
+### Implementado
+
+- Testes de navegador (Dusk) com Chrome real: recusa de senha errada,
+  compra pelo catálogo e carrinho até a confirmação do pedido e filtro ao
+  vivo da lista de pedidos da equipe; servidor da aplicação separado sobre
+  o banco `fornevia_browser` (ADR-030).
+- Job de navegador na CI (Chrome e ChromeDriver do runner) e script local
+  com o Selenium do perfil `browser`.
+- Testes de mutação do domínio e do leitor de CSV na CI, com nota mínima
+  de 90% no código coberto; testes unitários novos de fronteira (limites,
+  igualdade, sinal, espaços), mensagens e detalhes de recusa, campos de
+  cadastro e dígito verificador do CNPJ contra implementação de referência.
+- CNPJ alfanumérico aceito em cadastro, importação, buscas e API, com
+  migration que ajusta as restrições do banco.
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Teste de compra pelo catálogo esperava um texto que já estava na página
+  e seguia para o carrinho antes de o item ser gravado (instável).
+- Servidor e ChromeDriver da CI e do script local sem conferência de que
+  subiram; servidor com chave da aplicação e prefixo do Redis diferentes
+  dos do processo de teste.
+- Testes do mesmo arquivo compartilhavam a sessão do navegador.
+- Argumentos do script local reinterpretados pelo shell.
+- ADR-030 descrevia o critério de mutação de forma mais rígida do que o
+  aplicado.
+- CNPJ alfanumérico (emitido desde julho de 2026) recusado no cadastro de
+  compradores e de distribuidores (preexistente).
+

@@ -217,3 +217,19 @@ it('trata grupo de outro distribuidor escolhido na tela como inexistente', funct
 
     expect(($this->companies)())->toBe([]);
 });
+
+it('busca pelo CNPJ alfanumérico, com ou sem pontuação e em minúsculas', function (): void {
+    $this->tenant->addBuyerCompany(['trade_name' => 'Construtora Serra Azul']);
+    $this->tenant->addBuyerCompany(['trade_name' => 'Distribuidora Nova', 'document' => '12ABC34501DE35']);
+
+    Fixtures::livewireAs($this->tenant, $this->manager, static function (): void {
+        Livewire::test(BuyersIndex::class)
+            ->set('search', '12.ABC.345/01DE-35')
+            ->assertSee('Distribuidora Nova')
+            ->assertSee('12.ABC.345/01DE-35')
+            ->assertDontSee('Construtora Serra Azul')
+            ->set('search', '12abc345')
+            ->assertSee('Distribuidora Nova')
+            ->assertDontSee('Construtora Serra Azul');
+    });
+});

@@ -41,7 +41,7 @@ trait InteractsWithPricingForms
 
         if ($term !== '') {
             $like = '%'.self::escapeLike($term).'%';
-            $digits = (string) preg_replace('/\D/', '', $term);
+            $digits = (string) Cnpj::searchKey($term);
 
             $query->where(static function (Builder $q) use ($like, $digits): void {
                 $q->where('trade_name', 'ilike', $like)->orWhere('legal_name', 'ilike', $like);
