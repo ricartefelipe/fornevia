@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Livewire\Staff\Pricing\FreightIndex;
 use App\Livewire\Staff\Pricing\NegotiatedPricesIndex;
 use App\Livewire\Staff\Pricing\PaymentTermsIndex;
 use App\Livewire\Staff\Pricing\PriceListEdit;
@@ -22,4 +23,5 @@ Route::middleware('permission:pricing.view')->prefix('precos')->name('pricing.')
     Route::livewire('/condicoes-negociadas', NegotiatedPricesIndex::class)->name('negotiated');
     Route::livewire('/condicoes-de-pagamento', PaymentTermsIndex::class)->name('payment-terms');
     Route::livewire('/simulador', PriceSimulator::class)->name('simulator');
+    Route::livewire('/frete', FreightIndex::class)->name('freight');
 });

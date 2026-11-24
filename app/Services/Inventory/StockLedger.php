@@ -6,6 +6,7 @@ namespace App\Services\Inventory;
 
 use App\Data\Inventory\ReservationOutcome;
 use App\Data\Inventory\ReservationRequest;
+use App\Domain\Fulfillment\Exceptions\ShipmentNotAllowed;
 use App\Domain\Inventory\StockAllocator;
 use App\Domain\Inventory\WarehouseStock;
 use App\Domain\Shared\Quantity;
@@ -193,7 +194,10 @@ final readonly class StockLedger
         return $reservations->count();
     }
 
-    public function releaseForOrderItem(string $orderItemId, Quantity $quantity, string $reason, string $referenceType, string $referenceId): Quantity
+    /**
+     * @param  array<string, Quantity>  $keep  warehouse_id => quantidade base que continua reservada (remessas em separação)
+     */
+    public function releaseForOrderItem(string $orderItemId, Quantity $quantity, string $reason, string $referenceType, string $referenceId, array $keep = []): Quantity
     {
         $this->assertInTransaction();
         $remaining = $quantity;
@@ -212,7 +216,10 @@ final readonly class StockLedger
             }
 
             $open = $reservation->quantity->minus($reservation->quantity_consumed)->minus($reservation->quantity_released);
-            $release = Quantity::min($open, $remaining);
+            // Parte da reserva do depósito comprometida com remessas em separação.
+            $kept = Quantity::min($open, $keep[$reservation->warehouse_id] ?? Quantity::zero());
+            $keep[$reservation->warehouse_id] = ($keep[$reservation->warehouse_id] ?? Quantity::zero())->minus($kept);
+            $release = Quantity::min($open->minus($kept), $remaining);
 
             if (! $release->isPositive()) {
                 continue;
@@ -231,6 +238,59 @@ final readonly class StockLedger
         }
 
         return $quantity->minus($remaining);
+    }
+
+    /**
+     * Expedição (RN-073): consome reservas ativas do item no depósito, até a
+     * quantidade base informada, baixando físico e reservado juntos. O
+     * chamador já bloqueou os saldos (lockLevels). Quantidade sem reserva
+     * suficiente no depósito é recusada.
+     */
+    public function consumeForOrderItem(string $orderItemId, string $warehouseId, Quantity $baseQuantity, string $referenceType, string $referenceId): void
+    {
+        $this->assertInTransaction();
+        $remaining = $baseQuantity;
+
+        $reservations = StockReservation::query()
+            ->where('order_item_id', $orderItemId)
+            ->where('warehouse_id', $warehouseId)
+            ->where('status', ReservationStatus::Active->value)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($reservations as $reservation) {
+            if (! $remaining->isPositive()) {
+                break;
+            }
+
+            $open = $reservation->quantity->minus($reservation->quantity_consumed)->minus($reservation->quantity_released);
+            $take = Quantity::min($open, $remaining);
+
+            if (! $take->isPositive()) {
+                continue;
+            }
+
+            $consumed = $reservation->quantity_consumed->plus($take);
+            $reservation->forceFill([
+                'quantity_consumed' => $consumed,
+                'status' => $consumed->plus($reservation->quantity_released)->equals($reservation->quantity) ? ReservationStatus::Consumed : ReservationStatus::Active,
+            ])->save();
+
+            $this->movement(StockMovementType::Shipment, $warehouseId, $reservation->sku_id, $take, $reservation->id, $referenceType, $referenceId, null);
+            $remaining = $remaining->minus($take);
+        }
+
+        if ($remaining->isPositive()) {
+            throw new ShipmentNotAllowed('O item não tem mais reserva suficiente no depósito desta remessa. Cancele a separação e abra outra remessa.');
+        }
+    }
+
+    /** Entrada por devolução aprovada (RF-091). */
+    public function receiveReturn(string $warehouseId, string $skuId, Quantity $quantity, string $referenceId, string $reason): void
+    {
+        $this->assertInTransaction();
+        $this->movement(StockMovementType::ReturnReceipt, $warehouseId, $skuId, $quantity, null, 'return_request', $referenceId, $reason);
     }
 
     public function receive(string $warehouseId, string $skuId, Quantity $quantity, string $reason, string $referenceType = 'manual', ?string $referenceId = null): void

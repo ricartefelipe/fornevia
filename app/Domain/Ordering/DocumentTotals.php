@@ -30,4 +30,18 @@ final readonly class DocumentTotals
 
         return new self($gross, $gross->minus($net), $freight, $net->plus($freight));
     }
+
+    /** Mesmos itens com o frete informado no lugar do atual. */
+    public function withFreight(Money $freight): self
+    {
+        $net = $this->subtotal->minus($this->discount);
+
+        return new self($this->subtotal, $this->discount, $freight, $net->plus($freight));
+    }
+
+    /** Subtotal líquido dos itens (sem frete), base da isenção de frete. */
+    public function itemsNet(): Money
+    {
+        return $this->subtotal->minus($this->discount);
+    }
 }

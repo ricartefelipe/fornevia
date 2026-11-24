@@ -193,7 +193,7 @@
                         <dt class="text-slate-600">Descontos</dt>
                         <dd class="text-right">{{ $order->discount_cents->format() }}</dd>
                         <dt class="text-slate-600">Frete</dt>
-                        <dd class="text-right">{{ $order->freight_cents->isZero() ? 'A combinar' : $order->freight_cents->format() }}</dd>
+                        <dd class="text-right">{{ $order->freight_cents->isZero() ? 'Sem frete' : $order->freight_cents->format() }}</dd>
                         <dt class="font-semibold text-slate-900">Total</dt>
                         <dd class="text-right text-lg font-semibold text-slate-900">{{ $order->total_cents->format() }}</dd>
                     </dl>
@@ -228,6 +228,54 @@
                             Cancelar o pedido
                         </x-ui.button>
                     </form>
+                </section>
+            @endif
+
+            @if ($shipments->isNotEmpty())
+                <section class="fv-card p-5" aria-labelledby="pedido-entregas">
+                    <h2 id="pedido-entregas" class="text-lg font-semibold">Entregas</h2>
+                    <ul class="mt-3 space-y-4 text-sm">
+                        @foreach ($shipments as $shipment)
+                            <li wire:key="remessa-{{ $shipment->id }}">
+                                <p class="font-medium">Remessa {{ $shipment->number }} · {{ $shipment->status->label() }}</p>
+                                @if ($shipment->carrier)
+                                    <p class="text-slate-700">{{ $shipment->carrier }}{{ $shipment->tracking_code ? ' · rastreamento '.$shipment->tracking_code : '' }}</p>
+                                @endif
+                                <p class="text-slate-700">{{ $shipment->items->map(fn ($i) => ($order->items->firstWhere('id', $i->order_item_id)?->sku_code).': '.($i->quantity_checked ?? $i->quantity)->format())->implode('; ') }}</p>
+                                @if ($shipment->events->isNotEmpty())
+                                    <ol class="mt-1 space-y-1 text-xs text-slate-600">
+                                        @foreach ($shipment->events as $event)
+                                            <li wire:key="evento-{{ $event->id }}">{{ $event->kind->label() }} · {{ $event->occurred_at->setTimezone((string) config('app.business_timezone'))->format('d/m/Y H:i') }}{{ $event->description ? ' · '.$event->description : '' }}</li>
+                                        @endforeach
+                                    </ol>
+                                @endif
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endif
+
+            @if ($returns->isNotEmpty() || $canRequestReturn)
+                <section class="fv-card p-5" aria-labelledby="pedido-devolucao">
+                    <h2 id="pedido-devolucao" class="text-lg font-semibold">Devolução</h2>
+                    @foreach ($returns as $return)
+                        <p class="mt-2 text-sm" wire:key="devolucao-{{ $return->id }}">
+                            <a href="{{ route('portal.returns.show', $return->id) }}" class="font-medium text-blue-800 underline">{{ $return->number }}</a> · {{ $return->status->label() }}
+                        </p>
+                    @endforeach
+                    @if ($canRequestReturn)
+                        <form wire:submit="requestReturn" class="mt-4 space-y-3" novalidate>
+                            <p class="text-sm text-slate-700">Informe o que quer devolver do que foi entregue. Envie os itens só depois da autorização do distribuidor.</p>
+                            @foreach ($order->items as $item)
+                                @if ($item->returnable()->isPositive())
+                                    <x-ui.input :label="$item->sku_code.' (até '.$item->returnable()->format().' '.$item->unit_code.')'" name="returnQuantities.{{ $item->id }}" inputmode="decimal" maxlength="21" wire:model="returnQuantities.{{ $item->id }}" wire:key="devolver-{{ $item->id }}" />
+                                @endif
+                            @endforeach
+                            <x-ui.select label="Motivo" name="returnReasonCode" :options="$returnReasons" placeholder="Escolha o motivo" wire:model="returnReasonCode" required />
+                            <x-ui.textarea label="Descreva o problema" name="returnReason" rows="3" maxlength="1000" wire:model="returnReason" required />
+                            <x-ui.button type="submit" variant="secondary" wire:loading.attr="disabled" wire:target="requestReturn">Pedir devolução</x-ui.button>
+                        </form>
+                    @endif
                 </section>
             @endif
 

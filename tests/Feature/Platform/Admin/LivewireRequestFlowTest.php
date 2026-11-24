@@ -24,11 +24,7 @@ use Tests\TestCase;
 
 function fluxoSnapshot(TestResponse $page): string
 {
-    if (preg_match('/wire:snapshot="([^"]+)"/', (string) $page->getContent(), $match) !== 1) {
-        throw new RuntimeException('Snapshot do componente não encontrado na página.');
-    }
-
-    return html_entity_decode($match[1], ENT_QUOTES | ENT_HTML5);
+    return Tests\Support\LivewireSnapshot::page($page);
 }
 
 /**

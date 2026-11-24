@@ -150,6 +150,11 @@ final readonly class StaffOrderDetail
             'order.confirmed' => 'Pedido confirmado',
             'order.items_cancelled' => 'Itens cancelados',
             'order.cancelled' => 'Pedido cancelado',
+            'order.shipment_created' => 'Separação iniciada',
+            'order.shipment_cancelled' => 'Separação cancelada',
+            'order.shipped' => 'Remessa expedida',
+            'order.delivered' => 'Remessa entregue',
+            'order.return_requested' => 'Devolução pedida',
             default => OrderApprovalSummary::EVENT_LABELS[$event->type] ?? $event->type,
         };
     }

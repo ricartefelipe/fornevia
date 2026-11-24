@@ -228,6 +228,7 @@ tabelas da outbox) reivindica mensagens com `FOR UPDATE SKIP LOCKED` e
 lease, despacha jobs para o Redis e registra a publicação. Consumidores são
 idempotentes (`outbox_consumptions` com unique por mensagem e handler).
 Entrega é *at-least-once*; não há promessa de exatamente uma vez.
+Relay, consumo e notificações: ADR-026.
 
 ---
 
@@ -603,3 +604,104 @@ apagaria o desconto negociado. Aceitar convertendo elimina o estado
 RN-060). Política e custo ficam fora do alcance do comprador (ADR-020), e o
 ledger mantém um só saldo verdadeiro (ADR-005).
 
+
+---
+
+## ADR-026 — Relay da outbox, consumidores idempotentes e notificações
+
+**Status:** aceita
+
+**Decisão.**
+- O relay (`php artisan outbox:relay`, papel `fornevia_relay`) reivindica
+  lotes de mensagens pendentes e disponíveis com `FOR UPDATE SKIP LOCKED`,
+  gravando lease (dono e prazo) e tentativa numa transação curta. Fora dela,
+  despacha um job por mensagem para a fila declarada pelos consumidores do
+  tipo e marca a mensagem como publicada, conferindo o dono do lease. Lease
+  vencido volta a ser reivindicado; mensagem sem consumidor é marcada como
+  publicada sem despacho.
+- Falha ao despachar fica em `outbox_failures` (etapa `publish`), com nova
+  disponibilidade por backoff exponencial limitado. Depois do máximo de
+  tentativas, a mensagem fica `dead`, consultável e reenviável por comando
+  (`outbox:retry`).
+- O consumo roda no worker, no contexto de sistema do tenant da mensagem.
+  Cada consumidor roda em transação própria e registra
+  `outbox_consumptions` (único por mensagem e consumidor) antes de agir:
+  repetição da mensagem não repete o efeito. Falha desfaz o consumo; o job
+  tenta de novo com backoff e, esgotado, registra a falha (etapa
+  `consume`) e deixa a mensagem `dead`, reenviável por `outbox:retry`.
+- Destinatário precisa ainda ter a permissão da tela do aviso; aprovadores
+  que já decidiram o nível e os delegados deles não são avisados.
+- Notificações são um consumidor: os destinatários são calculados no
+  consumo, pelo estado atual (aprovadores do nível pendente com delegações
+  vigentes, solicitante da cotação, representante da carteira ou quem tem a
+  permissão). A notificação no sistema (`user_notifications`, única por
+  mensagem e associação) é visível só ao próprio usuário (RLS) e só tem a
+  data de leitura gravável. O e-mail sai depois do commit, uma vez por
+  notificação criada, salvo se a pessoa desligou o e-mail no contexto.
+- Eventos do pedido que pedem ação de alguém (envio para aprovação, nível
+  aprovado, reavaliação, reatribuição, rejeição, confirmação pendente) são
+  registrados também na outbox, na mesma transação do evento.
+- O próprio relay apaga, periodicamente, mensagens publicadas além do prazo
+  de retenção; mensagens `dead` ficam até serem reenviadas ou analisadas.
+
+**Motivo.** O ADR-008 garante que nenhum evento se perde entre o commit e a
+publicação, mas sem relay e consumidores os eventos não chegam a ninguém.
+Lease com `SKIP LOCKED` permite mais de um relay sem publicação dupla no
+caminho normal; a entrega continua pelo menos uma vez, e a idempotência
+fica no consumidor. Calcular destinatários no consumo evita notificar quem
+perdeu a permissão, e a tabela de notificações do próprio sistema mantém o
+isolamento por tenant e por pessoa.
+
+---
+
+## ADR-027 — Remessas que consomem a reserva, entrega por eventos idempotentes, devolução com inspeção e frete explícito
+
+**Status:** aceita
+
+**Decisão.**
+- A remessa pertence a um pedido confirmado e a um depósito. Nasce em
+  separação, com itens e quantidades; a conferência registra a quantidade
+  conferida de cada item; a expedição grava transportadora e rastreamento.
+- Na expedição, sob o lock do pedido e dos saldos (ADR-006), a quantidade
+  conferida consome as reservas ativas do item naquele depósito
+  (movimento `shipment`, que baixa físico e reservado juntos). Quantidade
+  sob encomenda sem reserva precisa ser reservada antes, pelo caminho
+  normal da reserva. A remessa expedida não volta a ser expedida (situação
+  e trigger) e o pedido passa a parcialmente expedido ou expedido.
+- A soma das remessas não canceladas de um item nunca passa do pedido
+  menos o cancelado (trigger), e o cancelamento de itens só alcança o que
+  ainda não está em remessa.
+- Entrega e ocorrências chegam como eventos da remessa, com identificador
+  externo único por remessa: evento repetido é ignorado. A situação só
+  avança (expedida → entregue); evento mais antigo que o último aplicado
+  fica no histórico sem mudar a situação. A entrega soma a quantidade
+  entregue de cada item.
+- Devolução é pedida pelo comprador sobre o que foi entregue (descontado o
+  que já está em devolução aberta), autorizada ou recusada pela equipe,
+  recebida no depósito e, quando a inspeção é exigida, só volta ao
+  disponível depois de aprovada (movimento `return_receipt`). Item
+  reprovado não volta ao estoque. O valor a devolver fica registrado para o
+  financeiro.
+- Frete é explícito no pedido (`freight_cents`), calculado no checkout por
+  regra do distribuidor (por UF do endereço de entrega, com valor fixo e
+  isenção a partir de um subtotal) ou por condição negociada da empresa
+  compradora (isento ou valor fixo), e exibido como frete do distribuidor,
+  nunca como cotação de transportadora. Na reavaliação da aprovação
+  interna, que reprecifica os itens, o frete é recalculado pela regra
+  vigente para o novo subtotal. Pedido de cotação usa o frete da proposta
+  (zero quando não negociado).
+- O cancelamento de itens não libera a parte da reserva comprometida com
+  remessas em separação de cada depósito.
+- Tabelas de expedição e devolução são somente leitura no contexto de
+  comprador (ADR-024); o pedido de devolução do comprador é gravado no
+  contexto de sistema do mesmo usuário.
+
+**Motivo.** RN-073 exige que a expedição consuma a reserva e reduza o
+físico atomicamente, sem duplicidade; consumir a reserva no ledger mantém
+um único saldo verdadeiro (ADR-005). RN-090 é garantida no banco pelos
+CHECKs por item e pelas somas das remessas. Eventos de transportadora
+chegam repetidos e fora de ordem (RN-091): identificador único e avanço
+monotônico da situação evitam regressões. A inspeção antes do retorno ao
+disponível (RF-091) impede vender item avariado. O frete calculado no
+servidor e rotulado como do distribuidor atende RF-092 sem prometer preço
+de transportadora.

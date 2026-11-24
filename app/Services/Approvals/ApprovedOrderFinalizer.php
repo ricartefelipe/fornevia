@@ -23,6 +23,7 @@ use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderItem;
 use App\Models\Pricing\PaymentTerm;
 use App\Models\Quotes\QuoteItem;
+use App\Services\Fulfillment\FreightQuoter;
 use App\Services\Ordering\CheckoutReferences;
 use App\Services\Ordering\OrderConfirmation;
 use App\Services\Ordering\PurchaseEligibility;
@@ -69,6 +70,7 @@ final readonly class ApprovedOrderFinalizer
         private ApprovalRuleResolver $rules,
         private PurchaseEligibility $eligibility,
         private CheckoutReferences $references,
+        private FreightQuoter $freight,
         private Clock $clock,
     ) {}
 
@@ -245,7 +247,11 @@ final readonly class ApprovedOrderFinalizer
             ])->save();
         }
 
-        $totals = DocumentTotals::of($amounts);
+        // O frete segue a regra vigente para o novo subtotal (ADR-027), como os preços.
+        $itemsNet = DocumentTotals::of($amounts)->itemsNet();
+        $state = $order->shipping_address['state'] ?? null;
+        $freight = $this->freight->quote(BuyerCompany::query()->findOrFail($order->buyer_company_id), is_string($state) ? $state : null, $itemsNet);
+        $totals = DocumentTotals::of($amounts, $freight->amount);
         $now = $this->clock->now();
 
         DB::table('order_approval_decisions')

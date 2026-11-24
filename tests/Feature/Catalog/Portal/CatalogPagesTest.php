@@ -279,8 +279,7 @@ it('refaz a autorização nas ações do componente após a perda da permissão'
 
 it('reaplica a permissão nas atualizações do Livewire pelo endpoint real', function (): void {
     $page = ($this->page)(route('portal.catalog.product', $this->cement->id))->assertOk();
-    preg_match('/wire:snapshot="([^"]+)"/', (string) $page->getContent(), $match);
-    $snapshot = html_entity_decode($match[1] ?? '', ENT_QUOTES | ENT_HTML5);
+    $snapshot = Tests\Support\LivewireSnapshot::page($page);
 
     $update = function () use ($snapshot): TestResponse {
         app()->forgetScopedInstances();

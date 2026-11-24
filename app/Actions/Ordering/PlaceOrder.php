@@ -18,6 +18,7 @@ use App\Models\Buyers\BuyerCompany;
 use App\Models\Ordering\Cart;
 use App\Models\Ordering\Order;
 use App\Services\Audit\AuditRecorder;
+use App\Services\Fulfillment\FreightQuoter;
 use App\Services\Ordering\CartPricing;
 use App\Services\Ordering\CheckoutReferences;
 use App\Services\Ordering\OrderPlacement;
@@ -56,6 +57,7 @@ final readonly class PlaceOrder
         private TenantDatabase $db,
         private IdempotencyGuard $idempotency,
         private CartPricing $cartPricing,
+        private FreightQuoter $freight,
         private CheckoutReferences $references,
         private OrderPlacement $placement,
         private AuditRecorder $audit,
@@ -110,10 +112,14 @@ final readonly class PlaceOrder
             throw new CartNotReady('O total do pedido precisa ser maior que zero. Revise as quantidades.');
         }
 
-        if ($data->expectedTotalCents !== null && $data->expectedTotalCents !== $quote->totals->total->cents) {
+        // Frete do distribuidor pela UF do endereço escolhido (ADR-027).
+        $freight = $this->freight->quote($buyer, $selection->shipping->state, $quote->totals->itemsNet());
+        $totals = $quote->totals->withFreight($freight->amount);
+
+        if ($data->expectedTotalCents !== null && $data->expectedTotalCents !== $totals->total->cents) {
             throw new PricesChanged('Os valores mudaram desde a última exibição. Confira o novo total antes de confirmar.', [
                 'expected_total_cents' => $data->expectedTotalCents,
-                'current_total_cents' => $quote->totals->total->cents,
+                'current_total_cents' => $totals->total->cents,
             ]);
         }
 
@@ -126,7 +132,7 @@ final readonly class PlaceOrder
             selection: $selection,
             purchaseOrderReference: $data->purchaseOrderReference,
             notes: $data->notes,
-            totals: $quote->totals,
+            totals: $totals,
             lines: array_values(array_map(OrderLineDraft::fromCartLine(...), $quote->lines)),
         );
 

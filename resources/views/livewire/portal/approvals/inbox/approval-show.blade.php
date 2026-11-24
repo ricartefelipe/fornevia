@@ -173,7 +173,7 @@
                     <dt class="text-slate-600">Descontos</dt>
                     <dd class="text-right">{{ $order->discount_cents->format() }}</dd>
                     <dt class="text-slate-600">Frete</dt>
-                    <dd class="text-right">{{ $order->freight_cents->isZero() ? 'A combinar' : $order->freight_cents->format() }}</dd>
+                    <dd class="text-right">{{ $order->freight_cents->isZero() ? 'Sem frete' : $order->freight_cents->format() }}</dd>
                     <dt class="font-semibold text-slate-900">Total</dt>
                     <dd class="text-right text-lg font-semibold text-slate-900">{{ $order->total_cents->format() }}</dd>
                 </dl>

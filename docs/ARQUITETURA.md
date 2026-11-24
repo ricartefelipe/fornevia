@@ -537,3 +537,65 @@ stateDiagram-v2
   com `quotes.manage`) e `/cotacoes/aprovacoes` (`pricing.approve`).
 - O comando `quotes:expire` roda a cada minuto no serviço `scheduler`.
 
+
+## 12. Outbox e notificações
+
+O relay (`php artisan outbox:relay`, container `outbox`, papel
+`fornevia_relay`) publica os eventos gravados na outbox (ADR-008, ADR-026):
+
+| Etapa | Onde | Garantia |
+|---|---|---|
+| Reivindicação | relay, transação curta | `FOR UPDATE SKIP LOCKED` com lease (dono e prazo) e tentativa; mais de um relay não pega a mesma mensagem |
+| Publicação | relay, fora da transação | um job `ProcessOutboxMessage` por mensagem, na fila declarada pelos consumidores do tipo (`critical` prevalece); marcação conferindo o dono do lease |
+| Falha de publicação | relay | `outbox_failures` (etapa `publish`), backoff de 5 s a 1 h, `dead` após 10 tentativas; `outbox:retry` reenvia |
+| Consumo | worker, contexto de sistema do tenant | um consumidor por transação, com `outbox_consumptions` único por mensagem e consumidor; falha desfaz consumo e efeito; esgotadas as tentativas, `outbox_failures` (etapa `consume`) e a mensagem fica `dead`, reenviável sem repetir os consumidores que já agiram |
+| Retenção | relay, a cada hora | publicadas há mais de 30 dias são apagadas em lotes; `dead` ficam |
+
+`outbox:status` mostra pendentes, idade da mais antiga, reivindicadas e
+`dead` (`--json` para coleta de métricas).
+
+Notificações são um consumidor (`ActivityNotifier`, fila `notifications`).
+Os destinatários são calculados no consumo, pelo estado atual, e nunca
+incluem quem causou o evento:
+
+| Evento | Quem é avisado | Tela |
+|---|---|---|
+| Solicitação, pedido de revisão, aceite, recusa, cancelamento e comentário do comprador | representante da carteira que elabora propostas; sem ele, quem tem `quotes.manage` | cotação na equipe |
+| Aprovação comercial pendente | quem tem `pricing.approve` com limite que cobre o maior desconto, exceto o autor | cotação na equipe |
+| Decisão comercial | autor da versão | cotação na equipe |
+| Proposta enviada, retirada, vencida, fim da reserva, encerramento e comentário do distribuidor | solicitante da cotação | cotação no portal |
+| Envio para aprovação, nível aprovado, reavaliação e reatribuição | aprovadores do nível pendente ainda elegíveis e delegados vigentes, sem quem já decidiu nem quem fez o pedido | fila de aprovação |
+| Rejeição, confirmação pendente, confirmação e cancelamento | quem fez o pedido | pedido no portal |
+
+A notificação no sistema (`user_notifications`) é única por mensagem e
+associação, visível só à própria pessoa (RLS) e só tem a data de leitura
+gravável; o link é sempre um caminho interno. O e-mail sai depois do
+commit, uma vez por notificação criada, para e-mail confirmado e pessoa
+ativa, salvo preferência desligada no contexto (`notification_settings`).
+A central fica em `/notificacoes` (equipe) e `/portal/notificacoes`
+(portal), com a contagem de não lidas no cabeçalho.
+
+## 13. Expedição, entrega, devoluções e frete
+
+Remessas, eventos e devoluções seguem a ADR-027:
+
+| Etapa | Quem | Garantia |
+|---|---|---|
+| Separação | `fulfillment.manage` | quantidade até o que falta separar (pedido − cancelado − expedido − em separação) e até a reserva ativa do item no depósito, descontadas as outras separações do mesmo depósito; número `EXP-` por distribuidor |
+| Conferência | `fulfillment.manage` | quantidade conferida por item, de zero até a separada; só o conferido é expedido |
+| Expedição | `fulfillment.manage` | sob o lock do pedido e da remessa, consome as reservas do depósito (`shipment` baixa físico e reservado), soma o expedido e grava transportadora e rastreamento; a remessa expedida não volta a ser expedida |
+| Entrega e ocorrências | `fulfillment.manage` ou transportadora | evento único por identificador externo; a situação só avança de expedida para entregue; evento repetido ou fora de ordem fica no histórico sem efeito |
+| Encomenda | `fulfillment.manage` | o saldo sob encomenda é reservado na medida do disponível quando o estoque chega |
+| Devolução | comprador com `portal.orders.place`, equipe com `returns.manage` | pedido sobre o entregue sem devolução aberta; autorização com depósito e inspeção, ou recusa; o recebido conta como devolvido; só o aprovado na inspeção volta ao disponível (`return_receipt`); valor a devolver registrado |
+| Frete | `pricing.manage` | condição negociada da empresa ou regra ativa de maior prioridade para a UF de entrega, com isenção por subtotal; calculado no servidor no carrinho e no checkout; recalculado pela regra vigente quando a reavaliação da aprovação reprecifica os itens |
+
+No banco, os CHECKs dos itens do pedido garantem cancelado + expedido + em
+separação ≤ pedido, entregue ≤ expedido e devolvido + em devolução ≤
+entregue; triggers impedem regressão da remessa e alteração de itens fora
+da separação. Remessas, eventos, devoluções e frete são somente leitura no
+contexto de comprador. A ordem de locks é pedido → remessa ou devolução →
+itens → saldos → reservas → contador.
+
+Avisos (ADR-026): quem fez o pedido recebe expedição, entrega e
+ocorrências; quem opera devoluções recebe cada nova devolução; o
+solicitante recebe a análise e a conclusão com o valor a devolver.

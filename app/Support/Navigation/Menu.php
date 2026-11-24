@@ -50,6 +50,7 @@ final readonly class Menu
         'portal.approval-rules' => ['Regras de aprovação', Permission::PortalApprovalRules],
         'portal.delegations' => ['Delegações', Permission::PortalApprovals],
         'portal.orders' => ['Pedidos', null],
+        'portal.returns' => ['Devoluções', null],
         'portal.budgets' => ['Orçamentos', Permission::PortalBudgets],
         'portal.users' => ['Usuários da empresa', Permission::PortalUsers],
     ];
