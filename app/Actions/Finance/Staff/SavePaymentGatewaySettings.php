@@ -8,6 +8,7 @@ use App\Domain\Finance\Exceptions\InvalidPayment;
 use App\Enums\Finance\PaymentGatewayKind;
 use App\Enums\Identity\Permission;
 use App\Services\Audit\AuditRecorder;
+use App\Services\Finance\Gateways\PaymentGateways;
 use App\Support\Auth\Access;
 use App\Support\Clock\Clock;
 use Illuminate\Support\Facades\Crypt;
@@ -31,6 +32,10 @@ final readonly class SavePaymentGatewaySettings
         $this->access->authorize(Permission::FinanceManage);
         $tenantId = $this->access->membership()->tenant_id;
         $apiKey = $apiKey !== null && trim($apiKey) !== '' ? trim($apiKey) : null;
+
+        if ($gateway === PaymentGatewayKind::Simulator && ! PaymentGateways::simulatorEnabled()) {
+            throw new InvalidPayment('O simulador não está disponível neste ambiente.', ['field' => 'gateway']);
+        }
 
         if ($apiKey !== null && (mb_strlen($apiKey) < 20 || mb_strlen($apiKey) > 300)) {
             throw new InvalidPayment('Chave de API inválida.', ['field' => 'api_key']);

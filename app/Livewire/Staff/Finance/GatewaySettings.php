@@ -61,7 +61,9 @@ final class GatewaySettings extends Component
         $settings = DB::table('payment_gateway_settings')->first(['gateway', 'api_key_encrypted', 'webhook_token_hash']);
 
         return view('livewire.staff.finance.gateway-settings', [
-            'kinds' => collect(PaymentGatewayKind::cases())->mapWithKeys(static fn (PaymentGatewayKind $k): array => [$k->value => $k->label()])->all(),
+            'kinds' => collect(PaymentGatewayKind::cases())
+                ->filter(static fn (PaymentGatewayKind $k): bool => $k !== PaymentGatewayKind::Simulator || \App\Services\Finance\Gateways\PaymentGateways::simulatorEnabled())
+                ->mapWithKeys(static fn (PaymentGatewayKind $k): array => [$k->value => $k->label()])->all(),
             'hasKey' => $settings !== null && $settings->api_key_encrypted !== null,
             'hasToken' => $settings !== null && $settings->webhook_token_hash !== null,
             'webhookUrl' => route('webhooks.asaas', $access->membership()->tenant_id),
