@@ -15,6 +15,16 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - Teste do chart em cluster local (`scripts/k8s-smoke.sh`), com perda de pod
   e atualização sob requisições contínuas, e runbook de operação em
   Kubernetes.
+- Processos por instância configuráveis: `FPM_MAX_CHILDREN` no PHP-FPM
+  (padrão 20) e `HORIZON_OPERACAO_MAX_PROCESSES` e
+  `HORIZON_INTEGRACOES_MAX_PROCESSES` no Horizon (padrão 10 e 4), para
+  dividir a capacidade entre réplicas.
+
+### Corrigido
+
+- Travas de sobreposição das tarefas agendadas com prazo de 10 ou 30
+  minutos, em vez das 24 horas padrão: o encerramento do agendador no meio
+  de uma tarefa não a suspende mais por um dia.
 
 ### Alterado
 
