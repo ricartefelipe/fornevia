@@ -18,6 +18,15 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   pagamento de faturas pelo portal.
 - Indicadores de ticket médio, conversão de propostas, margem e
   inadimplência, com as fórmulas exibidas.
+- API REST v1 só de leitura (pedidos, compradores, SKUs, estoque, faturas)
+  e registro de eventos de remessa, por cliente da API com permissões e
+  token próprios; contrato OpenAPI 3.1 em `docs/openapi.json`.
+- Webhooks enviados para pedidos, remessas, faturas, pagamentos e
+  devoluções, assinados com HMAC-SHA256, com novas tentativas, envio de
+  teste e histórico de entregas.
+- Importação CSV de clientes, catálogo e estoque com prévia por linha e
+  política "só as válidas" ou "tudo ou nada"; exportação CSV dos pedidos
+  filtrados.
 
 ### Segurança
 
@@ -26,6 +35,11 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   configuração é invisível ao comprador.
 - Reembolsos limitados ao valor pago também por CHECK no banco; reembolso
   sem resposta do gateway fica em verificação, sem repetir.
+- Tokens da API guardados só como hash, com prazo, limite de requisições e
+  permissões restritas a uma lista; segredo dos webhooks cifrado.
+- Webhooks só para HTTPS em IP público conferido no envio, sem seguir
+  redirecionamentos (proteção contra SSRF).
+- Exportações CSV com neutralização de fórmulas de planilha.
 
 ## [0.3.0] - 2026-11-23
 

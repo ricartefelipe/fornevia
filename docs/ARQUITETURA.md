@@ -631,3 +631,44 @@ comercial:
 | Inadimplência | saldo em aberto das parcelas já vencidas ÷ total das parcelas com vencimento no período |
 
 Sem base (divisor zero), o indicador aparece como indefinido.
+
+## 15. Integrações: API, webhooks e CSV
+
+Segue a ADR-029. Telas em `/integracoes` (`integrations.manage`, com 2FA).
+
+| Recurso | Acesso | Garantia |
+|---|---|---|
+| API v1 (`/api/v1`) | token do cliente da API, `Authorization: Bearer <id>\|fvk_…` | permissões do cliente; contexto de integração do tenant; 300 req/min por cliente (429 com `Retry-After`); filtros declarados (422 para desconhecido); até 100 por página; contrato em `docs/openapi.json` |
+| Clientes da API | `integrations.manage` | permissões da lista permitida; token mostrado uma vez, prazo de 1 a 365 dias; revogação do token ou do cliente |
+| Webhooks enviados | consumidor `webhooks` da outbox, fila `integrations` | uma entrega por evento e endpoint; só campos públicos; HMAC-SHA256 com carimbo; HTTPS para IP público conferido, sem redirecionamento; espera crescente até 8 tentativas; 20 falhas seguidas desativam o endpoint |
+| Importação CSV | `integrations.manage` e a permissão do tipo | prévia com resultado por linha; UTF-8, até 2 MB e 5.000 linhas; política "só as válidas" ou "tudo ou nada"; aplicação em fila pelas Actions do módulo; linha aplicada não se repete |
+| Exportação de pedidos | `orders.view`, na carteira | filtros da lista; fórmulas neutralizadas; auditada; até `integrations.exports.max_rows` pedidos |
+
+Eventos de webhook:
+
+| Evento | Campos |
+|---|---|
+| `order.confirmed` | `order_id`, `number`, `buyer_company_id`, `total_cents` |
+| `order.cancelled` | `order_id`, `number` |
+| `shipment.shipped` | `shipment_id`, `order_id`, `number`, `carrier`, `tracking_code` |
+| `shipment.delivered` | `shipment_id`, `order_id`, `number` |
+| `invoice.issued` | `invoice_id`, `order_id`, `number`, `total_cents` |
+| `payment.confirmed` | `payment_id`, `invoice_id`, `amount_cents` |
+| `return.requested` | `return_id`, `order_id`, `number` |
+
+Cabeçalhos de cada entrega: `X-Fornevia-Event`, `X-Fornevia-Delivery` (id
+estável da entrega), `X-Fornevia-Timestamp` e `X-Fornevia-Signature`
+(`t=<carimbo>,v1=<hex>`, HMAC-SHA256 de `carimbo.corpo`). O comando
+`webhooks:retry`, a cada minuto, envia as entregas pendentes cuja espera
+venceu.
+
+Colunas dos arquivos de importação:
+
+| Tipo | Colunas |
+|---|---|
+| Clientes | `razao_social`, `nome_fantasia`, `cnpj`, `email`, `telefone` |
+| Catálogo | `codigo_sku`, `produto`, `unidade`, `fator_conversao`, `quantidade_minima`, `multiplo` |
+| Estoque | `deposito`, `codigo_sku`, `quantidade` (unidade base) |
+
+Os cabeçalhos são comparados sem acento e sem diferenciar maiúsculas;
+separador `;` ou `,`, detectado no cabeçalho.
