@@ -554,3 +554,14 @@ ao sandbox nos testes automatizados.
 Limitações registradas: a API v1 é só de leitura, exceto eventos de
 remessa; a importação de catálogo não traz preço nem custo; o envio de
 webhooks foi verificado com HTTP simulado, sem chamada a um receptor real.
+
+## Incremento 11 — Auditoria e métricas (`feature/auditoria-metricas`)
+
+### Implementado
+
+- Tela de auditoria somente leitura, isolada por tenant, com filtros por
+  ação ou grupo, autor, registro afetado e período no fuso comercial.
+- Métricas Prometheus em `/metrics` com token de coleta: latência e erros
+  por tipo de requisição, filas, idade da outbox, falhas de jobs e
+  conflitos de concorrência no banco (RQ-121).
+

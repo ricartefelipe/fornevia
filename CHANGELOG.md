@@ -5,6 +5,14 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Métricas Prometheus em `/metrics`, protegidas por token: requisições por
+  tipo e status com histograma de duração, tamanho das filas, outbox
+  pendente e idade da mensagem mais antiga, jobs com falha e conflitos de
+  concorrência no banco.
+- Tela de auditoria com filtros por ação, autor, registro e período.
+
 ## [0.4.0] - 2026-11-24
 
 ### Adicionado

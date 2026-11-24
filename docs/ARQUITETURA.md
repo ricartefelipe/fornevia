@@ -137,6 +137,29 @@ administradores da plataforma ou e-mails em `HORIZON_ALLOWED_EMAILS`.
   (`RedactSensitiveData`).
 - `X-Request-Id` aceito em formato restrito ou gerado (UUIDv7).
 - `/health/live` e `/health/ready` sem sessão nem cookies.
+- `/metrics` no formato Prometheus (texto 0.0.4), só com
+  `Authorization: Bearer <METRICS_TOKEN>`; sem token configurado, o
+  endpoint responde 404. Limite de 60 coletas por minuto. Os rótulos não
+  trazem dados de tenant.
+
+| Série | Tipo | Origem |
+|---|---|---|
+| `fornevia_http_requests_total{kind,status}` | contador | toda requisição, por tipo (`web`, `livewire`, `api`, `webhooks`, `health`) e classe de status (`2xx`…`5xx`) |
+| `fornevia_http_request_duration_seconds{kind}` | histograma | duração das mesmas requisições (limites em `observability.latency_buckets`) |
+| `fornevia_db_conflicts_total{reason}` | contador | conflito que escapou das tentativas em `TenantDatabase::run`: `deadlock`, `serialization`, `lock_not_available` |
+| `fornevia_jobs_failed_total{queue}` | contador | evento `JobFailed` |
+| `fornevia_queue_size{queue}` | medida | tamanho das filas de `observability.queues` |
+| `fornevia_outbox_pending`, `fornevia_outbox_oldest_pending_age_seconds`, `fornevia_outbox_dead` | medidas | situação da outbox (`outbox:status`) |
+| `fornevia_failed_jobs` | medida | jobs guardados em `failed_jobs` |
+| `fornevia_metrics_collection_errors` | medida | medidas que não puderam ser lidas na coleta |
+
+Contadores ficam no Redis e somam todos os processos; falha ao gravar uma
+métrica só gera aviso no log, sem afetar a operação.
+
+Auditoria: tela `/auditoria` (`audit.view`), somente leitura, com filtros
+por ação ou grupo de ações, autor, registro afetado e período no fuso
+comercial. Os registros são somente inclusão no banco e isolados por
+tenant.
 
 ## 7. Identidade, contextos e permissões
 
