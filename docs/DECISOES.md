@@ -864,3 +864,33 @@ distribuidor mantém o isolamento entre tenants também no recebimento.
 - Mutantes equivalentes (conversões de tipo redundantes, fechamento de
   recurso) permanecem e limitam a nota máxima possível.
 
+## ADR-031 — Escrita na API com idempotência obrigatória e elevação do cliente da API
+
+**Status:** aceita (complementa a ADR-029)
+
+**Decisão.**
+- A API v1 passa a aceitar escrita em quatro operações: cadastro de empresa
+  compradora (`buyers.manage`), entrada e ajuste de estoque
+  (`inventory.manage`) e cancelamento de itens ou do pedido
+  (`orders.manage` e `orders.view`). Cada permissão é concedida ao cliente da
+  API pela tela de Integrações, como as de leitura.
+- Toda escrita exige o cabeçalho `Idempotency-Key`, registrado pelo mesmo
+  mecanismo do checkout (ADR-007), com o cliente da API como ator: repetir
+  a chave com o mesmo conteúdo devolve a resposta original
+  (`Idempotent-Replayed: true`) sem repetir o efeito; com outro conteúdo, 409.
+- Os campos aceitos são declarados por operação: campo desconhecido ou de
+  outro tipo é erro de validação, e quantidades vão em texto decimal.
+- As regras são as mesmas das telas: a API chama as Actions do módulo.
+  Para as gravações que exigem o contexto de sistema (estoque, crédito,
+  pedidos), o cliente da API eleva para o sistema do próprio tenant, como o
+  usuário da equipe, e continua identificado como autor na auditoria.
+- Criação de pedidos pela API fica fora desta decisão: exige definir quem é
+  o comprador responsável e como as regras de aprovação interna da empresa
+  se aplicam a um pedido vindo do ERP do distribuidor.
+
+**Consequências.**
+- Integrações de ERP cadastram clientes, sincronizam estoque e cancelam
+  pedidos sem duplicar efeitos em novas tentativas.
+- A elevação continua restrita: só para o contexto de sistema do mesmo
+  tenant e depois da autorização da Action.
+

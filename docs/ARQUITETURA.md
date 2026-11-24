@@ -675,7 +675,7 @@ Segue a ADR-029. Telas em `/integracoes` (`integrations.manage`, com 2FA).
 
 | Recurso | Acesso | Garantia |
 |---|---|---|
-| API v1 (`/api/v1`) | token do cliente da API, `Authorization: Bearer <id>\|fvk_…` | permissões do cliente; contexto de integração do tenant; 300 req/min por cliente (429 com `Retry-After`); filtros declarados (422 para desconhecido); até 100 por página; contrato em `docs/openapi.json` |
+| API v1 (`/api/v1`) | token do cliente da API, `Authorization: Bearer <id>\|fvk_…` | permissões do cliente; contexto de integração do tenant; 300 req/min por cliente (429 com `Retry-After`); leitura com filtros declarados (422 para desconhecido) e até 100 por página; escrita (comprador, entrada e ajuste de estoque, cancelamento de pedido) com `Idempotency-Key` obrigatório (ADR-031); contrato em `docs/openapi.json` |
 | Clientes da API | `integrations.manage` | permissões da lista permitida; token mostrado uma vez, prazo de 1 a 365 dias; revogação do token ou do cliente |
 | Webhooks enviados | consumidor `webhooks` da outbox, fila `integrations` | uma entrega por evento e endpoint; só campos públicos; HMAC-SHA256 com carimbo; HTTPS para IP público conferido, sem redirecionamento; espera crescente até 8 tentativas; 20 falhas seguidas desativam o endpoint |
 | Importação CSV | `integrations.manage` e a permissão do tipo | prévia com resultado por linha; UTF-8, até 2 MB e 5.000 linhas; política "só as válidas" ou "tudo ou nada"; aplicação em fila pelas Actions do módulo; cadastro alterado depois da prévia recusa só a linha; importação interrompida fica como falha e pode ser reprocessada; linha aplicada não se repete |
