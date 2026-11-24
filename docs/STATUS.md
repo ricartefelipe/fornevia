@@ -618,3 +618,27 @@ webhooks foi verificado com HTTP simulado, sem chamada a um receptor real.
 - CNPJ alfanumérico (emitido desde julho de 2026) recusado no cadastro de
   compradores e de distribuidores (preexistente).
 
+## Incremento 13 — Demonstração e operação (`feature/demonstracao-operacao`)
+
+### Implementado
+
+- `php artisan demo:seed`: dois distribuidores isolados, com equipe por
+  papel, catálogo com preço, custo e estoque, empresas compradoras (uma com
+  CNPJ alfanumérico) com usuários, endereços, condições e crédito, e pedidos
+  enviados pelo fluxo de compra. Recusado em produção.
+- `compose.prod.yaml`: app, web, Horizon, agendador, relay da outbox,
+  migrations com o papel de manutenção, PostgreSQL e Redis com senha;
+  imagens de produção, `read_only`, `no-new-privileges` e sem capacidades.
+  Subida completa verificada localmente e na CI (`/health/ready` e login).
+- Runbooks em `docs/runbooks`: implantação e volta de versão, rotação da
+  `APP_KEY`, backup e restauração, outbox, filas e webhooks, gateway de
+  pagamento, alertas e métricas (com regras do Prometheus) e dados de
+  demonstração.
+
+### Defeitos encontrados na verificação da implantação (corrigidos)
+
+- Com o sistema de arquivos somente leitura, o diretório de views compiladas
+  não existia no `tmpfs` e os processos não iniciavam.
+- O `tmpfs` de configuração do nginx sem permissão para o usuário sem
+  privilégios impedia a geração do servidor a partir do template.
+

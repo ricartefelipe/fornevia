@@ -16,6 +16,13 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   carrinho e lista de pedidos da equipe, na CI e no ambiente local.
 - Testes de mutação do domínio na CI, com nota mínima de 90%.
 
+- Dados de demonstração (`php artisan demo:seed`): dois distribuidores com
+  equipe, catálogo, compradores e pedidos; recusado em produção.
+- Implantação de referência `compose.prod.yaml` com imagens de produção,
+  processos sem privilégios e sistema de arquivos somente leitura, testada
+  na CI; runbooks de implantação, rotação de chave, backup e restauração,
+  outbox, filas, webhooks, gateway e alertas, com regras do Prometheus.
+
 ### Alterado
 
 - CNPJ alfanumérico da Receita Federal (a partir de julho de 2026) aceito
