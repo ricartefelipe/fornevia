@@ -43,6 +43,16 @@ final readonly class StockImport implements ImportKind
         return ['deposito', 'codigo_sku', 'quantidade'];
     }
 
+    public function optionalColumns(): array
+    {
+        return [];
+    }
+
+    public function prepare(array $rows): array
+    {
+        return $rows;
+    }
+
     public function validate(array $rows): array
     {
         $warehouses = Warehouse::query()->where('is_active', true)->pluck('id', 'code')->mapWithKeys(static fn (mixed $id, mixed $code): array => [mb_strtoupper((string) $code) => (string) $id])->all();

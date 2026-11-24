@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Support\Observability\Metrics;
+use App\Support\Tenancy\TenantDatabase;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Context;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -27,7 +29,8 @@ final readonly class RecordRequestMetrics
         $response = $next($request);
 
         if (! $request->is('metrics')) {
-            $this->metrics->observeRequest(self::kind($request), $response->getStatusCode(), (hrtime(true) - $started) / 1e9);
+            $tenant = Context::getHidden(TenantDatabase::METRICS_TENANT_KEY);
+            $this->metrics->observeRequest(self::kind($request), $response->getStatusCode(), (hrtime(true) - $started) / 1e9, is_string($tenant) ? $tenant : null);
         }
 
         return $response;

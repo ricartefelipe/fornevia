@@ -41,6 +41,16 @@ final readonly class CustomersImport implements ImportKind
         return ['razao_social', 'nome_fantasia', 'cnpj', 'email', 'telefone'];
     }
 
+    public function optionalColumns(): array
+    {
+        return [];
+    }
+
+    public function prepare(array $rows): array
+    {
+        return $rows;
+    }
+
     public function validate(array $rows): array
     {
         $documents = array_map(static fn (array $row): ?string => self::document($row['cnpj'] ?? ''), $rows);

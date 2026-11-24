@@ -48,6 +48,7 @@ final readonly class CsvImports
 
         $rows = Csv::read($contents, $importer->columns(), (int) config('integrations.imports.max_bytes'), (int) config('integrations.imports.max_rows'));
         $errors = $importer->validate($rows);
+        $rows = $importer->prepare($rows);
         $invalid = count(array_filter($errors, static fn (array $e): bool => $e !== []));
 
         return DB::transaction(function () use ($kind, $policy, $fileName, $contents, $rows, $errors, $invalid): CsvImport {

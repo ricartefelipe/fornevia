@@ -6,6 +6,7 @@ namespace App\Services\Integrations\Imports;
 
 use App\Actions\Catalog\SaveProduct;
 use App\Actions\Catalog\SaveSku;
+use App\Actions\Pricing\SetPriceListItem;
 use App\Data\Catalog\ProductData;
 use App\Data\Catalog\SkuData;
 use App\Domain\Integrations\Exceptions\InvalidIntegration;
@@ -15,6 +16,8 @@ use App\Enums\Identity\Permission;
 use App\Models\Catalog\Product;
 use App\Models\Catalog\Sku;
 use App\Models\Catalog\UnitOfMeasure;
+use App\Support\Auth\Access;
+use App\Support\Clock\Clock;
 use Brick\Math\BigDecimal;
 use InvalidArgumentException;
 
@@ -24,10 +27,20 @@ use InvalidArgumentException;
  * localizado pelo nome (sem diferenciar maiúsculas), no cadastro ou nas
  * linhas anteriores, e criado quando não existe; código de SKU repetido no
  * arquivo ou já cadastrado é recusado.
+ *
+ * Colunas opcionais: preco (na tabela informada em tabela_preco ou, sem ela,
+ * na tabela padrão ativa; exige pricing.manage) e custo (exige
+ * catalog.view_costs). As permissões são conferidas na prévia, linha a
+ * linha, e de novo na aplicação pelas Actions de preço e de SKU.
  */
 final readonly class ProductsImport implements ImportKind
 {
-    public function __construct(private SaveProduct $products, private SaveSku $skus) {}
+    public function __construct(
+        private SaveProduct $products,
+        private SaveSku $skus,
+        private SetPriceListItem $prices,
+        private Access $access,
+    ) {}
 
     public function key(): string
     {
@@ -49,6 +62,11 @@ final readonly class ProductsImport implements ImportKind
         return ['codigo_sku', 'produto', 'unidade', 'fator_conversao', 'quantidade_minima', 'multiplo'];
     }
 
+    public function optionalColumns(): array
+    {
+        return ['preco', 'custo', 'tabela_preco'];
+    }
+
     public function validate(array $rows): array
     {
         $codes = array_map(static fn (array $row): string => mb_strtoupper($row['codigo_sku'] ?? ''), $rows);
@@ -58,13 +76,36 @@ final readonly class ProductsImport implements ImportKind
         /** @var array<int, list<string>> $errors */
         $errors = [];
 
+        $commercial = $this->commercial();
+
         foreach ($rows as $line => $row) {
             $code = $codes[$line];
-            $errors[$line] = [...self::codeErrors($code, $existing, $seen), ...self::fieldErrors($row, $units)];
+            $errors[$line] = [...self::codeErrors($code, $existing, $seen), ...self::fieldErrors($row, $units), ...$commercial->errors($row)];
             $seen[$code] ??= $line;
         }
 
         return $errors;
+    }
+
+    /**
+     * Guarda na linha a tabela de preço conferida na prévia: a aplicação usa
+     * a mesma, mesmo que outra tabela padrão passe a valer antes da confirmação.
+     */
+    public function prepare(array $rows): array
+    {
+        $commercial = $this->commercial();
+
+        foreach ($rows as $line => $row) {
+            if (trim($row['preco'] ?? '') !== '') {
+                $list = $commercial->priceList($row['tabela_preco'] ?? '');
+
+                if ($list !== null) {
+                    $rows[$line]['tabela_preco_id'] = $list->id;
+                }
+            }
+        }
+
+        return $rows;
     }
 
     public function apply(array $row, array &$memo): string
@@ -80,13 +121,24 @@ final readonly class ProductsImport implements ImportKind
         $product ??= $this->products->handle(null, new ProductData(name: $name, baseUnitId: $unitId));
         $memo[$key] = $product->id;
 
-        return $this->skus->handle($product, null, new SkuData(
+        $sku = $this->skus->handle($product, null, new SkuData(
             code: mb_strtoupper($row['codigo_sku']),
             salesUnitId: $unitId,
             conversionFactor: BigDecimal::of((self::quantity($row['fator_conversao']) ?? Quantity::of('1'))->toDatabase()),
             minOrderQuantity: self::quantity($row['quantidade_minima']) ?? Quantity::of('1'),
             orderMultiple: self::quantity($row['multiplo']) ?? Quantity::of('1'),
-        ))->id;
+            cost: ImportedCommercialData::money($row['custo'] ?? ''),
+        ));
+
+        $price = ImportedCommercialData::money($row['preco'] ?? '');
+
+        if ($price !== null) {
+            $list = ImportedCommercialData::priceListById($row['tabela_preco_id'] ?? '')
+                ?? throw new InvalidIntegration('Tabela de preço não encontrada ou arquivada.');
+            $this->prices->handle($list, $sku, $price);
+        }
+
+        return $sku->id;
     }
 
     private static function quantity(string $value): ?Quantity
@@ -140,5 +192,10 @@ final readonly class ProductsImport implements ImportKind
         }
 
         return $errors;
+    }
+
+    private function commercial(): ImportedCommercialData
+    {
+        return new ImportedCommercialData($this->access->can(Permission::PricingManage), $this->access->can(Permission::CatalogViewCosts), app(Clock::class));
     }
 }

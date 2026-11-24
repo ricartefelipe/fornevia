@@ -141,16 +141,19 @@ final class CsvImportsPage extends Component
         $preview = $this->previewId !== null ? CsvImport::query()->find($this->previewId) : null;
         $options = [];
         $columns = [];
+        $optional = [];
 
         foreach (array_keys(ImportKinds::CLASSES) as $key) {
             $kind = $kinds->get($key);
             $options[$key] = $kind->label();
             $columns[$key] = $kind->columns();
+            $optional[$key] = $kind->optionalColumns();
         }
 
         return view('livewire.staff.integrations.csv-imports-page', [
             'kindOptions' => $options,
             'columns' => $columns,
+            'optionalColumns' => $optional,
             'policyOptions' => ['valid_only' => 'Aplicar só as linhas válidas', 'all_or_none' => 'Tudo ou nada (recusar se houver linha inválida)'],
             'preview' => $preview,
             // Primeiro as linhas com problema, depois as demais, pela ordem do arquivo.
