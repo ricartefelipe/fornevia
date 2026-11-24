@@ -185,7 +185,7 @@ final class PrivateCatalogsIndex extends Component
         $catalogs = PrivateCatalog::query()
             ->addSelect([
                 'products_count' => PrivateCatalogProduct::query()->selectRaw('count(*)')->whereColumn('private_catalog_products.private_catalog_id', 'private_catalogs.id'),
-                'assignments_count' => PrivateCatalogAssignment::query()->selectRaw('count(*)')->whereColumn('private_catalog_assignments.private_catalog_id', 'private_catalogs.id'),
+                'assignments_count' => app(SalesPortfolio::class)->restrictOptional(PrivateCatalogAssignment::query())->selectRaw('count(*)')->whereColumn('private_catalog_assignments.private_catalog_id', 'private_catalogs.id'),
             ])
             ->orderBy('name')
             ->orderBy('id')

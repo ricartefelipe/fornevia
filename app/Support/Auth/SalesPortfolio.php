@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Auth;
 
+use App\Enums\Identity\MembershipKind;
 use App\Enums\Identity\SystemRole;
 use App\Models\Buyers\BuyerCompany;
 use App\Support\Http\UntrustedId;
@@ -19,7 +20,8 @@ use Illuminate\Database\Eloquent\Model;
  *
  * A RLS não cobre esse recorte (app_sees_all_buyers() é verdadeiro para toda
  * a equipe); por isso toda consulta da equipe sobre empresas compradoras ou
- * dados delas passa por aqui. Fora de contexto de equipe não há recorte.
+ * dados delas passa por aqui. Comprador e cliente da API não têm recorte;
+ * sem contexto ativo, a consulta é recusada.
  */
 final readonly class SalesPortfolio
 {
@@ -30,9 +32,15 @@ final readonly class SalesPortfolio
      */
     public function membershipId(): ?string
     {
-        $membership = $this->access->membershipOrNull();
+        // Clientes da API (contexto de integração) não têm carteira; sem
+        // contexto algum, falha fechado em vez de devolver tudo.
+        if ($this->access->apiClientId() !== null && $this->access->membershipOrNull() === null) {
+            return null;
+        }
 
-        if ($membership === null || $membership->buyer_company_id !== null) {
+        $membership = $this->access->membership();
+
+        if ($membership->kind !== MembershipKind::Staff) {
             return null;
         }
 
@@ -99,7 +107,7 @@ final readonly class SalesPortfolio
         $membershipId = $this->membershipId();
 
         if ($membershipId !== null) {
-            $qualified = $query->getModel()->qualifyColumn($column);
+            $qualified = str_contains($column, '.') ? $column : $query->getModel()->qualifyColumn($column);
             $query->where(static fn (Builder $q) => $q->whereNull($qualified)
                 ->orWhereIn($qualified, BuyerCompany::query()->select('id')->where('sales_rep_membership_id', $membershipId)));
         }

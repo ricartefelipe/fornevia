@@ -469,8 +469,12 @@ no cancelamento total).
   empresa, frete por empresa, catálogos privados atribuídos, simulador de
   preço e painel. Empresa fora da carteira equivale a inexistente (404). A
   regra fica em `SalesPortfolio`, usada por todas essas consultas; os demais
-  papéis veem todas as empresas. Estoque e catálogo não têm recorte (não são
-  dados de uma empresa).
+  papéis veem todas as empresas. Atribuições de catálogos privados seguem
+  a carteira (lista e contagem); produtos, saldos de estoque e movimentos
+  não têm recorte, e os movimentos mostram só o número do documento de
+  origem, sem dados da empresa. Notificações de cotação vão ao
+  representante atual da empresa; sem ele, à equipe que elabora propostas,
+  exceto representantes.
 - O checkout exibe o total calculado no servidor e o envia como valor
   esperado: se preços mudarem até a confirmação, ela é recusada
   (`PricesChanged`). A chave de idempotência é gerada no servidor a cada

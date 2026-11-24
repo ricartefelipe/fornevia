@@ -114,3 +114,40 @@ it('não recorta para os demais papéis da equipe', function (): void {
 
     expect($this->tenant->system(static fn (): int => BuyerCompany::query()->count()))->toBe(2);
 });
+
+it('conta só as atribuições da carteira na lista de catálogos privados', function (): void {
+    ($this->as)($this->rep, fn () => Livewire::test(PrivateCatalogsIndex::class)
+        ->assertViewHas('catalogs', fn ($catalogs): bool => $catalogs->firstWhere('id', $this->catalog->id)->assignments_count === 1));
+    ($this->as)($this->manager, fn () => Livewire::test(PrivateCatalogsIndex::class)
+        ->assertViewHas('catalogs', fn ($catalogs): bool => $catalogs->firstWhere('id', $this->catalog->id)->assignments_count === 2));
+});
+
+it('confere a carteira a cada requisição da tabela de preço da empresa', function (): void {
+    $component = ($this->as)($this->rep, fn () => Livewire::test(PriceListEdit::class, ['priceList' => $this->ownList])->assertSee('Tabela de Construtora Serra Azul'));
+    // A empresa muda de carteira com a tela aberta.
+    Fx::assignRep($this->tenant, $this->own, $this->manager);
+    ($this->as)($this->rep, static fn () => $component->set('itemSearch', 'qualquer')->assertStatus(404));
+});
+
+it('recusa a consulta sem contexto ativo em vez de devolver todas as empresas', function (): void {
+    app()->forgetScopedInstances();
+
+    expect(fn () => app(App\Support\Auth\SalesPortfolio::class)->membershipId())
+        ->toThrow(Illuminate\Auth\Access\AuthorizationException::class);
+});
+
+it('avisa da cotação o representante atual e, sem ele, a equipe que não é representante', function (): void {
+    $recipients = fn (App\Models\Quotes\Quote $quote): array => $this->tenant->system(static fn (): array => app(App\Services\Notifications\NotificationRecipients::class)
+        ->quoteTeam($quote)->pluck('id')->sort()->values()->all());
+    $buyer = $this->scenario->buyerWithCart(quantity: '1');
+    Fx::assignRep($this->tenant, $buyer['company'], $this->manager);
+    $quote = Tests\Integration\Quotes\QuoteFixtures::quote($this->scenario, $buyer['membership']);
+
+    // A empresa passou para o representante depois da solicitação.
+    Fx::assignRep($this->tenant, $buyer['company'], $this->rep);
+    expect($recipients($quote))->toBe([$this->rep->id]);
+
+    // Sem representante: gerente e proprietário, nunca outros representantes.
+    Fx::assignRep($this->tenant, $buyer['company'], null);
+    expect($recipients($quote))->not->toContain($this->rep->id)->toContain($this->manager->id);
+});

@@ -71,9 +71,10 @@ final class PriceListEdit extends Component
 
     public function mount(PriceList $priceList): void
     {
-        // Tabela de empresa fora da carteira do representante equivale a inexistente.
-        abort_unless(app(SalesPortfolio::class)->covers($priceList->buyer_company_id) || $priceList->buyer_company_id === null, 404);
+        // Tabela de empresa fora da carteira do representante equivale a
+        // inexistente, também nas requisições seguintes (priceList()).
         $this->priceListId = $priceList->id;
+        $priceList = $this->priceList();
         $this->fillHeader($priceList);
     }
 
@@ -271,7 +272,7 @@ final class PriceListEdit extends Component
 
     public function render(Access $access): View
     {
-        $list = PriceList::query()->with(['customerGroup', 'buyerCompany'])->findOrFail($this->priceListId);
+        $list = app(SalesPortfolio::class)->restrictOptional(PriceList::query())->with(['customerGroup', 'buyerCompany'])->findOrFail($this->priceListId);
         $search = trim($this->itemSearch);
 
         $items = PriceListItem::query()
@@ -313,7 +314,7 @@ final class PriceListEdit extends Component
 
     private function priceList(): PriceList
     {
-        return PriceList::query()->findOrFail($this->priceListId);
+        return app(SalesPortfolio::class)->restrictOptional(PriceList::query())->findOrFail($this->priceListId);
     }
 
     private function fillItem(PriceListItem $item): void
