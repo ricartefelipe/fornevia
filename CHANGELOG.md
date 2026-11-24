@@ -5,6 +5,8 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.5.0] - 2026-11-24
+
 ### Adicionado
 
 - Métricas Prometheus em `/metrics`, protegidas por token: requisições por
@@ -15,7 +17,6 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - Testes de navegador (Dusk) dos fluxos de login, compra pelo catálogo e
   carrinho e lista de pedidos da equipe, na CI e no ambiente local.
 - Testes de mutação do domínio na CI, com nota mínima de 90%.
-
 - Dados de demonstração (`php artisan demo:seed`): dois distribuidores com
   equipe, catálogo, compradores e pedidos; recusado em produção.
 - Implantação de referência `compose.prod.yaml` com imagens de produção,
@@ -197,7 +198,8 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
 
-[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.4.0...develop
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.5.0...develop
+[0.5.0]: https://github.com/ricartefelipe/fornevia/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ricartefelipe/fornevia/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ricartefelipe/fornevia/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ricartefelipe/fornevia/compare/v0.1.0...v0.2.0
