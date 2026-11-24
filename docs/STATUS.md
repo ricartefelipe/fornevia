@@ -554,3 +554,113 @@ ao sandbox nos testes automatizados.
 Limitações registradas: a API v1 é só de leitura, exceto eventos de
 remessa; a importação de catálogo não traz preço nem custo; o envio de
 webhooks foi verificado com HTTP simulado, sem chamada a um receptor real.
+
+## Incremento 11 — Auditoria e métricas (`feature/auditoria-metricas`)
+
+### Implementado
+
+- Tela de auditoria somente leitura, isolada por tenant, com filtros por
+  ação ou grupo, autor, registro afetado e período no fuso comercial.
+- Métricas Prometheus em `/metrics` com token de coleta: latência e erros
+  por tipo de requisição, filas, idade da outbox, falhas de jobs e
+  conflitos de concorrência no banco (RQ-121).
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Conflitos de banco em requisições web e da API nunca chegavam ao
+  contador, porque a exceção já tinha virado resposta antes de sair da
+  transação; a `DeadlockException` de transações aninhadas também escapava.
+- Histograma exportado sem os limites vazios, distorcendo percentis.
+- Middleware de métricas no fim da pilha global, sem contar manutenção,
+  corpo grande e host recusado.
+- Redis indisponível somava uma tentativa de conexão, sem tempo limite, a
+  cada requisição.
+- Coleta pelo host interno recusada pela verificação de host.
+- Opções de filtro da auditoria recalculadas sobre o histórico inteiro a
+  cada interação; identificador com espaços ignorado no filtro.
+
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Testes da tela de auditoria e do endpoint de métricas | aprovados; os 6 de regressão da revisão falham sem a correção correspondente |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| Suíte completa na CI do PR #23, commit `76b7d8f` | 2.354 testes e 11.524 asserções aprovados; cobertura de linhas total 94,5%, núcleo 97,32%, caminhos críticos 100% |
+
+## Incremento 12 — Navegador e mutação (`feature/navegador-mutacao`)
+
+### Implementado
+
+- Testes de navegador (Dusk) com Chrome real: recusa de senha errada,
+  compra pelo catálogo e carrinho até a confirmação do pedido e filtro ao
+  vivo da lista de pedidos da equipe; servidor da aplicação separado sobre
+  o banco `fornevia_browser` (ADR-030).
+- Job de navegador na CI (Chrome e ChromeDriver do runner) e script local
+  com o Selenium do perfil `browser`.
+- Testes de mutação do domínio e do leitor de CSV na CI, com nota mínima
+  de 90% no código coberto; testes unitários novos de fronteira (limites,
+  igualdade, sinal, espaços), mensagens e detalhes de recusa, campos de
+  cadastro e dígito verificador do CNPJ contra implementação de referência.
+- CNPJ alfanumérico aceito em cadastro, importação, buscas e API, com
+  migration que ajusta as restrições do banco.
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Teste de compra pelo catálogo esperava um texto que já estava na página
+  e seguia para o carrinho antes de o item ser gravado (instável).
+- Servidor e ChromeDriver da CI e do script local sem conferência de que
+  subiram; servidor com chave da aplicação e prefixo do Redis diferentes
+  dos do processo de teste.
+- Testes do mesmo arquivo compartilhavam a sessão do navegador.
+- Argumentos do script local reinterpretados pelo shell.
+- ADR-030 descrevia o critério de mutação de forma mais rígida do que o
+  aplicado.
+- CNPJ alfanumérico (emitido desde julho de 2026) recusado no cadastro de
+  compradores e de distribuidores (preexistente).
+
+## Incremento 13 — Demonstração e operação (`feature/demonstracao-operacao`)
+
+### Implementado
+
+- `php artisan demo:seed`: dois distribuidores isolados, com equipe por
+  papel, catálogo com preço, custo e estoque, empresas compradoras (uma com
+  CNPJ alfanumérico) com usuários, endereços, condições e crédito, e pedidos
+  enviados pelo fluxo de compra. Recusado em produção.
+- `compose.prod.yaml`: app, web, Horizon, agendador, relay da outbox,
+  migrations com o papel de manutenção, PostgreSQL e Redis com senha;
+  imagens de produção, `read_only`, `no-new-privileges` e sem capacidades.
+  Subida completa verificada localmente e na CI (`/health/ready` e login).
+- Runbooks em `docs/runbooks`: implantação e volta de versão, rotação da
+  `APP_KEY`, backup e restauração, outbox, filas e webhooks, gateway de
+  pagamento, alertas e métricas (com regras do Prometheus) e dados de
+  demonstração.
+
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Testes de navegador e mutação na CI do PR #24, commit `f2448d0` | 3 cenários de navegador aprovados; mutação com nota de 92,24% no código coberto |
+| Suíte completa na CI do PR #25, commit `250385a` | 2.387 testes e 12.955 asserções aprovados; cobertura de linhas total 94,6%, núcleo 97,35%, caminhos críticos 100%; navegador, mutação, implantação de referência, imagem, segredos, frontend e SonarCloud aprovados |
+| Implantação de referência local | todos os serviços saudáveis, migrations aplicadas, `/health/ready` e login respondendo, senha do Redis fora da lista de processos |
+
+### Defeitos encontrados na verificação da implantação (corrigidos)
+
+- Com o sistema de arquivos somente leitura, o diretório de views compiladas
+  não existia no `tmpfs` e os processos não iniciavam.
+- O `tmpfs` de configuração do nginx sem permissão para o usuário sem
+  privilégios impedia a geração do servidor a partir do template.
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- `demo:seed` podia deixar dados pela metade: conferência de CNPJs e
+  e-mails antes de gravar e mensagem clara para qualquer falha.
+- Contas de crédito da demonstração sem histórico do limite nem auditoria;
+  agora abertas pela ação de crédito.
+- Healthcheck do PostgreSQL aprovado pelo servidor temporário da
+  inicialização, liberando as migrations cedo demais.
+- Senha do Redis visível na lista de processos.
+- Comandos do runbook e do modelo de ambiente que falhavam como escritos
+  (host da verificação, geração da chave) e nomes de papéis do banco que
+  pareciam configuráveis.
+- CEP de Campinas em compradores de Minas Gerais na demonstração.
+

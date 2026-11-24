@@ -5,6 +5,31 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.5.0] - 2026-11-24
+
+### Adicionado
+
+- Métricas Prometheus em `/metrics`, protegidas por token: requisições por
+  tipo e status com histograma de duração, tamanho das filas, outbox
+  pendente e idade da mensagem mais antiga, jobs com falha e conflitos de
+  concorrência no banco.
+- Tela de auditoria com filtros por ação, autor, registro e período.
+- Testes de navegador (Dusk) dos fluxos de login, compra pelo catálogo e
+  carrinho e lista de pedidos da equipe, na CI e no ambiente local.
+- Testes de mutação do domínio na CI, com nota mínima de 90%.
+- Dados de demonstração (`php artisan demo:seed`): dois distribuidores com
+  equipe, catálogo, compradores e pedidos; recusado em produção.
+- Implantação de referência `compose.prod.yaml` com imagens de produção,
+  processos sem privilégios e sistema de arquivos somente leitura, testada
+  na CI; runbooks de implantação, rotação de chave, backup e restauração,
+  outbox, filas, webhooks, gateway e alertas, com regras do Prometheus.
+
+### Alterado
+
+- CNPJ alfanumérico da Receita Federal (a partir de julho de 2026) aceito
+  no cadastro de distribuidores e compradores, na importação CSV, nas
+  buscas e na API; os CNPJs numéricos continuam válidos.
+
 ## [0.4.0] - 2026-11-24
 
 ### Adicionado
@@ -173,7 +198,8 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
 
-[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.4.0...develop
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.5.0...develop
+[0.5.0]: https://github.com/ricartefelipe/fornevia/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ricartefelipe/fornevia/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ricartefelipe/fornevia/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ricartefelipe/fornevia/compare/v0.1.0...v0.2.0
