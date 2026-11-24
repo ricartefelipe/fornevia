@@ -49,9 +49,8 @@ final readonly class RecordShipmentEvent
 
     public function handle(mixed $shipmentId, ShipmentEventKind $kind, ?CarbonImmutable $occurredAt = null, ?string $description = null, ?string $externalId = null, ShipmentEventSource $source = ShipmentEventSource::Staff): ShipmentEvent
     {
-        if ($source === ShipmentEventSource::Staff) {
-            $this->access->authorize(Permission::FulfillmentManage);
-        }
+        // Equipe ou integração da transportadora: ambas com permissão de expedição.
+        $this->access->authorize(Permission::FulfillmentManage);
 
         $now = $this->clock->now();
         $occurredAt ??= $now;

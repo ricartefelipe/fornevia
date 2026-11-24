@@ -2,8 +2,22 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\V1\ApiController;
+use App\Http\Middleware\AuthenticateApiClient;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('v1')->name('api.v1.')->group(function (): void {
-    // Endpoints da API v1 registrados pelos módulos.
+/*
+| API v1 (RF-110). Autenticação por token de cliente de API (Sanctum, com
+| abilities e tenant); a requisição roda no contexto de integração do
+| tenant. Contrato em docs/openapi.yaml.
+*/
+
+Route::prefix('v1')->name('api.v1.')->middleware(AuthenticateApiClient::class)->group(function (): void {
+    Route::get('/orders', [ApiController::class, 'orders'])->name('orders.index');
+    Route::get('/orders/{order}', [ApiController::class, 'order'])->name('orders.show');
+    Route::get('/buyers', [ApiController::class, 'buyers'])->name('buyers.index');
+    Route::get('/skus', [ApiController::class, 'skus'])->name('skus.index');
+    Route::get('/stock', [ApiController::class, 'stock'])->name('stock.index');
+    Route::get('/invoices', [ApiController::class, 'invoices'])->name('invoices.index');
+    Route::post('/shipments/{shipment}/events', [ApiController::class, 'shipmentEvent'])->name('shipments.events.store');
 });
