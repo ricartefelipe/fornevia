@@ -635,6 +635,14 @@ webhooks foi verificado com HTTP simulado, sem chamada a um receptor real.
   pagamento, alertas e métricas (com regras do Prometheus) e dados de
   demonstração.
 
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Testes de navegador e mutação na CI do PR #24, commit `f2448d0` | 3 cenários de navegador aprovados; mutação com nota de 92,24% no código coberto |
+| Suíte completa na CI do PR #25, commit `250385a` | 2.387 testes e 12.955 asserções aprovados; cobertura de linhas total 94,6%, núcleo 97,35%, caminhos críticos 100%; navegador, mutação, implantação de referência, imagem, segredos, frontend e SonarCloud aprovados |
+| Implantação de referência local | todos os serviços saudáveis, migrations aplicadas, `/health/ready` e login respondendo, senha do Redis fora da lista de processos |
+
 ### Defeitos encontrados na verificação da implantação (corrigidos)
 
 - Com o sistema de arquivos somente leitura, o diretório de views compiladas
