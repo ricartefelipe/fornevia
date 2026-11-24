@@ -88,6 +88,7 @@ final readonly class ReceiveReturn
             if (! $total->isPositive()) {
                 // Nada chegou: a devolução fecha sem valor nem estoque.
                 $locked->forceFill(['status' => ReturnStatus::Closed, 'closed_at' => $this->clock->now()])->save();
+                $this->outbox->record('return.closed', 'return_request', $locked->id, ['return_id' => $locked->id, 'order_id' => $locked->order_id, 'number' => $locked->number, 'refund_cents' => 0]);
             } elseif (! $locked->inspection_required) {
                 $this->approve($locked, $lines, $items, array_fill_keys($lines->pluck('id')->all(), null), null);
             }

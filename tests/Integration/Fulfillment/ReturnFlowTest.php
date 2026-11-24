@@ -113,7 +113,8 @@ it('fecha sem estoque nem valor quando nada chega', function (): void {
     $stored = ($this->fresh)($return);
     expect($stored->status)->toBe(ReturnStatus::Closed)
         ->and($stored->refund_cents->cents)->toBe(0)
-        ->and(S::item($this->scenario, $this->order)->returnable()->toDatabase())->toBe('6.000');
+        ->and(S::item($this->scenario, $this->order)->returnable()->toDatabase())->toBe('6.000')
+        ->and($this->scenario->system(fn (): int => DB::table('outbox_messages')->where('type', 'return.closed')->where('aggregate_id', $return->id)->count()))->toBe(1);
 });
 
 it('recusa devolução de outro comprador, sem permissão e sem dados', function (): void {
@@ -134,4 +135,24 @@ it('mantém devoluções e remessas somente leitura no contexto de comprador', f
     expect($this->scenario->tenant->actingAs($this->buyer['membership'], fn (): int => DB::table('return_requests')->where('id', $return->id)->update(['status' => 'closed'])))->toBe(0)
         ->and($this->scenario->tenant->actingAs($this->buyer['membership'], fn (): int => DB::table('shipments')->update(['carrier' => 'x'])))->toBe(0)
         ->and($this->scenario->tenant->actingAs($this->buyer['membership'], fn (): int => DB::table('shipments')->count()))->toBe(1);
+});
+
+it('mostra a devolução de um colega a quem fez o pedido, mesmo sem ver toda a empresa', function (): void {
+    // Quem fez o pedido perde a visão de todos os pedidos da empresa.
+    $this->scenario->system(function (): void {
+        $role = App\Models\Identity\Role::query()->where('key', SystemRole::Purchaser->value)->firstOrFail();
+        $role->forceFill(['permissions' => array_values(array_diff($role->permissions, [App\Enums\Identity\Permission::PortalOrdersViewAll->value]))])->save();
+    });
+    $colleague = ['membership' => $this->scenario->tenant->addBuyerUser($this->buyer['company'], SystemRole::BuyerAdmin)];
+    $return = ($this->request)('1', buyer: $colleague);
+    $placer = $this->scenario->system(fn () => App\Models\Identity\Membership::query()->with(['role', 'tenant', 'buyerCompany'])->findOrFail($this->buyer['membership']->id));
+
+    expect($this->scenario->tenant->actingAs($placer, fn (): string => app(App\Actions\Fulfillment\Portal\BuyerReturns::class)->find(
+        app(App\Actions\Fulfillment\Portal\BuyerReturns::class)->actor(), $return->id,
+    )->number))->toBe($return->number);
+
+    $stranger = $this->scenario->buyerWithCart(quantity: '1', sameCompany: true)['membership'];
+    expect(fn () => $this->scenario->tenant->actingAs($stranger, fn () => app(App\Actions\Fulfillment\Portal\BuyerReturns::class)->find(
+        app(App\Actions\Fulfillment\Portal\BuyerReturns::class)->actor(), $return->id,
+    )))->toThrow(Illuminate\Database\Eloquent\ModelNotFoundException::class);
 });

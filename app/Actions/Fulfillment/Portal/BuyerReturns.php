@@ -7,12 +7,13 @@ namespace App\Actions\Fulfillment\Portal;
 use App\Actions\Ordering\Portal\BuyerOrders;
 use App\Data\Ordering\Portal\BuyerActor;
 use App\Models\Fulfillment\ReturnRequest;
+use App\Models\Ordering\Order;
 use App\Support\Http\UntrustedId;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Devoluções visíveis ao comprador: as dos pedidos que ele vê (os
- * próprios ou, com portal.orders.view_all, todos da empresa).
+ * Devoluções visíveis ao comprador: as dos pedidos que ele vê (os que fez
+ * ou, com portal.orders.view_all, todos da empresa) e as que ele pediu.
  */
 final readonly class BuyerReturns
 {
@@ -30,7 +31,9 @@ final readonly class BuyerReturns
     {
         return ReturnRequest::query()
             ->where('buyer_company_id', $actor->company->id)
-            ->when(! $this->orders->seesAll(), static fn (Builder $query) => $query->where('requested_by_membership_id', $actor->membership->id));
+            ->when(! $this->orders->seesAll(), static fn (Builder $query) => $query->where(static fn (Builder $own) => $own
+                ->where('requested_by_membership_id', $actor->membership->id)
+                ->orWhereIn('order_id', Order::query()->select('id')->where('buyer_company_id', $actor->company->id)->where('placed_by_membership_id', $actor->membership->id))));
     }
 
     public function find(BuyerActor $actor, mixed $returnId): ReturnRequest

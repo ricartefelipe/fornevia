@@ -238,7 +238,8 @@ final readonly class ActivityNotifier implements OutboxConsumer
         }
 
         $portalPath = route('portal.returns.show', $return->id, false);
-        $requester = fn (): Collection => $this->recipients->memberships([$return->requested_by_membership_id]);
+        // Quem pediu a devolução e quem fez o pedido.
+        $requester = fn (): Collection => $this->recipients->memberships([$return->requested_by_membership_id, $return->order->placed_by_membership_id]);
 
         return match ($message->type) {
             'return.requested' => [
