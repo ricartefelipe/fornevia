@@ -16,6 +16,14 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   e atualização sob requisições contínuas, e runbook de operação em
   Kubernetes.
 
+### Alterado
+
+- Nova identidade visual: violeta institucional com destaques em magenta,
+  fonte Inter empacotada na aplicação, barra lateral em degradê com ícones,
+  cabeçalho com avatar e sino de notificações, cartões, botões, campos,
+  tabelas e selos revisados, painel com indicadores, tela de entrada em duas
+  colunas e atalhos no início do portal.
+
 ## [1.1.0] - 2026-11-24
 
 ### Adicionado
