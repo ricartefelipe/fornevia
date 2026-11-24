@@ -125,3 +125,15 @@ reprova a CI.
 - Sem chamadas externas dentro de transações.
 - Testes de comportamento transacional e de concorrência usam PostgreSQL
   real, sem transação envolvendo o teste.
+
+## Interface
+
+- Cores pelos tokens `brand-*` (violeta) e `accent-*` (magenta, só em
+  degradês de destaque) de `resources/css/app.css`; estados (sucesso,
+  alerta, erro) continuam em verde, âmbar e vermelho.
+- Componentes visuais pelos utilitários `fv-*` e pelos componentes
+  `x-ui.*`; ícones por `x-ui.icon` (Heroicons, MIT), sempre com
+  `aria-hidden` e texto visível ou `sr-only` ao lado.
+- Fonte Inter empacotada pelo Vite: nenhuma fonte ou recurso visual vem de
+  CDN (a CSP só permite a própria origem).
+
