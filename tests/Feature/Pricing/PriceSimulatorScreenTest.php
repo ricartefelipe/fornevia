@@ -16,6 +16,7 @@ beforeEach(function (): void {
     $this->rep = $this->tenant->addStaff(SystemRole::SalesRep);
     $this->group = Fx::group($this->tenant, 'CONSTRUCAO', 'Lojas de material de construção');
     $this->company = Fx::company($this->tenant, 'Casa & Obra Materiais', $this->group);
+    Tests\Integration\Ordering\Staff\StaffOrderFixtures::assignRep($this->tenant, $this->company, $this->rep);
     $this->sku = Fx::sku($this->tenant, 'CIM-50', 'Cimento CP II 50 kg', 'PC');
 
     $this->default = Fx::priceList($this->tenant, 'PADRAO');

@@ -10,11 +10,11 @@ use App\Domain\Shared\BusinessRuleViolation;
 use App\Enums\Identity\Permission;
 use App\Enums\Pricing\NegotiatedPriceStatus;
 use App\Livewire\Staff\Pricing\Concerns\InteractsWithPricingForms;
-use App\Models\Buyers\BuyerCompany;
 use App\Models\Catalog\Sku;
 use App\Models\Identity\User;
 use App\Models\Pricing\NegotiatedPrice;
 use App\Support\Auth\Access;
+use App\Support\Auth\SalesPortfolio;
 use App\Support\Clock\Clock;
 use App\Support\Http\UntrustedId;
 use App\Support\Validation\BusinessDate;
@@ -135,7 +135,7 @@ final class NegotiatedPricesIndex extends Component
             return;
         }
 
-        $company = BuyerCompany::query()->findOrFail(UntrustedId::uuid($this->buyerCompanyId, BuyerCompany::class));
+        $company = app(SalesPortfolio::class)->findCompany($this->buyerCompanyId);
         $sku = Sku::query()->findOrFail($this->selectedSkuId);
 
         try {
@@ -182,7 +182,7 @@ final class NegotiatedPricesIndex extends Component
         $companyFilter = Str::isUuid($this->companyFilter) ? $this->companyFilter : null;
         $status = NegotiatedPriceStatus::tryFrom($this->statusFilter);
 
-        $prices = NegotiatedPrice::query()
+        $prices = app(SalesPortfolio::class)->restrict(NegotiatedPrice::query())
             ->with(['buyerCompany', 'sku.product'])
             ->when($companyFilter !== null, static fn (Builder $q) => $q->where('buyer_company_id', $companyFilter))
             ->when($status !== null, static fn (Builder $q) => $q->where('status', $status?->value))

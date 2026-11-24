@@ -18,6 +18,7 @@ use App\Models\Buyers\CustomerGroup;
 use App\Models\Pricing\PriceList;
 use App\Models\Pricing\PricingPolicy;
 use App\Support\Auth\Access;
+use App\Support\Auth\SalesPortfolio;
 use App\Support\Clock\Clock;
 use App\Support\Tenancy\CurrentContext;
 use Illuminate\Contracts\View\View;
@@ -141,7 +142,7 @@ final class PriceListsIndex extends Component
 
         $canManage = $access->can(Permission::PricingManage);
 
-        $lists = PriceList::query()
+        $lists = app(SalesPortfolio::class)->restrictOptional(PriceList::query())
             ->with(['customerGroup', 'buyerCompany'])
             ->withCount('items')
             ->when($scope !== null, static fn (Builder $q) => $q->where('scope', $scope?->value))

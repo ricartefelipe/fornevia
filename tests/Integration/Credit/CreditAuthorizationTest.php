@@ -81,7 +81,7 @@ it('nega alterações a perfis sem credit.manage, sem efeito algum', function (S
 ]);
 
 it('permite consultar com credit.view e nega a quem não tem', function (): void {
-    $viewer = $this->tenant->addStaff(SystemRole::SalesRep);
+    $viewer = $this->tenant->addStaff(SystemRole::Viewer);
     $warehouse = $this->tenant->addStaff(SystemRole::Warehouse);
 
     $rows = $this->tenant->actingAs($viewer, static fn () => app(ListCreditAccounts::class)->handle(new CreditAccountFilters)->total());

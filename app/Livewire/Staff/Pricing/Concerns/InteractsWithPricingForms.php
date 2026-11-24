@@ -12,6 +12,7 @@ use App\Domain\Shared\Quantity;
 use App\Enums\Catalog\SkuStatus;
 use App\Models\Buyers\BuyerCompany;
 use App\Models\Catalog\Sku;
+use App\Support\Auth\SalesPortfolio;
 use Brick\Math\Exception\MathException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -37,7 +38,8 @@ trait InteractsWithPricingForms
     protected function searchCompanies(string $term, ?string $selectedId = null): Collection
     {
         $term = trim($term);
-        $query = BuyerCompany::query()->orderBy('trade_name')->limit(25);
+        $portfolio = app(SalesPortfolio::class);
+        $query = $portfolio->companies(BuyerCompany::query())->orderBy('trade_name')->limit(25);
 
         if ($term !== '') {
             $like = '%'.self::escapeLike($term).'%';
@@ -55,7 +57,7 @@ trait InteractsWithPricingForms
         $companies = $query->get();
 
         if ($selectedId !== null && Str::isUuid($selectedId) && ! $companies->contains('id', $selectedId)) {
-            $selected = BuyerCompany::query()->find($selectedId);
+            $selected = $portfolio->companies(BuyerCompany::query())->find($selectedId);
 
             if ($selected !== null) {
                 $companies->prepend($selected);

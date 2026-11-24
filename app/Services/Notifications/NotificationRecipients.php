@@ -8,9 +8,11 @@ use App\Enums\Approvals\ApprovalStepStatus;
 use App\Enums\Identity\MembershipKind;
 use App\Enums\Identity\MembershipStatus;
 use App\Enums\Identity\Permission;
+use App\Enums\Identity\SystemRole;
 use App\Models\Approvals\ApprovalDelegation;
 use App\Models\Approvals\OrderApprovalDecision;
 use App\Models\Approvals\OrderApprovalStep;
+use App\Models\Buyers\BuyerCompany;
 use App\Models\Identity\Membership;
 use App\Models\Ordering\Order;
 use App\Models\Quotes\Quote;
@@ -72,9 +74,19 @@ final readonly class NotificationRecipients
     public function quoteTeam(Quote $quote): Collection
     {
         $answers = static fn (Membership $m): bool => $m->role->grants(Permission::QuotesManage) && $m->role->grants(Permission::QuotesView);
-        $rep = $this->memberships([$quote->sales_rep_membership_id])->filter($answers);
+        // Representante atual da empresa (a carteira pode ter mudado desde a solicitação).
+        $currentRep = BuyerCompany::query()->whereKey($quote->buyer_company_id)->value('sales_rep_membership_id');
+        $rep = $this->memberships([$currentRep])->filter($answers);
 
-        return ($rep->isNotEmpty() ? $rep : $this->staffWith(Permission::QuotesManage)->filter($answers))->values();
+        if ($rep->isNotEmpty()) {
+            return $rep->values();
+        }
+
+        // Sem representante: a equipe que elabora propostas, exceto
+        // representantes, que só veem a própria carteira.
+        return $this->staffWith(Permission::QuotesManage)
+            ->filter(static fn (Membership $m): bool => $answers($m) && $m->role->key !== SystemRole::SalesRep->value)
+            ->values();
     }
 
     /**

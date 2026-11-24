@@ -8,6 +8,10 @@
         </x-slot:actions>
     </x-ui.page-header>
 
+    @if ($portfolioOnly)
+        <x-ui.alert type="info" class="mb-4">Você vê as empresas da sua carteira.</x-ui.alert>
+    @endif
+
     @if ($canManage && $creating)
         <section class="fv-card mb-6 p-6" aria-labelledby="buyer-form-title">
             <h2 id="buyer-form-title" class="text-lg font-semibold">Nova empresa compradora</h2>

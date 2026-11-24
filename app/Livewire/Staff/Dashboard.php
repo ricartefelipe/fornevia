@@ -10,6 +10,7 @@ use App\Models\Buyers\BuyerCompany;
 use App\Models\Identity\Branch;
 use App\Models\Identity\Membership;
 use App\Services\Platform\PlanLimits;
+use App\Support\Auth\SalesPortfolio;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -27,7 +28,7 @@ final class Dashboard extends Component
                 ->where('kind', MembershipKind::Staff->value)
                 ->where('status', MembershipStatus::Active->value)
                 ->count(),
-            'buyerCount' => BuyerCompany::query()->count(),
+            'buyerCount' => app(SalesPortfolio::class)->companies(BuyerCompany::query())->count(),
             'branchCount' => Branch::query()->count(),
         ]);
     }

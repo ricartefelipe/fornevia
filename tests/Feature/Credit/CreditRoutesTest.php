@@ -76,7 +76,8 @@ it('responde 404 para empresa de outro distribuidor e identificador malformado',
 });
 
 it('mostra lista e detalhe a quem só consulta, sem controles de alteração', function (): void {
-    [$user, $membership] = Fx::staffUser($this->tenant, SystemRole::SalesRep);
+    // Consulta sem recorte de carteira (o representante vê só a carteira).
+    [$user, $membership] = Fx::staffUser($this->tenant, SystemRole::Viewer);
 
     ($this->visit)($user, $membership, route('credit.index'))
         ->assertOk()

@@ -2,6 +2,10 @@
     <x-ui.page-header title="Crédito comercial"
         description="Limite de venda a prazo por empresa compradora. Disponível = limite + exceções vigentes − exposição (pedidos confirmados não faturados + faturas em aberto)." />
 
+    @if ($portfolioOnly)
+        <x-ui.alert type="info" class="mb-4">Você vê as empresas da sua carteira.</x-ui.alert>
+    @endif
+
     <section class="fv-card mb-4 p-4" aria-labelledby="credit-filters-title">
         <h2 id="credit-filters-title" class="sr-only">Filtros</h2>
         <div class="grid gap-4 sm:grid-cols-4" role="search">
