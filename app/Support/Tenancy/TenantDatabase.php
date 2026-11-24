@@ -63,7 +63,7 @@ final readonly class TenantDatabase
 
             // Distribuidor da requisição para as métricas por distribuidor
             // (oculto: não vai aos logs e permanece depois da transação).
-            if ($context->tenantId !== null && ! Context::hasHidden(self::METRICS_TENANT_KEY)) {
+            if ($context->tenantId !== null && (bool) config('observability.per_tenant') && ! Context::hasHidden(self::METRICS_TENANT_KEY)) {
                 Context::addHidden(self::METRICS_TENANT_KEY, $context->tenantId);
             }
             $previousLog = Context::only(self::LOG_KEYS);

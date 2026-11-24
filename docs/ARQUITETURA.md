@@ -153,8 +153,8 @@ administradores da plataforma ou e-mails em `HORIZON_ALLOWED_EMAILS`.
 | `fornevia_outbox_pending`, `fornevia_outbox_oldest_pending_age_seconds`, `fornevia_outbox_dead` | medidas | situação da outbox (`outbox:status`) |
 | `fornevia_failed_jobs` | medida | jobs guardados em `failed_jobs` |
 | `fornevia_metrics_collection_errors` | medida | medidas que não puderam ser lidas na coleta |
-| `fornevia_http_requests_by_tenant_total{tenant,status}` | contador | com `METRICS_PER_TENANT=true`: requisições por distribuidor (id da organização); só os `METRICS_TENANT_LIMIT` de maior volume (padrão 20), os demais em `tenant="outros"` |
-| `fornevia_outbox_pending_by_tenant{tenant}` | medida | com `METRICS_PER_TENANT=true`: pendentes na outbox por distribuidor, com o mesmo limite |
+| `fornevia_http_requests_by_tenant_total{tenant,status}` | contador | com `METRICS_PER_TENANT=true`: requisições por distribuidor (id da organização); os primeiros `METRICS_TENANT_LIMIT` (padrão 20) ganham série própria fixa, os demais somam em `tenant="outros"` (contadores só crescem) |
+| `fornevia_outbox_pending_by_tenant{tenant}` | medida | com `METRICS_PER_TENANT=true`: pendentes na outbox por distribuidor, os de maior volume até o limite e o resto em `tenant="outros"` |
 
 Contadores ficam no Redis (conexão `metrics`, tempo limite de 0,25 s) e
 somam todos os processos; falha ao gravar uma métrica gera aviso no log e

@@ -16,10 +16,11 @@ return [
     'latency_buckets' => [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
 
     // Métricas por distribuidor (rótulo tenant com o id da organização):
-    // desligadas por padrão; com limite de séries, os demais somam em
-    // tenant="outros".
+    // desligadas por padrão. Os primeiros distribuidores vistos, até o
+    // limite, ganham série própria (sempre a mesma); os demais somam em
+    // tenant="outros", e os contadores só crescem.
     'per_tenant' => (bool) env('METRICS_PER_TENANT', false),
-    'tenant_series_limit' => (int) env('METRICS_TENANT_LIMIT', 20),
+    'tenant_series_limit' => max(1, (int) (env('METRICS_TENANT_LIMIT') ?: 20)),
 
     // Filas cujo tamanho é exposto.
     'queues' => ['critical', 'default', 'notifications', 'integrations'],
