@@ -16,6 +16,9 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - Importação de catálogo com preço (na tabela informada ou na padrão ativa)
   e custo opcionais, conferindo as permissões de preço e de custo de quem
   importa.
+- Conferência automática dos reembolsos sem resposta do gateway
+  (`payments:verify-refunds`, a cada 15 minutos), pela referência enviada
+  no pedido de estorno.
 
 ### Alterado
 
