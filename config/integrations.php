@@ -22,4 +22,9 @@ return [
         'max_bytes' => 2 * 1024 * 1024,
         'max_rows' => 5000,
     ],
+
+    // Exportações CSV montadas na requisição: acima disso, refinar filtros.
+    'exports' => [
+        'max_rows' => 10_000,
+    ],
 ];
