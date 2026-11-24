@@ -17,12 +17,12 @@
             ['building', 'Empresas compradoras', $buyerCount, null],
             ['pin', 'Filiais', $branchCount, $subscription->plan->max_branches ?? '∞'],
         ] as [$icon, $label, $value, $limit])
-            <div class="fv-card flex items-center gap-4 p-5">
-                <span class="fv-kpi-icon"><x-ui.icon :name="$icon" /></span>
-                <div>
-                    <dt class="text-sm text-slate-500">{{ $label }}</dt>
-                    <dd class="mt-0.5 text-2xl font-semibold tracking-tight text-slate-900">{{ $value }}@if ($limit !== null)<span class="text-sm font-normal text-slate-400"> / {{ $limit }}</span>@endif</dd>
-                </div>
+            <div class="fv-card grid grid-cols-[auto_1fr] items-center gap-x-4 p-5">
+                <dt class="contents">
+                    <span class="fv-kpi-icon row-span-2"><x-ui.icon :name="$icon" /></span>
+                    <span class="text-sm text-slate-500">{{ $label }}</span>
+                </dt>
+                <dd class="col-start-2 mt-0.5 text-2xl font-semibold tracking-tight text-slate-900">{{ $value }}@if ($limit !== null)<span class="text-sm font-normal text-slate-500"> / {{ $limit }}</span>@endif</dd>
             </div>
         @endforeach
     </dl>

@@ -15,9 +15,9 @@
             <div class="relative">
                 <p class="max-w-md text-3xl font-semibold leading-tight tracking-tight text-white">Toda a venda B2B do distribuidor em um só lugar.</p>
                 <ul class="mt-8 space-y-4 text-sm text-brand-100">
-                    <li class="flex gap-3"><x-ui.icon name="tag" class="size-5 shrink-0 text-accent-500" /> Catálogo e preços próprios para cada cliente empresarial.</li>
-                    <li class="flex gap-3"><x-ui.icon name="badge-check" class="size-5 shrink-0 text-accent-500" /> Cotações negociadas, aprovações por alçada e pedidos com reserva de estoque.</li>
-                    <li class="flex gap-3"><x-ui.icon name="card" class="size-5 shrink-0 text-accent-500" /> Crédito comercial, expedição, devoluções e recebimentos no mesmo fluxo.</li>
+                    <li class="flex gap-3"><x-ui.icon name="tag" class="size-5 shrink-0 text-brand-300" /> Catálogo e preços próprios para cada cliente empresarial.</li>
+                    <li class="flex gap-3"><x-ui.icon name="badge-check" class="size-5 shrink-0 text-brand-300" /> Cotações negociadas, aprovações por alçada e pedidos com reserva de estoque.</li>
+                    <li class="flex gap-3"><x-ui.icon name="card" class="size-5 shrink-0 text-brand-300" /> Crédito comercial, expedição, devoluções e recebimentos no mesmo fluxo.</li>
                 </ul>
             </div>
             <p class="relative text-xs text-brand-200/70">Cada distribuidor com seus dados isolados e protegidos.</p>

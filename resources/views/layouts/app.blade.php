@@ -14,11 +14,11 @@
     @php($membership = $access->membershipOrNull())
     @php($items = $menu->items())
     @php($user = auth()->user())
-    @php($initials = collect(preg_split('/\s+/u', trim((string) $user?->name)) ?: [])->filter(fn ($p) => preg_match('/^\p{L}/u', $p) === 1)->take(2)->map(fn ($p) => mb_strtoupper(mb_substr($p, 0, 1)))->implode(''))
+    @php($initials = collect(preg_split('/\s+/u', trim((string) $user?->name)) ?: [])->filter(fn ($p) => preg_match('/^\p{L}/u', $p) === 1)->take(2)->map(fn ($p) => mb_strtoupper(mb_substr($p, 0, 1)))->implode('') ?: mb_strtoupper(mb_substr(trim((string) $user?->name), 0, 1)))
     <div class="min-h-full lg:flex">
         <nav aria-label="Navegação principal" class="fv-sidebar lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-72 lg:shrink-0 lg:flex-col">
             <details class="group lg:hidden">
-                <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-white">
+                <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-white [&::-webkit-details-marker]:hidden">
                     @include('layouts.partials.brand', ['subtitle' => null])
                     <span class="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-sm text-brand-100"><x-ui.icon name="bars" class="size-5" /> Menu</span>
                 </summary>
@@ -34,7 +34,7 @@
                 @if ($membership)
                     <div class="m-3 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10">
                         <p class="truncate text-sm font-semibold text-white">{{ $membership->tenant->trade_name }}</p>
-                        <p class="truncate text-xs text-brand-200/80">{{ $access->isBuyer() ? $membership->buyerCompany?->trade_name.' · ' : '' }}{{ $membership->role->name }}</p>
+                        <p class="truncate text-xs text-brand-200/80">{{ collect([$access->isBuyer() ? $membership->buyerCompany?->trade_name : null, $membership->role->name])->filter()->implode(' · ') }}</p>
                         <a href="{{ route('contexts.index', ['escolher' => 1]) }}" class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-brand-200 hover:text-white">
                             <x-ui.icon name="switch" class="size-4" /> Trocar contexto
                         </a>
@@ -60,8 +60,8 @@
                     @if ($membership)
                         <livewire:notifications.notification-bell />
                     @endif
-                    <a href="{{ route('contexts.index', ['escolher' => 1]) }}" class="rounded-lg px-2.5 py-1.5 font-medium text-brand-700 hover:bg-brand-50 lg:hidden">Trocar contexto</a>
-                    <a href="{{ route('profile.security') }}" class="flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-slate-700 hover:bg-slate-100">
+                    <a href="{{ route('contexts.index', ['escolher' => 1]) }}" @class(['rounded-lg px-2.5 py-1.5 font-medium text-brand-700 hover:bg-brand-50', 'lg:hidden' => $membership !== null])>{{ $membership ? 'Trocar contexto' : 'Escolher contexto' }}</a>
+                    <a href="{{ route('profile.security') }}" class="flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-slate-700 hover:bg-slate-100" aria-label="Perfil e segurança de {{ $user?->name }}">
                         <span class="flex size-8 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-accent-500 text-xs font-semibold text-white" aria-hidden="true">{{ $initials }}</span>
                         <span class="hidden sm:inline">{{ $user?->name }}</span>
                     </a>

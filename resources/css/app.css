@@ -30,6 +30,8 @@
 @layer base {
     html {
         @apply bg-slate-50 text-slate-900 antialiased;
+        /* Alvo de foco e de âncora fora do cabeçalho fixo. */
+        scroll-padding-top: 4.5rem;
         font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     }
 
