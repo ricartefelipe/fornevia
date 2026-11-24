@@ -2,7 +2,7 @@
 {{- $workers := list
   (dict "name" "horizon" "command" (list "fornevia-start" "php" "artisan" "horizon") "replicas" .Values.horizon.replicas "grace" .Values.horizon.terminationGracePeriodSeconds "resources" .Values.horizon.resources "strategy" "RollingUpdate")
   (dict "name" "outbox" "command" (list "fornevia-start" "php" "artisan" "outbox:relay") "replicas" .Values.outbox.replicas "grace" .Values.outbox.terminationGracePeriodSeconds "resources" .Values.outbox.resources "strategy" "RollingUpdate")
-  (dict "name" "scheduler" "command" (list "fornevia-start" "php" "artisan" "schedule:work") "replicas" 1 "grace" 30 "resources" .Values.scheduler.resources "strategy" "Recreate")
+  (dict "name" "scheduler" "command" (list "fornevia-start" "php" "artisan" "schedule:work") "replicas" 1 "grace" .Values.scheduler.terminationGracePeriodSeconds "resources" .Values.scheduler.resources "strategy" "Recreate")
 -}}
 {{- range $w := $workers }}
 {{- $c := dict "root" $root "component" $w.name }}
@@ -35,17 +35,14 @@ spec:
         - name: {{ $w.name }}
           image: {{ include "fornevia.appImage" $root }}
           imagePullPolicy: {{ $root.Values.image.pullPolicy }}
-          command: {{ toJson $w.command }}
+          # args, e não command: o ENTRYPOINT da imagem (tini) continua como PID 1,
+          # repassa o SIGTERM e recolhe processos filhos.
+          args: {{ toJson $w.command }}
           {{- include "fornevia.phpEnv" $root | nindent 10 }}
           {{- include "fornevia.phpSecurityContext" $root | nindent 10 }}
-          {{- if eq $w.name "horizon" }}
-          livenessProbe:
-            exec:
-              command: ["php", "artisan", "horizon:status"]
-            initialDelaySeconds: 30
-            periodSeconds: 60
-            timeoutSeconds: 20
-          {{- end }}
+          # Sem sonda de vivacidade: horizon:status responde pelo cluster inteiro
+          # (qualquer réplica), não por este pod. Se o processo termina, o
+          # contêiner termina junto e é reiniciado.
           resources: {{- toYaml $w.resources | nindent 12 }}
       {{- include "fornevia.phpVolumes" $root | nindent 6 }}
 {{- end }}

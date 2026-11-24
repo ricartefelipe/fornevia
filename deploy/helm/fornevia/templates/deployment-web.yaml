@@ -22,6 +22,8 @@ spec:
       annotations: {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      # Acima do fastcgi_read_timeout do nginx (70 s) mais a espera do preStop.
+      terminationGracePeriodSeconds: {{ .Values.web.terminationGracePeriodSeconds }}
       {{- include "fornevia.podCommon" $c | nindent 6 }}
       containers:
         - name: nginx

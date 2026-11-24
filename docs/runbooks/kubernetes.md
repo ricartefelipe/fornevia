@@ -10,11 +10,16 @@ indisponibilidade. Decisão registrada na ADR-032.
 |---|---|---|
 | `app` (PHP-FPM) | 2 a 8 (HPA, CPU 70%) | Service `fastcgi` na porta 9000 |
 | `web` (nginx) | 2 a 6 (HPA, CPU 70%) | Service `http` na porta 80; destino do Ingress |
-| `horizon` | 2 | filas no Redis; `horizon:status` como vivacidade |
+| `horizon` | 2 | filas no Redis; workers por pod em `HORIZON_*_MAX_PROCESSES` |
 | `outbox` | 2 | o relay reivindica mensagens com `SKIP LOCKED` |
 | `scheduler` | 1 | estratégia `Recreate`; tarefas com `onOneServer` |
 | Job `migrate` | — | hook `pre-install` e `pre-upgrade`, papel `fornevia_owner` |
 | PVC `storage` | — | `storage/app` compartilhado (ReadWriteMany), mantido ao desinstalar |
+
+Dimensionamento por pod em `config`: `FPM_MAX_CHILDREN` (10) e
+`HORIZON_OPERACAO_MAX_PROCESSES`/`HORIZON_INTEGRACOES_MAX_PROCESSES` (5 e 2).
+A capacidade total é esse valor vezes o número de réplicas; ao aumentar,
+ajuste os limites de memória (cerca de 50 MiB por processo).
 
 Também: PodDisruptionBudget (`minAvailable: 1`) para `app`, `web`,
 `horizon` e `outbox`; distribuição dos pods entre nós
@@ -97,8 +102,10 @@ helm upgrade fornevia deploy/helm/fornevia -n fornevia -f valores.yaml \
 - Rollout com `maxUnavailable: 0`: cada pod novo só recebe tráfego depois
   de pronto, e os antigos saem com espera de 5 s para o Service deixar de
   enviá-los requisições.
-- Workers recebem `SIGTERM` e terminam o job em curso dentro do prazo
-  (`terminationGracePeriodSeconds`: 90 s no Horizon, 45 s no relay).
+- Workers recebem `SIGTERM` (repassado pelo `tini`, PID 1 da imagem) e
+  terminam o job em curso dentro do prazo (`terminationGracePeriodSeconds`:
+  150 s no Horizon, acima do maior timeout de job, de 120 s; 45 s no relay).
+  PHP-FPM e nginx têm 80 s, acima dos 65 s e 70 s de limite por requisição.
 
 ## Volta de versão
 

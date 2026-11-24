@@ -21,16 +21,22 @@ spec:
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never
-      securityContext:
-        fsGroup: 82
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 82
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: migrate
           image: {{ include "fornevia.appImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["fornevia-start", "php", "artisan", "migrate", "--force"]
+          args: ["fornevia-start", "php", "artisan", "migrate", "--force"]
           env:
             # Papel de manutenção (tem precedência sobre o ConfigMap): só as migrations alteram o schema.
             - {name: DB_CONNECTION, value: pgsql_owner}

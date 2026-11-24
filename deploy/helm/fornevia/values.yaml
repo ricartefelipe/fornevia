@@ -61,13 +61,22 @@ config:
   METRICS_SCRAPE_HOSTS: ""
   METRICS_PER_TENANT: "false"
   METRICS_TENANT_LIMIT: "20"
+  # Dimensionamento por pod (a capacidade total vem das réplicas): processos
+  # do PHP-FPM e workers do Horizon. Ajuste junto com os limites de memória
+  # abaixo (cerca de 50 MiB por processo, até 256 MiB antes da reciclagem
+  # nos workers).
+  FPM_MAX_CHILDREN: "10"
+  HORIZON_OPERACAO_MAX_PROCESSES: "5"
+  HORIZON_INTEGRACOES_MAX_PROCESSES: "2"
   TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
 app:
   replicas: 2
+  terminationGracePeriodSeconds: 80
+  # FPM_MAX_CHILDREN processos de cerca de 50 MiB mais o OPcache.
   resources:
-    requests: {cpu: 250m, memory: 256Mi}
-    limits: {memory: 512Mi}
+    requests: {cpu: 250m, memory: 384Mi}
+    limits: {memory: 768Mi}
   autoscaling:
     enabled: true
     minReplicas: 2
@@ -76,6 +85,7 @@ app:
 
 web:
   replicas: 2
+  terminationGracePeriodSeconds: 80
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 128Mi}
@@ -87,10 +97,13 @@ web:
 
 horizon:
   replicas: 2
-  terminationGracePeriodSeconds: 90
+  # Acima do maior timeout dos workers (120 s na fila de integrações), para
+  # que o job em curso termine antes do encerramento.
+  terminationGracePeriodSeconds: 150
+  # Até 7 workers (HORIZON_*_MAX_PROCESSES) mais o master e os supervisores.
   resources:
-    requests: {cpu: 200m, memory: 256Mi}
-    limits: {memory: 768Mi}
+    requests: {cpu: 200m, memory: 512Mi}
+    limits: {memory: 1Gi}
 
 outbox:
   # O relay reivindica mensagens com SKIP LOCKED: várias réplicas são seguras.
@@ -102,6 +115,7 @@ outbox:
 
 scheduler:
   # Uma réplica; as tarefas usam onOneServer como proteção adicional.
+  terminationGracePeriodSeconds: 60
   resources:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 256Mi}
