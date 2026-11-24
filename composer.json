@@ -62,6 +62,7 @@
             "pest --colors=always"
         ],
         "test:unit": "pest --testsuite=Unit",
+        "test:mutation": "pest --testsuite=Unit --mutate --class='App\\Domain,App\\Support\\Integrations\\Csv' --covered-only --parallel --min=90",
         "test:coverage": [
             "@php artisan config:clear --ansi",
             "pest --coverage --min=0 --coverage-clover=build/coverage/clover.xml --log-junit=build/junit.xml"

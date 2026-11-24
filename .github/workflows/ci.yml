@@ -174,6 +174,118 @@ jobs:
           path: build
           retention-days: 7
 
+  browser:
+    name: Navegador (Dusk, Chrome)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: [frontend]
+    services:
+      postgres:
+        image: postgres:18.7-alpine3.24
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres-ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:8.8.4-alpine3.23
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: fornevia_browser
+      DB_USERNAME: fornevia_app
+      DB_PASSWORD: app-ci
+      DB_OWNER_USERNAME: fornevia_owner
+      DB_OWNER_PASSWORD: owner-ci
+      DB_RELAY_USERNAME: fornevia_relay
+      DB_RELAY_PASSWORD: relay-ci
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+          tools: composer:2.11.2
+      - name: Cache do Composer
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+      - name: Instalar dependências (lockfile)
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: assets
+          path: public/build
+      - name: Provisionar papéis e bancos
+        env:
+          PGHOST: 127.0.0.1
+          PGPASSWORD: postgres-ci
+          POSTGRES_USER: postgres
+          FORNEVIA_OWNER_PASSWORD: owner-ci
+          FORNEVIA_APP_PASSWORD: app-ci
+          FORNEVIA_RELAY_PASSWORD: relay-ci
+          FORNEVIA_DATABASES: fornevia fornevia_test fornevia_browser
+        run: sh docker/postgres/init/01-roles.sh
+      - name: Preparar ambiente
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+      - name: Servidor da aplicação e ChromeDriver
+        run: |
+          mkdir -p storage/logs
+          (cd public && env APP_ENV=local APP_DEBUG=false APP_URL=http://127.0.0.1:8000 \
+            SESSION_DRIVER=file SESSION_SECURE_COOKIE=false CACHE_STORE=array QUEUE_CONNECTION=sync MAIL_MAILER=array \
+            PAYMENTS_GATEWAY=simulator PASSWORD_BREACH_CHECK=false BCRYPT_ROUNDS=4 REDIS_PREFIX=fornevia-browser- LOG_STACK=single \
+            php -S 127.0.0.1:8000 ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php > ../storage/logs/browser-server.log 2>&1 &)
+          "$CHROMEWEBDRIVER/chromedriver" --port=9515 > storage/logs/chromedriver.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:9515/status > /dev/null && break; sleep 1; done
+      - name: Testes de navegador
+        env:
+          FORNEVIA_TEST_FRESH: '1'
+          DUSK_DRIVER_URL: http://127.0.0.1:9515
+        run: vendor/bin/pest -c phpunit.browser.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: browser
+          path: |
+            tests/Browser/screenshots
+            tests/Browser/console
+            storage/logs
+          retention-days: 7
+
+  mutation:
+    name: Mutação do domínio
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: pcov
+          tools: composer:2.11.2
+      - name: Cache do Composer
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+      - name: Instalar dependências (lockfile)
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Testes de mutação (domínio e CSV, mínimo de 90% no código coberto)
+        run: vendor/bin/pest --testsuite=Unit --mutate --class='App\Domain,App\Support\Integrations\Csv' --covered-only --parallel --min=90 --no-cache
+
   branches:
     name: Cobertura de branches do domínio
     runs-on: ubuntu-24.04
