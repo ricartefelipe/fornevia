@@ -10,23 +10,25 @@ Os 90 requisitos de [REQUISITOS.md](REQUISITOS.md) estão implementados e
 cobertos por testes automatizados; a relação entre requisitos, incrementos,
 decisões e testes está em [RASTREABILIDADE.md](RASTREABILIDADE.md).
 
-Limitações conhecidas da versão:
+Limitações conhecidas (atualizadas na versão 1.1.0):
 
 - Faturas comerciais, sem emissão de nota fiscal eletrônica.
-- Integração com o Asaas verificada com respostas simuladas conforme a API
-  v3 documentada; não houve chamada real ao sandbox nos testes
+- Integração com o Asaas, inclusive a consulta de estornos usada pela
+  conferência de reembolsos, verificada com respostas simuladas conforme a
+  API v3 documentada; não houve chamada real ao sandbox nos testes
   automatizados. Webhooks enviados verificados com HTTP simulado.
-- Reembolso sem resposta do gateway fica em verificação até conferência
-  manual no painel do provedor.
-- API v1 só de leitura, exceto o registro de eventos de remessa.
-- Importação de catálogo sem preço nem custo.
-- Carteira do representante comercial aplicada a pedidos e cotações; as
-  demais listas mostram todas as empresas do distribuidor.
-- Métricas sem rótulo por distribuidor.
+- API v1 sem criação de pedidos: depende de definir o comprador
+  responsável e a aplicação das regras de aprovação interna a pedidos
+  vindos do ERP do distribuidor.
 - Implantação de referência em um único host; alta disponibilidade e TLS
   ficam com a infraestrutura à frente do serviço web.
 - Aprovação humana nas proteções de branch não exigida (mantenedor único);
   os checks automatizados são obrigatórios.
+
+Resolvido na versão 1.1.0: carteira do representante em todas as telas da
+equipe; escrita na API (comprador, estoque, cancelamento de pedido);
+importação de catálogo com preço e custo; conferência automática dos
+reembolsos em verificação; métricas por distribuidor opcionais.
 
 ## Incremento 1 — Fundação da plataforma (`feature/fundacao-plataforma`)
 
