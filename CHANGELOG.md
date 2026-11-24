@@ -5,6 +5,15 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.0.1] - 2026-11-24
+
+### Segurança
+
+- `web-auth/webauthn-lib` atualizado de 5.3.12 para 5.3.17, corrigindo os
+  avisos publicados para a biblioteca de WebAuthn usada pelas passkeys
+  (alocação de memória por CBOR, verificação de atestação e de metadados e
+  enumeração de usuários).
+
 ## [1.0.0] - 2026-11-24
 
 Primeira versão estável. Reúne as versões 0.1.0 a 0.5.0: plataforma
@@ -212,7 +221,8 @@ métricas e implantação de referência.
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
 
-[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v1.0.0...develop
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v1.0.1...develop
+[1.0.1]: https://github.com/ricartefelipe/fornevia/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ricartefelipe/fornevia/compare/v0.5.0...v1.0.0
 [0.5.0]: https://github.com/ricartefelipe/fornevia/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ricartefelipe/fornevia/compare/v0.3.0...v0.4.0
