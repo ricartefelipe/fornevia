@@ -5,6 +5,8 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.4.0] - 2026-11-24
+
 ### Adicionado
 
 - Contas a receber: faturas comerciais (não fiscais) do expedido, com o
@@ -171,7 +173,8 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
 
-[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.3.0...develop
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.4.0...develop
+[0.4.0]: https://github.com/ricartefelipe/fornevia/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ricartefelipe/fornevia/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ricartefelipe/fornevia/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ricartefelipe/fornevia/releases/tag/v0.1.0

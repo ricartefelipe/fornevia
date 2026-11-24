@@ -518,6 +518,15 @@ ao sandbox nos testes automatizados.
   (RS-110).
 - Telas de clientes da API, webhooks e importação em `/integracoes`.
 
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Testes das integrações (API, contrato OpenAPI, webhooks com HTTP simulado, importação, exportação, telas, CSV) | aprovados; os 21 de regressão da revisão falham sem a correção correspondente |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+| Suíte completa na CI do PR #19, commit `391f655` | 2.342 testes e 11.455 asserções aprovados; cobertura de linhas total 94,5%, núcleo 97,32%, caminhos críticos 100%; migrations, imagem, segredos, frontend e SonarCloud aprovados |
+
 ### Defeitos encontrados pela revisão (corrigidos)
 
 - Entrega de webhook cuja primeira tentativa se perdia depois do commit
@@ -539,3 +548,9 @@ ao sandbox nos testes automatizados.
   inteiro, sem apontar a linha.
 - Tempo limite do job de importação acima do `retry_after` da fila, o que
   entregaria o mesmo job a outro worker.
+- Tabela de tokens com RLS sem FORCE, fora da guarda de schema das tabelas
+  de tenant (apontada pela CI).
+
+Limitações registradas: a API v1 é só de leitura, exceto eventos de
+remessa; a importação de catálogo não traz preço nem custo; o envio de
+webhooks foi verificado com HTTP simulado, sem chamada a um receptor real.
