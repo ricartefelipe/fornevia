@@ -21,6 +21,9 @@ use Illuminate\Support\Facades\Context;
  */
 final readonly class TenantDatabase
 {
+    /** Chave oculta do Context com o distribuidor da requisição (métricas). */
+    public const string METRICS_TENANT_KEY = 'metrics_tenant_id';
+
     private const array LOG_KEYS = ['context_kind', 'tenant_id', 'user_id', 'buyer_company_id', 'api_client_id'];
 
     public function __construct(
@@ -57,6 +60,12 @@ final readonly class TenantDatabase
         return $connection->transaction(function () use ($connection, $context, $callback): mixed {
             $this->apply($connection, $context);
             $previous = $this->current->swap($context);
+
+            // Distribuidor da requisição para as métricas por distribuidor
+            // (oculto: não vai aos logs e permanece depois da transação).
+            if ($context->tenantId !== null && (bool) config('observability.per_tenant') && ! Context::hasHidden(self::METRICS_TENANT_KEY)) {
+                Context::addHidden(self::METRICS_TENANT_KEY, $context->tenantId);
+            }
             $previousLog = Context::only(self::LOG_KEYS);
             Context::forget(self::LOG_KEYS);
             Context::add($context->toLogContext());
@@ -77,8 +86,8 @@ final readonly class TenantDatabase
      * crédito, pedidos, níveis e decisões de aprovação, orçamento). Quem
      * chama já autorizou a operação no contexto original; dentro do
      * callback as consultas enxergam todas as empresas do tenant e precisam
-     * filtrar a empresa explicitamente. Contextos sem usuário (integração)
-     * não elevam: a API precisará de regra própria.
+     * filtrar a empresa explicitamente. O cliente da API eleva da mesma forma,
+     * para o sistema do próprio tenant, e continua identificado como autor.
      *
      * @template T
      *
@@ -89,7 +98,7 @@ final readonly class TenantDatabase
     {
         $active = $this->current->require();
 
-        return $this->run(ExecutionContext::system($active->requireTenantId(), $active->userId), $callback);
+        return $this->run(ExecutionContext::system($active->requireTenantId(), $active->userId, $active->apiClientId), $callback);
     }
 
     /**
@@ -118,8 +127,14 @@ final readonly class TenantDatabase
      */
     private function canElevate(ExecutionContext $active, ExecutionContext $requested): bool
     {
-        return $active->userId !== null
-            && $requested->userId === $active->userId;
+        if ($active->userId !== null) {
+            return $requested->userId === $active->userId;
+        }
+
+        return $active->apiClientId !== null
+            && $requested->kind === ContextKind::System
+            && $requested->apiClientId === $active->apiClientId
+            && $requested->tenantId === $active->tenantId;
     }
 
     /**

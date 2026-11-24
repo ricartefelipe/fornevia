@@ -285,6 +285,7 @@ it('trata condição de pagamento de outro distribuidor ou malformada como inexi
 
 it('refaz a autorização nas ações das seções', function (): void {
     $seller = $this->tenant->addStaff(SystemRole::SalesRep);
+    Tests\Integration\Ordering\Staff\StaffOrderFixtures::assignRep($this->tenant, $this->company, $seller);
     $cash = Fixtures::paymentTerm($this->tenant, 'AVISTA');
 
     ($this->as)(function () use ($cash): void {

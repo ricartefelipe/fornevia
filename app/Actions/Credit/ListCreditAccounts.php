@@ -11,6 +11,7 @@ use App\Enums\Credit\CreditAccountStatus;
 use App\Enums\Identity\Permission;
 use App\Models\Buyers\BuyerCompany;
 use App\Support\Auth\Access;
+use App\Support\Auth\SalesPortfolio;
 use App\Support\Clock\Clock;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -51,7 +52,7 @@ final readonly class ListCreditAccounts
             ->where('ce.valid_from', '<=', $now)
             ->where('ce.valid_until', '>', $now);
 
-        $query = BuyerCompany::query()
+        $query = app(SalesPortfolio::class)->companies(BuyerCompany::query())
             ->leftJoin('credit_accounts as ca', static function ($join): void {
                 $join->on('ca.buyer_company_id', '=', 'buyer_companies.id')
                     ->on('ca.tenant_id', '=', 'buyer_companies.tenant_id');

@@ -6,6 +6,7 @@ namespace App\Services\Finance\Gateways;
 
 use App\Domain\Shared\Money;
 use App\Enums\Finance\PaymentGatewayKind;
+use App\Enums\Finance\RefundOutcome;
 use Illuminate\Support\Str;
 
 /**
@@ -32,8 +33,14 @@ final class SimulatorGateway implements PaymentGateway
 
     public function cancel(string $chargeId): void {}
 
-    public function refund(string $chargeId, Money $amount): string
+    public function refund(string $chargeId, Money $amount, string $reference): string
     {
         return 'sim_refund_'.Str::uuid7();
+    }
+
+    /** O simulador sempre efetiva o reembolso. */
+    public function refundOutcome(string $chargeId, string $reference): GatewayRefund
+    {
+        return new GatewayRefund(RefundOutcome::Done, 'sim_refund_'.$reference);
     }
 }

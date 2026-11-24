@@ -83,7 +83,7 @@
                                     <span class="block text-xs text-slate-500">{{ $movement->reason }}</span>
                                 @endif
                             </td>
-                            <td>{{ $movement->actor_user_id !== null ? ($actors[$movement->actor_user_id] ?? 'Usuário removido') : 'Sistema' }}</td>
+                            <td>{{ $movement->actor_user_id !== null ? ($actors[$movement->actor_user_id] ?? 'Usuário removido') : ($movement->actor_api_client_id !== null ? 'Cliente da API' : 'Sistema') }}</td>
                         </tr>
                     @endforeach
                 </tbody>

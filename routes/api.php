@@ -20,4 +20,8 @@ Route::prefix('v1')->name('api.v1.')->middleware(AuthenticateApiClient::class)->
     Route::get('/stock', [ApiController::class, 'stock'])->name('stock.index');
     Route::get('/invoices', [ApiController::class, 'invoices'])->name('invoices.index');
     Route::post('/shipments/{shipment}/events', [ApiController::class, 'shipmentEvent'])->name('shipments.events.store');
+    Route::post('/buyers', [ApiController::class, 'createBuyer'])->name('buyers.store');
+    Route::post('/stock/receipts', [ApiController::class, 'receiveStock'])->name('stock.receipts.store');
+    Route::post('/stock/adjustments', [ApiController::class, 'adjustStock'])->name('stock.adjustments.store');
+    Route::post('/orders/{order}/cancellation', [ApiController::class, 'cancelOrder'])->name('orders.cancellation.store');
 });

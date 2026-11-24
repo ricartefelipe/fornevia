@@ -13,6 +13,7 @@ use App\Livewire\Staff\Buyers\Concerns\InteractsWithBuyerCompany;
 use App\Livewire\Staff\Buyers\Forms\BuyerCompanyForm;
 use App\Models\Audit\AuditLog;
 use App\Models\Buyers\BuyerCompany;
+use App\Support\Auth\SalesPortfolio;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -109,7 +110,7 @@ final class BuyerShow extends Component
 
     public function render(): View
     {
-        $company = BuyerCompany::query()->with(['customerGroup', 'salesRep.user', 'salesRep.role'])->findOrFail($this->buyerId);
+        $company = app(SalesPortfolio::class)->companies(BuyerCompany::query())->with(['customerGroup', 'salesRep.user', 'salesRep.role'])->findOrFail($this->buyerId);
         $canManage = $this->canManage();
 
         $lastStatusChange = AuditLog::query()

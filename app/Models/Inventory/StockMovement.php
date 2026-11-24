@@ -29,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $transfer_id
  * @property string|null $reason
  * @property string|null $actor_user_id
+ * @property string|null $actor_api_client_id
  * @property string|null $correlation_id
  */
 class StockMovement extends Model

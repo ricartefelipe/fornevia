@@ -21,6 +21,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property \App\Enums\Finance\RefundStatus $status
  * @property string $reason
  * @property string|null $gateway_refund_id
+ * @property \Carbon\CarbonImmutable|null $verification_started_at
+ * @property bool $gateway_reference_sent
+ * @property \Carbon\CarbonImmutable|null $last_checked_at
  * @property \Carbon\CarbonImmutable $created_at
  */
 class PaymentRefund extends Model
@@ -39,6 +42,9 @@ class PaymentRefund extends Model
             'amount_cents' => AsMoney::class,
             'status' => \App\Enums\Finance\RefundStatus::class,
             'created_at' => 'immutable_datetime',
+            'verification_started_at' => 'immutable_datetime',
+            'last_checked_at' => 'immutable_datetime',
+            'gateway_reference_sent' => 'boolean',
         ];
     }
 }

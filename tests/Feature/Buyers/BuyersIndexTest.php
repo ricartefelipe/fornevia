@@ -43,8 +43,10 @@ it('nega a listagem no contexto de empresa compradora', function (): void {
 });
 
 it('exibe as empresas ao representante sem oferecer o cadastro', function (): void {
-    $this->tenant->addBuyerCompany(['trade_name' => 'Construtora Serra Azul']);
+    $company = $this->tenant->addBuyerCompany(['trade_name' => 'Construtora Serra Azul']);
     [$user, $membership] = Fixtures::staffUser($this->tenant, SystemRole::SalesRep);
+    // O representante vê as empresas da própria carteira.
+    Tests\Integration\Ordering\Staff\StaffOrderFixtures::assignRep($this->tenant, $company, $membership);
 
     $this->actingAs($user)
         ->withSession(TenantScenario::sessionFor($membership))

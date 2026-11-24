@@ -156,6 +156,7 @@ it('cancela convite da empresa e trata convite de outra empresa como inexistente
 
 it('refaz a autorização ao convidar e revogar', function (): void {
     $seller = $this->tenant->addStaff(SystemRole::SalesRep);
+    Tests\Integration\Ordering\Staff\StaffOrderFixtures::assignRep($this->tenant, $this->company, $seller);
     $buyer = $this->tenant->addBuyerUser($this->company, SystemRole::Purchaser);
     $purchaserRoleId = $this->tenant->role(SystemRole::Purchaser)->id;
 

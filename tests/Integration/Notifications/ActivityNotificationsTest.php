@@ -162,7 +162,9 @@ it('não avisa quem perdeu a associação e, sem representante, avisa quem elabo
     $quote = F::request($this->scenario, $this->buyer);
     ($this->drain)();
 
-    expect(($this->inbox)($this->rep))->toBe([['quote.requested', "/cotacoes/{$quote->id}"]])
+    // Representantes só atendem a própria carteira: a empresa sem
+    // representante não aparece para eles.
+    expect(($this->inbox)($this->rep))->toBe([])
         ->and(($this->inbox)($this->manager))->toBe([])
         ->and(($this->inbox)($this->scenario->tenant->ownerMembership))->toBe([['quote.requested', "/cotacoes/{$quote->id}"]]);
 });

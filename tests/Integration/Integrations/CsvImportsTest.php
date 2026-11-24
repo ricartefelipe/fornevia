@@ -267,3 +267,107 @@ it('termina antes de a fila entregar o job a outro worker', function (): void {
 
     expect($job->timeout)->toBeLessThan((int) config('queue.connections.redis.retry_after'));
 });
+
+it('importa preço na tabela padrão ou na informada e custo do SKU', function (): void {
+    $other = $this->scenario->system(static function (): App\Models\Pricing\PriceList {
+        $list = new App\Models\Pricing\PriceList;
+        $list->forceFill(['code' => 'ATACADO', 'name' => 'Atacado', 'scope' => 'default', 'valid_from' => '2026-01-01', 'status' => 'draft'])->save();
+
+        return $list;
+    });
+    $import = ($this->preview)('products', implode("\n", [
+        'codigo_sku;produto;unidade;fator_conversao;quantidade_minima;multiplo;preco;custo;tabela_preco',
+        'IMP-400;Tomada 10A;UN;1;1;1;12,50;6,10;',
+        'IMP-401;Tomada 20A;UN;1;1;1;1.234,56;;atacado',
+        'IMP-402;Tomada 20A;UN;1;1;1;;;',
+        'IMP-403;Tomada 20A;UN;1;1;1;0;-1;',
+        'IMP-404;Tomada 20A;UN;1;1;1;5,00;;INEXISTENTE',
+        'IMP-405;Tomada 20A;UN;1;1;1;;;ATACADO',
+    ]));
+    [$fresh, $rows] = ($this->fresh)($import);
+
+    expect($rows[3]->errors)->toBe(['Preço inválido (valor positivo, ex.: 12,50).', 'Custo inválido (valor zero ou positivo, ex.: 8,90).'])
+        ->and($rows[4]->errors)->toBe(['Tabela de preço não encontrada ou arquivada.'])
+        ->and($rows[5]->errors)->toBe(['Tabela de preço informada sem preço.'])
+        ->and($fresh->rows_valid)->toBe(3);
+
+    ($this->confirm)($import);
+    [$prices, $cost] = $this->scenario->system(static fn (): array => [
+        App\Models\Pricing\PriceListItem::query()->join('skus', 'skus.id', '=', 'price_list_items.sku_id')->whereIn('skus.code', ['IMP-400', 'IMP-401', 'IMP-402'])
+            ->join('price_lists', 'price_lists.id', '=', 'price_list_items.price_list_id')->orderBy('skus.code')
+            ->get(['skus.code', 'price_lists.code as list', 'price_list_items.unit_price_cents'])->map(static fn ($i): array => [$i->code, $i->list, $i->unit_price_cents->cents])->all(),
+        (int) Illuminate\Support\Facades\DB::table('sku_costs')->join('skus', 'skus.id', '=', 'sku_costs.sku_id')->where('skus.code', 'IMP-400')->value('sku_costs.cost_cents'),
+    ]);
+
+    expect($prices)->toBe([['IMP-400', 'PADRAO', 1250], ['IMP-401', 'ATACADO', 123456]])
+        ->and($cost)->toBe(610)
+        ->and($other->code)->toBe('ATACADO');
+});
+
+it('recusa preço e custo de quem não tem as permissões, na prévia', function (): void {
+    $member = Tests\Integration\Catalog\Staff\CatalogFixtures::staffWith($this->scenario->tenant, [
+        App\Enums\Identity\Permission::IntegrationsManage, App\Enums\Identity\Permission::CatalogView, App\Enums\Identity\Permission::CatalogManage,
+    ]);
+    $csv = "codigo_sku;produto;unidade;fator_conversao;quantidade_minima;multiplo;preco;custo\nIMP-500;Fio;UN;1;1;1;10,00;5,00\nIMP-501;Fio;UN;1;1;1;;\n";
+
+    $import = ($this->imports)(fn (CsvImports $i) => $i->preview('products', 'valid_only', 'a.csv', $csv), $member);
+    [$fresh, $rows] = ($this->fresh)($import);
+
+    expect($rows[0]->errors)->toBe(['Sem permissão para definir preço (pricing.manage).', 'Sem permissão para informar custo (catalog.view_costs).'])
+        ->and($rows[1]->errors)->toBe([])
+        ->and($fresh->rows_valid)->toBe(1);
+});
+
+function importPriceList(OrderingScenario $scenario, array $attributes): App\Models\Pricing\PriceList
+{
+    return $scenario->system(static function () use ($attributes): App\Models\Pricing\PriceList {
+        $list = new App\Models\Pricing\PriceList;
+        $list->forceFill(['scope' => 'default', 'valid_from' => '2026-01-01', 'status' => 'active', ...$attributes])->save();
+
+        return $list;
+    });
+}
+
+function importedPrice(OrderingScenario $scenario, string $skuCode): ?string
+{
+    return $scenario->system(static fn (): ?string => App\Models\Pricing\PriceListItem::query()
+        ->join('skus', 'skus.id', '=', 'price_list_items.sku_id')->join('price_lists', 'price_lists.id', '=', 'price_list_items.price_list_id')
+        ->where('skus.code', $skuCode)->value('price_lists.code'));
+}
+
+it('usa a tabela padrão vigente conferida na prévia, mesmo que outra passe a valer antes da confirmação', function (): void {
+    importPriceList($this->scenario, ['code' => 'VENCIDA', 'name' => 'Vencida', 'priority' => 50, 'valid_until' => '2026-01-31']);
+    $import = ($this->preview)('products', "codigo_sku;produto;unidade;fator_conversao;quantidade_minima;multiplo;preco\nIMP-600;Fio;UN;1;1;1;9,90\n");
+
+    // Depois da prévia, uma tabela padrão de prioridade maior passa a valer.
+    importPriceList($this->scenario, ['code' => 'PROMO', 'name' => 'Promoção', 'priority' => 99]);
+    ($this->confirm)($import);
+
+    expect(importedPrice($this->scenario, 'IMP-600'))->toBe('PADRAO');
+});
+
+it('recusa só a linha de preço quando quem confirma não tem a permissão', function (): void {
+    $import = ($this->preview)('products', "codigo_sku;produto;unidade;fator_conversao;quantidade_minima;multiplo;preco\nIMP-700;Fio;UN;1;1;1;9,90\nIMP-701;Cabo;UN;1;1;1;\n");
+    $member = Tests\Integration\Catalog\Staff\CatalogFixtures::staffWith($this->scenario->tenant, [
+        App\Enums\Identity\Permission::IntegrationsManage, App\Enums\Identity\Permission::CatalogView, App\Enums\Identity\Permission::CatalogManage,
+    ]);
+
+    ($this->imports)(fn (CsvImports $i) => $i->confirm($import->id), $member);
+    [$fresh, $rows] = ($this->fresh)($import);
+
+    expect($fresh->status)->toBe('done')->and($rows->pluck('status')->all())->toBe(['skipped', 'applied'])
+        ->and($rows[0]->errors[0])->toBe('Permissão necessária: Gerenciar tabelas de preço.');
+});
+
+it('não aceita a tabela de empresa fora da carteira do representante', function (): void {
+    $rep = $this->scenario->tenant->addStaff(SystemRole::SalesRep);
+    $this->scenario->system(static fn () => App\Models\Identity\Role::query()->where('key', 'sales_rep')->update(['permissions' => json_encode([
+        'integrations.manage', 'catalog.view', 'catalog.manage', 'pricing.view', 'pricing.manage', 'buyers.view', 'orders.view', 'quotes.view',
+    ])]));
+    $company = $this->scenario->tenant->addBuyerCompany();
+    importPriceList($this->scenario, ['code' => 'CLIENTE-X', 'name' => 'Cliente X', 'scope' => 'customer', 'buyer_company_id' => $company->id]);
+
+    $import = ($this->imports)(fn (CsvImports $i) => $i->preview('products', 'valid_only', 'a.csv', "codigo_sku;produto;unidade;fator_conversao;quantidade_minima;multiplo;preco;tabela_preco\nIMP-800;Fio;UN;1;1;1;9,90;CLIENTE-X\n"), $rep);
+
+    expect(($this->fresh)($import)[1][0]->errors)->toBe(['Tabela de preço não encontrada ou arquivada.']);
+});

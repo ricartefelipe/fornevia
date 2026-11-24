@@ -58,9 +58,18 @@ final readonly class RefundSettlement
         return $refund;
     }
 
-    public function verifying(string $refundId, string $reason): void
+    /**
+     * Sem resposta do gateway: em verificação, com a reserva mantida. Marca
+     * o início da verificação e se o pedido levou a referência do reembolso
+     * (só então a conferência pode concluir sozinha um reembolso sem registro).
+     */
+    public function verifying(string $refundId, string $reason, bool $referenceSent = false): void
     {
-        PaymentRefund::query()->whereKey($refundId)->where('status', RefundStatus::Pending->value)->update(['status' => RefundStatus::Verifying->value]);
+        PaymentRefund::query()->whereKey($refundId)->where('status', RefundStatus::Pending->value)->update([
+            'status' => RefundStatus::Verifying->value,
+            'verification_started_at' => now(),
+            'gateway_reference_sent' => $referenceSent,
+        ]);
         $this->audit->record('payment.refund_unverified', PaymentRefund::query()->findOrFail($refundId), [], $reason);
     }
 }

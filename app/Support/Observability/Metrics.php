@@ -16,11 +16,27 @@ use Throwable;
  * gravações do processo ficam suspensas por alguns segundos, com aviso no log.
  *
  * Séries: requisições por tipo e classe de status, duração por tipo
- * (histograma), conflitos de banco por motivo e jobs com falha por fila.
+ * (histograma), conflitos de banco por motivo e jobs com falha por fila; com
+ * METRICS_PER_TENANT, requisições por distribuidor. Os distribuidores com
+ * série própria são admitidos na gravação, até o limite, e ficam fixos; os
+ * demais somam em tenant="outros", para os contadores nunca diminuírem.
  */
 final class Metrics
 {
     public const string KEY = 'fornevia:metrics';
+
+    /** Distribuidores admitidos com série própria. */
+    public const string TENANTS_KEY = 'fornevia:metrics:tenants';
+
+    /** Admissão atômica: já admitido, ou admitido agora se houver vaga. */
+    private const string ADMIT_SCRIPT = <<<'LUA'
+        if redis.call('SISMEMBER', KEYS[1], ARGV[1]) == 1 then return 1 end
+        if redis.call('SCARD', KEYS[1]) < tonumber(ARGV[2]) then
+            redis.call('SADD', KEYS[1], ARGV[1])
+            return 1
+        end
+        return 0
+        LUA;
 
     /** Conexão própria, com tempo limite curto (config/database.php). */
     public const string CONNECTION = 'metrics';
@@ -32,10 +48,15 @@ final class Metrics
 
     public function __construct(private readonly RedisManager $redis) {}
 
-    public function observeRequest(string $kind, int $status, float $seconds): void
+    public function observeRequest(string $kind, int $status, float $seconds, ?string $tenantId = null): void
     {
         $class = intdiv(max(100, min(599, $status)), 100).'xx';
         $increments = ["http_requests_total|kind={$kind},status={$class}" => 1, "http_request_duration_seconds_count|kind={$kind}" => 1];
+
+        if ($tenantId !== null && (bool) config('observability.per_tenant') && preg_match('/^[0-9a-f-]{36}$/D', $tenantId) === 1) {
+            $label = $this->admitTenant($tenantId) ? $tenantId : 'outros';
+            $increments["http_requests_by_tenant_total|tenant={$label},status={$class}"] = 1;
+        }
 
         foreach ((array) config('observability.latency_buckets') as $bucket) {
             if ($seconds <= (float) $bucket) {
@@ -107,8 +128,21 @@ final class Metrics
 
     public function reset(): void
     {
-        $this->redis->connection(self::CONNECTION)->command('del', [self::KEY]);
+        $this->redis->connection(self::CONNECTION)->command('del', [self::KEY, self::TENANTS_KEY]);
         self::$suspendedUntil = null;
+    }
+
+    private function admitTenant(string $tenantId): bool
+    {
+        if (self::$suspendedUntil !== null && microtime(true) < self::$suspendedUntil) {
+            return false;
+        }
+
+        try {
+            return (int) $this->redis->connection(self::CONNECTION)->command('eval', [self::ADMIT_SCRIPT, [self::TENANTS_KEY, $tenantId, (int) config('observability.tenant_series_limit')], 1]) === 1;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public static function number(float $value): string

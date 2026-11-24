@@ -7,6 +7,7 @@ namespace App\Support\Auth;
 use App\Enums\Identity\MembershipKind;
 use App\Enums\Identity\Permission;
 use App\Models\Identity\Membership;
+use App\Support\Tenancy\ContextKind;
 use App\Support\Tenancy\CurrentContext;
 use Illuminate\Auth\Access\AuthorizationException;
 
@@ -100,8 +101,11 @@ final class Access
     {
         $active = $this->context->get();
 
+        // Como as da equipe, as permissões do cliente da API só valem no
+        // contexto de integração (não durante a elevação ao sistema).
         if ($this->integrationPermissions !== null) {
-            return $active?->apiClientId === $this->apiClientId
+            return $active?->kind === ContextKind::Integration
+                && $active->apiClientId === $this->apiClientId
                 && in_array($permission->value, $this->integrationPermissions, true);
         }
 

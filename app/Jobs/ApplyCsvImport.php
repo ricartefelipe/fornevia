@@ -15,6 +15,7 @@ use App\Support\Clock\Clock;
 use App\Support\Tenancy\ExecutionContext;
 use App\Support\Tenancy\TenantDatabase;
 use Closure;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
@@ -81,7 +82,7 @@ final class ApplyCsvImport implements ShouldQueue
         } catch (Throwable $e) {
             $inContext(fn () => $this->finish($clock, self::failure($import->policy, $e, $line)));
 
-            if (! $e instanceof BusinessRuleViolation) {
+            if (! self::refusal($e)) {
                 throw $e;
             }
         }
@@ -155,12 +156,19 @@ final class ApplyCsvImport implements ShouldQueue
                     DB::transaction(static function () use ($row, $importer, &$memo): void {
                         $row->forceFill(['status' => 'applied', 'entity_id' => $importer->apply($row->data, $memo)])->save();
                     });
-                } catch (BusinessRuleViolation $e) {
+                } catch (BusinessRuleViolation|AuthorizationException $e) {
+                    // Regra ou permissão de quem confirmou recusa só a linha.
                     $memo = $before;
                     $row->forceFill(['status' => 'skipped', 'errors' => [$e->getMessage()]])->save();
                 }
             });
         }
+    }
+
+    /** Recusa esperada: regra de negócio ou permissão de quem confirmou. */
+    private static function refusal(Throwable $e): bool
+    {
+        return $e instanceof BusinessRuleViolation || $e instanceof AuthorizationException;
     }
 
     private static function failure(string $policy, Throwable $e, ?int $line): string
@@ -169,7 +177,7 @@ final class ApplyCsvImport implements ShouldQueue
             return 'Falha ao aplicar a importação; as linhas marcadas como aplicadas foram gravadas.';
         }
 
-        if ($e instanceof BusinessRuleViolation) {
+        if (self::refusal($e)) {
             return "Linha {$line}: {$e->getMessage()} Nada foi aplicado.";
         }
 

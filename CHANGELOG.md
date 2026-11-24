@@ -5,6 +5,30 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.1.0] - 2026-11-24
+
+### Adicionado
+
+- Métricas por distribuidor opcionais (`METRICS_PER_TENANT`): requisições
+  por status e outbox pendente; até `METRICS_TENANT_LIMIT` distribuidores
+  com série própria e os demais somados em `tenant="outros"`.
+- Escrita na API v1 com `Idempotency-Key` obrigatório: cadastro de empresa
+  compradora, entrada e ajuste de estoque e cancelamento de itens ou do
+  pedido, cada um com permissão própria do cliente da API.
+- Importação de catálogo com preço (na tabela informada ou na padrão
+  vigente) e custo opcionais, conferindo as permissões de preço e de custo de quem
+  importa.
+- Conferência automática dos reembolsos sem resposta do gateway
+  (`payments:verify-refunds`, a cada 15 minutos), pela referência enviada
+  no pedido de estorno.
+
+### Alterado
+
+- Carteira do representante comercial aplicada a todas as telas da equipe:
+  empresas, grupos, crédito, condições negociadas, tabelas e frete por
+  empresa, catálogos privados, simulador de preço e painel, além de pedidos
+  e cotações.
+
 ## [1.0.1] - 2026-11-24
 
 ### Segurança
@@ -221,7 +245,8 @@ métricas e implantação de referência.
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
 
-[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v1.0.1...develop
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v1.1.0...develop
+[1.1.0]: https://github.com/ricartefelipe/fornevia/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ricartefelipe/fornevia/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ricartefelipe/fornevia/compare/v0.5.0...v1.0.0
 [0.5.0]: https://github.com/ricartefelipe/fornevia/compare/v0.4.0...v0.5.0

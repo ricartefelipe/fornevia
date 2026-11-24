@@ -10,6 +10,7 @@ use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\Money;
 use App\Enums\Identity\Permission;
 use App\Support\Auth\Access;
+use App\Support\Auth\SalesPortfolio;
 use Brick\Math\Exception\MathException;
 use Illuminate\Contracts\View\View;
 use InvalidArgumentException;
@@ -81,6 +82,7 @@ final class CreditAccountsIndex extends Component
 
         return view('livewire.staff.credit.credit-accounts-index', [
             'accounts' => $list->handle($filters, self::PER_PAGE),
+            'portfolioOnly' => app(SalesPortfolio::class)->isRestricted(),
             'situations' => CreditAccountFilters::situations(),
             'canManage' => $access->can(Permission::CreditManage),
             'filtered' => $filters->hasAny() || trim($this->availableBelow) !== '',

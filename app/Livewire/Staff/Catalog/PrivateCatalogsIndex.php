@@ -21,6 +21,7 @@ use App\Models\Catalog\PrivateCatalog;
 use App\Models\Catalog\PrivateCatalogAssignment;
 use App\Models\Catalog\PrivateCatalogProduct;
 use App\Models\Catalog\Product;
+use App\Support\Auth\SalesPortfolio;
 use App\Support\Http\UntrustedId;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
@@ -184,7 +185,7 @@ final class PrivateCatalogsIndex extends Component
         $catalogs = PrivateCatalog::query()
             ->addSelect([
                 'products_count' => PrivateCatalogProduct::query()->selectRaw('count(*)')->whereColumn('private_catalog_products.private_catalog_id', 'private_catalogs.id'),
-                'assignments_count' => PrivateCatalogAssignment::query()->selectRaw('count(*)')->whereColumn('private_catalog_assignments.private_catalog_id', 'private_catalogs.id'),
+                'assignments_count' => app(SalesPortfolio::class)->restrictOptional(PrivateCatalogAssignment::query())->selectRaw('count(*)')->whereColumn('private_catalog_assignments.private_catalog_id', 'private_catalogs.id'),
             ])
             ->orderBy('name')
             ->orderBy('id')
@@ -198,7 +199,7 @@ final class PrivateCatalogsIndex extends Component
             'catalogProducts' => $selected !== null ? $this->catalogProductsPage($selected) : null,
             'productResults' => $selected !== null ? $this->productResults($selected) : collect(),
             'assignments' => $selected !== null
-                ? PrivateCatalogAssignment::query()
+                ? app(SalesPortfolio::class)->restrictOptional(PrivateCatalogAssignment::query())
                     ->with(['buyerCompany:id,trade_name,legal_name,document', 'customerGroup:id,code,name'])
                     ->where('private_catalog_id', $selected->id)
                     ->orderBy('created_at')
@@ -284,7 +285,7 @@ final class PrivateCatalogsIndex extends Component
         $pattern = self::likePattern($term);
         $digits = (string) Cnpj::searchKey($term);
 
-        return BuyerCompany::query()
+        return app(SalesPortfolio::class)->companies(BuyerCompany::query())
             ->where(static function (Builder $q) use ($pattern, $digits): void {
                 $q->where('trade_name', 'ilike', $pattern)->orWhere('legal_name', 'ilike', $pattern);
 

@@ -11,7 +11,7 @@ use App\Enums\Identity\Permission;
 use App\Models\Buyers\BuyerCompany;
 use App\Models\Credit\CreditAccount;
 use App\Support\Auth\Access;
-use App\Support\Http\UntrustedId;
+use App\Support\Auth\SalesPortfolio;
 use Brick\Math\Exception\MathException;
 use InvalidArgumentException;
 use Livewire\Attributes\Locked;
@@ -38,12 +38,13 @@ trait InteractsWithCreditAccount
 
     protected function bindBuyer(mixed $buyerId): void
     {
-        $this->buyerId = BuyerCompany::query()->findOrFail(UntrustedId::uuid($buyerId, BuyerCompany::class))->id;
+        // Fora da carteira do representante equivale a inexistente.
+        $this->buyerId = app(SalesPortfolio::class)->findCompany($buyerId)->id;
     }
 
     protected function company(): BuyerCompany
     {
-        return BuyerCompany::query()->findOrFail($this->buyerId);
+        return app(SalesPortfolio::class)->companies(BuyerCompany::query())->findOrFail($this->buyerId);
     }
 
     protected function account(): ?CreditAccount

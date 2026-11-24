@@ -13,6 +13,7 @@ use App\Livewire\Staff\Pricing\Concerns\InteractsWithPricingForms;
 use App\Models\Fulfillment\BuyerFreightCondition;
 use App\Models\Fulfillment\FreightRule;
 use App\Support\Auth\Access;
+use App\Support\Auth\SalesPortfolio;
 use App\Support\Http\UntrustedId;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
@@ -119,7 +120,7 @@ final class FreightIndex extends Component
     {
         return view('livewire.staff.pricing.freight-index', [
             'rules' => FreightRule::query()->orderByDesc('is_active')->orderByDesc('priority')->orderBy('name')->get(),
-            'conditions' => BuyerFreightCondition::query()->join('buyer_companies', 'buyer_companies.id', '=', 'buyer_freight_conditions.buyer_company_id')
+            'conditions' => app(SalesPortfolio::class)->restrict(BuyerFreightCondition::query())->join('buyer_companies', 'buyer_companies.id', '=', 'buyer_freight_conditions.buyer_company_id')
                 ->orderBy('buyer_companies.trade_name')->get(['buyer_freight_conditions.*', 'buyer_companies.trade_name']),
             'companies' => $this->searchCompanies($this->companySearch, $this->companyId !== '' ? $this->companyId : null)->mapWithKeys(static fn ($c): array => [$c->id => $c->trade_name])->all(),
             'kinds' => ['' => 'Sem condição (vale a regra)'] + collect(FreightConditionKind::cases())->mapWithKeys(static fn (FreightConditionKind $k): array => [$k->value => $k->label()])->all(),

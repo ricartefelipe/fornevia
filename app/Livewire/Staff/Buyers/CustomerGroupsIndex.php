@@ -13,6 +13,7 @@ use App\Enums\Identity\Permission;
 use App\Models\Buyers\BuyerCompany;
 use App\Models\Buyers\CustomerGroup;
 use App\Support\Auth\Access;
+use App\Support\Auth\SalesPortfolio;
 use App\Support\Http\UntrustedId;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
@@ -119,7 +120,7 @@ final class CustomerGroupsIndex extends Component
         $groups = CustomerGroup::query()
             ->select('customer_groups.*')
             ->selectSub(
-                BuyerCompany::query()->selectRaw('count(*)')->whereColumn('buyer_companies.customer_group_id', 'customer_groups.id'),
+                app(SalesPortfolio::class)->companies(BuyerCompany::query())->selectRaw('count(*)')->whereColumn('buyer_companies.customer_group_id', 'customer_groups.id'),
                 'companies_count',
             )
             ->orderBy('name')

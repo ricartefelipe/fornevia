@@ -62,9 +62,13 @@ final readonly class ExecutionContext
         return new self(ContextKind::Integration, null, $tenantId, null, null, $apiClientId);
     }
 
-    public static function system(string $tenantId, ?string $actingUserId = null): self
+    /**
+     * Contexto de sistema do tenant; quando elevado a partir de um usuário ou
+     * de um cliente da API, guarda quem age (auditoria).
+     */
+    public static function system(string $tenantId, ?string $actingUserId = null, ?string $actingApiClientId = null): self
     {
-        return new self(ContextKind::System, $actingUserId, $tenantId, null, null, null);
+        return new self(ContextKind::System, $actingUserId, $tenantId, null, null, $actingApiClientId);
     }
 
     public function requireTenantId(): string

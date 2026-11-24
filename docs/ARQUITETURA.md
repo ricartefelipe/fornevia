@@ -139,8 +139,9 @@ administradores da plataforma ou e-mails em `HORIZON_ALLOWED_EMAILS`.
 - `/health/live` e `/health/ready` sem sessão nem cookies.
 - `/metrics` no formato Prometheus (texto 0.0.4), só com
   `Authorization: Bearer <METRICS_TOKEN>`; sem token configurado, o
-  endpoint responde 404. Limite de 60 coletas por minuto. Os rótulos não
-  trazem dados de tenant.
+  endpoint responde 404. Limite de 60 coletas por minuto. Os rótulos só
+  trazem o distribuidor (id da organização, nunca nome ou dado de comprador)
+  quando `METRICS_PER_TENANT=true`, com limite de séries.
 
 | Série | Tipo | Origem |
 |---|---|---|
@@ -152,6 +153,8 @@ administradores da plataforma ou e-mails em `HORIZON_ALLOWED_EMAILS`.
 | `fornevia_outbox_pending`, `fornevia_outbox_oldest_pending_age_seconds`, `fornevia_outbox_dead` | medidas | situação da outbox (`outbox:status`) |
 | `fornevia_failed_jobs` | medida | jobs guardados em `failed_jobs` |
 | `fornevia_metrics_collection_errors` | medida | medidas que não puderam ser lidas na coleta |
+| `fornevia_http_requests_by_tenant_total{tenant,status}` | contador | com `METRICS_PER_TENANT=true`: requisições por distribuidor (id da organização); os primeiros `METRICS_TENANT_LIMIT` (padrão 20) ganham série própria fixa, os demais somam em `tenant="outros"` (contadores só crescem) |
+| `fornevia_outbox_pending_by_tenant{tenant}` | medida | com `METRICS_PER_TENANT=true`: pendentes na outbox por distribuidor, os de maior volume até o limite e o resto em `tenant="outros"` |
 
 Contadores ficam no Redis (conexão `metrics`, tempo limite de 0,25 s) e
 somam todos os processos; falha ao gravar uma métrica gera aviso no log e
@@ -462,10 +465,19 @@ no cancelamento total).
 | Portal: regras e delegações | `portal.approval-rules`, `portal.approval-rules.create`, `portal.approval-rules.edit`, `portal.delegations` | regras com `portal.approval_rules`; delegações com `portal.approval_rules` (todas) ou `portal.approvals` (as próprias) |
 | Portal: orçamentos | `portal.budgets`, `portal.budgets.show` | `portal.budgets` |
 
-- O representante comercial (papel `sales_rep`) consulta apenas pedidos das
-  empresas da própria carteira (`buyer_companies.sales_rep_membership_id`),
-  regra aplicada na consulta de pedidos da equipe. Cadastro de empresas,
-  crédito e estoque seguem as permissões do papel, sem recorte de carteira.
+- O representante comercial (papel `sales_rep`) vê apenas as empresas da
+  própria carteira (`buyer_companies.sales_rep_membership_id`) e os dados
+  ligados a elas em todas as telas da equipe: empresas e grupos (contagem),
+  pedidos, cotações, crédito, condições negociadas, tabelas de preço por
+  empresa, frete por empresa, catálogos privados atribuídos, simulador de
+  preço e painel. Empresa fora da carteira equivale a inexistente (404). A
+  regra fica em `SalesPortfolio`, usada por todas essas consultas; os demais
+  papéis veem todas as empresas. Atribuições de catálogos privados seguem
+  a carteira (lista e contagem); produtos, saldos de estoque e movimentos
+  não têm recorte, e os movimentos mostram só o número do documento de
+  origem, sem dados da empresa. Notificações de cotação vão ao
+  representante atual da empresa; sem ele, à equipe que elabora propostas,
+  exceto representantes.
 - O checkout exibe o total calculado no servidor e o envia como valor
   esperado: se preços mudarem até a confirmação, ela é recusada
   (`PricesChanged`). A chave de idempotência é gerada no servidor a cada
@@ -638,7 +650,7 @@ Segue a ADR-028.
 | Pagamento manual | `finance.manage` | confirmado na hora, até o saldo em aberto da parcela |
 | Cobrança no gateway | `finance.manage` ou comprador com `portal.orders.place` | uma pendente por parcela, do saldo e na forma escolhida (outra é cancelada); gravada na requisição e criada por job depois do commit; referência externa = id do pagamento; sem cobrança repetida após timeout |
 | Confirmação | webhook, simulador ou conciliação | idempotente; vencida não encerra; juros viram ajuste; quita até o saldo em aberto, o resto fica não aplicado e reembolsável; registra a taxa; reduz o recebível |
-| Reembolso | `finance.manage` | só de confirmado; reservado sob lock; pelo gateway de origem, em job depois do commit; sem resposta, em verificação até a equipe concluir; pendente + efetivado ≤ pago (CHECK) |
+| Reembolso | `finance.manage` | só de confirmado; reservado sob lock; pelo gateway de origem, em job depois do commit, com a referência do reembolso na descrição; sem resposta, em verificação até a conferência (`payments:verify-refunds`, a cada 15 minutos: efetivado conclui, recusado desfaz; sem registro só desfaz quando o pedido levou a referência e a verificação começou há mais de 24 horas; pedidos sem referência ficam para a conclusão manual) ou a conclusão manual; pendente + efetivado ≤ pago (CHECK) |
 | Crédito e ajuste | `finance.manage` | lançamento compensatório com motivo; o devido nunca fica abaixo do pago e creditado |
 | Conciliação | `payments:reconcile`, a cada 15 minutos | todos os pendentes há mais de 10 minutos, primeiro os sem cobrança e os conferidos há mais tempo: cria a cobrança que faltou, cancela a de parcela já quitada ou aplica a situação do gateway de origem |
 | Simulador | só com `payments.simulator_enabled` (desligado em produção) | comprador que vê a fatura ou equipe com `finance.view` simula pagamento ou remoção, pelo mesmo caminho do webhook |
@@ -666,7 +678,7 @@ Segue a ADR-029. Telas em `/integracoes` (`integrations.manage`, com 2FA).
 
 | Recurso | Acesso | Garantia |
 |---|---|---|
-| API v1 (`/api/v1`) | token do cliente da API, `Authorization: Bearer <id>\|fvk_…` | permissões do cliente; contexto de integração do tenant; 300 req/min por cliente (429 com `Retry-After`); filtros declarados (422 para desconhecido); até 100 por página; contrato em `docs/openapi.json` |
+| API v1 (`/api/v1`) | token do cliente da API, `Authorization: Bearer <id>\|fvk_…` | permissões do cliente; contexto de integração do tenant; 300 req/min por cliente (429 com `Retry-After`); leitura com filtros declarados (422 para desconhecido) e até 100 por página; escrita (comprador, entrada e ajuste de estoque, cancelamento de pedido) com `Idempotency-Key` obrigatório (ADR-031); contrato em `docs/openapi.json` |
 | Clientes da API | `integrations.manage` | permissões da lista permitida; token mostrado uma vez, prazo de 1 a 365 dias; revogação do token ou do cliente |
 | Webhooks enviados | consumidor `webhooks` da outbox, fila `integrations` | uma entrega por evento e endpoint; só campos públicos; HMAC-SHA256 com carimbo; HTTPS para IP público conferido, sem redirecionamento; espera crescente até 8 tentativas; 20 falhas seguidas desativam o endpoint |
 | Importação CSV | `integrations.manage` e a permissão do tipo | prévia com resultado por linha; UTF-8, até 2 MB e 5.000 linhas; política "só as válidas" ou "tudo ou nada"; aplicação em fila pelas Actions do módulo; cadastro alterado depois da prévia recusa só a linha; importação interrompida fica como falha e pode ser reprocessada; linha aplicada não se repete |
@@ -695,7 +707,7 @@ Colunas dos arquivos de importação:
 | Tipo | Colunas |
 |---|---|
 | Clientes | `razao_social`, `nome_fantasia`, `cnpj`, `email`, `telefone` |
-| Catálogo | `codigo_sku`, `produto`, `unidade`, `fator_conversao`, `quantidade_minima`, `multiplo` |
+| Catálogo | `codigo_sku`, `produto`, `unidade`, `fator_conversao`, `quantidade_minima`, `multiplo`; opcionais `preco` (exige `pricing.manage`; na tabela de `tabela_preco` ou na tabela padrão ativa) e `custo` (exige `catalog.view_costs`) |
 | Estoque | `deposito`, `codigo_sku`, `quantidade` (unidade base) |
 
 Os cabeçalhos são comparados sem acento e sem diferenciar maiúsculas;
