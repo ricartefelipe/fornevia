@@ -249,7 +249,8 @@ final readonly class CancelOrderItems
 
     private function authorize(Order $order): void
     {
-        if ($this->access->isStaff()) {
+        // Equipe e clientes da API (ERP) com orders.manage.
+        if ($this->access->isStaff() || $this->access->isIntegration()) {
             $this->access->authorize(Permission::OrdersManage);
 
             return;

@@ -7,6 +7,9 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- Escrita na API v1 com `Idempotency-Key` obrigatório: cadastro de empresa
+  compradora, entrada e ajuste de estoque e cancelamento de itens ou do
+  pedido, cada um com permissão própria do cliente da API.
 - Conferência automática dos reembolsos sem resposta do gateway
   (`payments:verify-refunds`, a cada 15 minutos), pela referência enviada
   no pedido de estorno.
