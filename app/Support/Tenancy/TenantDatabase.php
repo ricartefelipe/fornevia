@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Support\Tenancy;
 
+use App\Support\Observability\Metrics;
 use App\Support\Tenancy\Exceptions\TenantContextConflict;
 use Closure;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Context;
 
 /**
@@ -54,6 +56,41 @@ final readonly class TenantDatabase
             );
         }
 
+        try {
+            return $this->transaction($connection, $context, $callback, $attempts);
+        } catch (QueryException $e) {
+            self::recordConflict($e);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Conflito de concorrência que escapou das tentativas entra nas métricas
+     * (RQ-121): deadlock, falha de serialização ou lock indisponível.
+     */
+    private static function recordConflict(QueryException $e): void
+    {
+        $reason = match ((string) ($e->errorInfo[0] ?? $e->getCode())) {
+            '40P01' => 'deadlock',
+            '40001' => 'serialization',
+            '55P03' => 'lock_not_available',
+            default => null,
+        };
+
+        if ($reason !== null) {
+            app(Metrics::class)->conflict($reason);
+        }
+    }
+
+    /**
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    private function transaction(ConnectionInterface $connection, ExecutionContext $context, Closure $callback, int $attempts): mixed
+    {
         return $connection->transaction(function () use ($connection, $context, $callback): mixed {
             $this->apply($connection, $context);
             $previous = $this->current->swap($context);

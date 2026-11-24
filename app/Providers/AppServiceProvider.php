@@ -13,6 +13,7 @@ use App\Models\MorphMap;
 use App\Support\Auth\Access;
 use App\Support\Clock\Clock;
 use App\Support\Clock\SystemClock;
+use App\Support\Observability\Metrics;
 use App\Support\Tenancy\CurrentContext;
 use App\Support\Tenancy\TenantDatabase;
 use Carbon\CarbonImmutable;
@@ -25,10 +26,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Schema\Grammars\PostgresGrammar;
 use Illuminate\Http\Request;
+use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -51,6 +54,9 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Date::use(CarbonImmutable::class);
+
+        // Jobs com falha entram nas métricas, por fila (RQ-121).
+        Queue::failing(static fn (JobFailed $event) => app(Metrics::class)->jobFailed($event->job->getQueue()));
 
         // Links (e-mails de convite, redefinição de senha, verificação) usam a
         // URL configurada, nunca o cabeçalho Host da requisição.

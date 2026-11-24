@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Middleware\AssignCorrelationId;
 use App\Http\Middleware\EstablishRequestContext;
+use App\Http\Middleware\RecordRequestMetrics;
 use App\Http\Middleware\RequireContext;
 use App\Http\Middleware\RequirePermission;
 use App\Http\Middleware\RequirePlatformAdmin;
@@ -31,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(static function (Middleware $middleware): void {
         $middleware->prepend(AssignCorrelationId::class);
+        $middleware->append(RecordRequestMetrics::class);
         $middleware->append(SecurityHeaders::class);
         $middleware->replace(TrustProxies::class, TrustConfiguredProxies::class);
         $middleware->encryptCookies();
