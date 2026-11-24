@@ -55,9 +55,7 @@ it('avisa a carteira sobre a solicitação e o comprador sobre a proposta, no si
     $quote = F::request($this->scenario, $this->buyer);
     ($this->drain)();
 
-    // Representantes só atendem a própria carteira: a empresa sem
-    // representante não aparece para eles.
-    expect(($this->inbox)($this->rep))->toBe([])
+    expect(($this->inbox)($this->rep))->toBe([['quote.requested', "/cotacoes/{$quote->id}"]])
         ->and(($this->inbox)($this->manager))->toBe([])
         ->and(($this->inbox)($this->buyer['membership']))->toBe([]);
 
