@@ -6,7 +6,7 @@ namespace App\Console\Commands;
 
 use App\Services\Demo\DemoData;
 use Illuminate\Console\Command;
-use RuntimeException;
+use Throwable;
 
 /**
  * Cria os dados de demonstração (dois distribuidores). Recusado em produção.
@@ -29,8 +29,10 @@ final class SeedDemo extends Command
 
         try {
             $summary = $demo->seed($password);
-        } catch (RuntimeException $e) {
+        } catch (Throwable $e) {
+            report($e);
             $this->error($e->getMessage());
+            $this->line('Se a falha ocorreu no meio da criação, recrie o banco (migrate:fresh com o papel de manutenção) antes de tentar de novo.');
 
             return self::FAILURE;
         }

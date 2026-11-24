@@ -58,3 +58,27 @@ it('recusa senha curta, nova execução e produção', function (): void {
     app()->detectEnvironment(static fn (): string => 'production');
     expect(fn () => app(DemoData::class)->seed('senha-demo-segura'))->toThrow(RuntimeException::class, 'produção');
 });
+
+it('recusa antes de gravar quando um e-mail de demonstração já existe', function (): void {
+    User::factory()->create(['email' => 'compras@vidaplena.example']);
+
+    $this->artisan('demo:seed', ['--password' => 'senha-demo-segura'])
+        ->expectsOutputToContain('E-mails de demonstração já usados neste banco: compras@vidaplena.example.')
+        ->assertFailed();
+
+    expect(Organization::query()->count())->toBe(0)
+        ->and(User::query()->count())->toBe(1);
+});
+
+it('abre o crédito pelo fluxo real, com histórico do limite e CEP da cidade', function (): void {
+    $this->artisan('demo:seed', ['--password' => 'senha-demo-segura'])->assertSuccessful();
+    $organization = Organization::query()->where('trade_name', 'Elétrica Horizonte')->sole();
+
+    [$history, $audit, $postalCode] = asTenant($organization, static fn (): array => [
+        Illuminate\Support\Facades\DB::table('credit_limit_changes')->count(),
+        App\Models\Audit\AuditLog::query()->where('action', 'credit_account.opened')->count(),
+        App\Models\Buyers\BuyerAddress::query()->whereHas('buyerCompany', static fn ($q) => $q->where('trade_name', 'Hospital Vida Plena'))->value('postal_code'),
+    ]);
+
+    expect($history)->toBe(2)->and($audit)->toBe(2)->and($postalCode)->toBe('30130000');
+});

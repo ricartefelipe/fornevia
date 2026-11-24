@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Demo;
 
+use App\Actions\Credit\OpenCreditAccount;
 use App\Actions\Identity\CreateOrganization;
 use App\Actions\Ordering\PlaceOrder;
 use App\Data\Identity\CreateOrganizationData;
 use App\Data\Ordering\PlaceOrderData;
 use App\Domain\Shared\Cnpj;
+use App\Domain\Shared\Money;
 use App\Domain\Shared\Quantity;
 use App\Enums\Identity\MembershipKind;
 use App\Enums\Identity\MembershipStatus;
@@ -59,15 +61,15 @@ final readonly class DemoData
         [
             'name' => 'Distribuidora Pedra Branca', 'domain' => 'pedrabranca.example', 'document' => '11222333000181',
             'buyers' => [
-                ['Construtora Serra Azul', 'Serra Azul Engenharia Ltda', '04252011000110', 'serraazul.example', 'Campinas', 'SP'],
-                ['Mercado Bom Preço', 'Bom Preço Comércio de Alimentos Ltda', '12ABC34501DE35', 'bompreco.example', 'Ribeirão Preto', 'SP'],
+                ['Construtora Serra Azul', 'Serra Azul Engenharia Ltda', '04252011000110', 'serraazul.example', 'Campinas', 'SP', '13050000'],
+                ['Mercado Bom Preço', 'Bom Preço Comércio de Alimentos Ltda', '12ABC34501DE35', 'bompreco.example', 'Ribeirão Preto', 'SP', '14010000'],
             ],
         ],
         [
             'name' => 'Elétrica Horizonte', 'domain' => 'horizonte.example', 'document' => '45997418000153',
             'buyers' => [
-                ['Hospital Vida Plena', 'Associação Hospitalar Vida Plena', '60746948000112', 'vidaplena.example', 'Belo Horizonte', 'MG'],
-                ['Condomínio Parque das Águas', 'Condomínio Residencial Parque das Águas', '33000167000101', 'parquedasaguas.example', 'Contagem', 'MG'],
+                ['Hospital Vida Plena', 'Associação Hospitalar Vida Plena', '60746948000112', 'vidaplena.example', 'Belo Horizonte', 'MG', '30130000'],
+                ['Condomínio Parque das Águas', 'Condomínio Residencial Parque das Águas', '33000167000101', 'parquedasaguas.example', 'Contagem', 'MG', '32010000'],
             ],
         ],
     ];
@@ -105,13 +107,23 @@ final readonly class DemoData
             (new PlanSeeder)->run();
         }
 
+        // Tudo é conferido antes de gravar: uma execução repetida ou um banco
+        // com dados conflitantes é recusado sem deixar dados pela metade.
+        $documents = array_column(self::TENANTS, 'document');
+
+        if (Organization::query()->whereIn('document', $documents)->exists()) {
+            throw new RuntimeException('Os dados de demonstração já foram criados neste banco.');
+        }
+
+        $taken = User::query()->whereIn('email', self::emails())->orderBy('email')->pluck('email')->all();
+
+        if ($taken !== []) {
+            throw new RuntimeException('E-mails de demonstração já usados neste banco: '.implode(', ', $taken).'.');
+        }
+
         $summary = [];
 
         foreach (self::TENANTS as $tenant) {
-            if (Organization::query()->where('document', $tenant['document'])->exists()) {
-                throw new RuntimeException("O distribuidor {$tenant['name']} já existe: os dados de demonstração já foram criados.");
-            }
-
             $summary[] = $this->tenant($tenant, $password);
         }
 
@@ -119,7 +131,30 @@ final readonly class DemoData
     }
 
     /**
-     * @param  array{name: string, domain: string, document: string, buyers: list<array{0: string, 1: string, 2: string, 3: string, 4: string, 5: string}>}  $tenant
+     * E-mails de todos os usuários de demonstração.
+     *
+     * @return list<string>
+     */
+    public static function emails(): array
+    {
+        $emails = [];
+
+        foreach (self::TENANTS as $tenant) {
+            foreach (['dono', 'vendas', 'representante', 'estoque', 'financeiro'] as $local) {
+                $emails[] = $local.'@'.$tenant['domain'];
+            }
+
+            foreach ($tenant['buyers'] as $buyer) {
+                $emails[] = 'compras@'.$buyer[3];
+                $emails[] = 'admin@'.$buyer[3];
+            }
+        }
+
+        return $emails;
+    }
+
+    /**
+     * @param  array{name: string, domain: string, document: string, buyers: list<array{0: string, 1: string, 2: string, 3: string, 4: string, 5: string, 6: string}>}  $tenant
      * @return array{tenant: string, emails: list<string>}
      */
     private function tenant(array $tenant, string $password): array
@@ -140,8 +175,9 @@ final readonly class DemoData
 
         [$skus, $term, $creditTerm] = $this->system($tenantId, fn (): array => $this->catalog());
 
-        foreach ($tenant['buyers'] as $index => [$trade, $legal, $document, $domain, $city, $state]) {
-            [$company, $address] = $this->system($tenantId, fn (): array => $this->buyer($trade, $legal, $document, $city, $state, $term, $creditTerm));
+        foreach ($tenant['buyers'] as $index => [$trade, $legal, $document, $domain, $city, $state, $postalCode]) {
+            [$company, $address] = $this->system($tenantId, fn (): array => $this->buyer($trade, $legal, $document, $city, $state, $postalCode, $term, $creditTerm));
+            $this->openCredit($tenantId, $ownerMembership, $company);
             $purchaser = $this->user('Compras · '.$trade, 'compras@'.$domain, $password);
             $membership = $this->membership($tenantId, $purchaser, SystemRole::Purchaser, $company);
             $admin = $this->user('Administração · '.$trade, 'admin@'.$domain, $password);
@@ -200,14 +236,14 @@ final readonly class DemoData
     /**
      * @return array{0: BuyerCompany, 1: BuyerAddress}
      */
-    private function buyer(string $trade, string $legal, string $document, string $city, string $state, PaymentTerm $term, PaymentTerm $creditTerm): array
+    private function buyer(string $trade, string $legal, string $document, string $city, string $state, string $postalCode, PaymentTerm $term, PaymentTerm $creditTerm): array
     {
         $company = new BuyerCompany;
         $company->forceFill(['legal_name' => $legal, 'trade_name' => $trade, 'document' => $document])->save();
         $address = new BuyerAddress;
         $address->forceFill([
             'buyer_company_id' => $company->id, 'kind' => 'shipping', 'label' => 'Entrega principal', 'street' => 'Avenida das Indústrias',
-            'number' => '1500', 'district' => 'Distrito Industrial', 'city' => $city, 'state' => $state, 'postal_code' => '13050000',
+            'number' => '1500', 'district' => 'Distrito Industrial', 'city' => $city, 'state' => $state, 'postal_code' => $postalCode,
             'is_default' => true, 'is_active' => true,
         ])->save();
 
@@ -215,12 +251,13 @@ final readonly class DemoData
             (new BuyerPaymentTerm)->forceFill(['buyer_company_id' => $company->id, 'payment_term_id' => $allowed->id, 'is_default' => $default])->save();
         }
 
-        DB::table('credit_accounts')->insert([
-            'id' => (string) Str::uuid7(), 'tenant_id' => $company->tenant_id, 'buyer_company_id' => $company->id,
-            'limit_cents' => 5_000_000, 'status' => 'active', 'created_at' => $this->clock->now(), 'updated_at' => $this->clock->now(),
-        ]);
-
         return [$company, $address];
+    }
+
+    /** Conta de crédito pelo fluxo real: histórico do limite e auditoria. */
+    private function openCredit(string $tenantId, Membership $owner, BuyerCompany $company): void
+    {
+        $this->as($owner, static fn () => app(OpenCreditAccount::class)->handle($company, Money::ofCents(5_000_000), 5, 'Limite inicial da demonstração'));
     }
 
     /**
@@ -241,10 +278,23 @@ final readonly class DemoData
 
         $data = new PlaceOrderData(cartId: $cart->id, idempotencyKey: 'demo-'.$cart->id, shippingAddressId: $address->id, paymentTermId: $term->id);
 
-        return $this->db->run($membership->executionContext(), function () use ($membership, $data): Order {
+        return $this->as($membership, static fn (): Order => app(PlaceOrder::class)->handle($data));
+    }
+
+    /**
+     * Executa como a associação, com as permissões dela.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    private function as(Membership $membership, Closure $callback): mixed
+    {
+        return $this->db->run($membership->executionContext(), function () use ($membership, $callback): mixed {
             $this->access->bindMembership(Membership::query()->with('role')->findOrFail($membership->id));
 
-            return app(PlaceOrder::class)->handle($data);
+            return $callback();
         });
     }
 
