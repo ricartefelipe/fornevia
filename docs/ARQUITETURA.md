@@ -704,7 +704,7 @@ Colunas dos arquivos de importação:
 | Tipo | Colunas |
 |---|---|
 | Clientes | `razao_social`, `nome_fantasia`, `cnpj`, `email`, `telefone` |
-| Catálogo | `codigo_sku`, `produto`, `unidade`, `fator_conversao`, `quantidade_minima`, `multiplo` |
+| Catálogo | `codigo_sku`, `produto`, `unidade`, `fator_conversao`, `quantidade_minima`, `multiplo`; opcionais `preco` (exige `pricing.manage`; na tabela de `tabela_preco` ou na tabela padrão ativa) e `custo` (exige `catalog.view_costs`) |
 | Estoque | `deposito`, `codigo_sku`, `quantidade` (unidade base) |
 
 Os cabeçalhos são comparados sem acento e sem diferenciar maiúsculas;
