@@ -102,6 +102,7 @@ it('mantém os códigos de erro das regras de negócio', function (): void {
         'App\Domain\Identity\Exceptions\InvitationEmailMismatch' => 'invitation_email_mismatch',
         'App\Domain\Identity\Exceptions\LastOwnerRequired' => 'last_owner_required',
         'App\Domain\Identity\Exceptions\RoleKindMismatch' => 'role_kind_mismatch',
+        'App\Domain\Integrations\Exceptions\InvalidIntegration' => 'invalid_integration',
         'App\Domain\Inventory\Exceptions\InsufficientStock' => 'insufficient_stock',
         'App\Domain\Inventory\Exceptions\InvalidInventoryOperation' => 'invalid_inventory_operation',
         'App\Domain\Inventory\Exceptions\WarehouseCodeTaken' => 'warehouse_code_taken',
