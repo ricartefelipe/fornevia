@@ -587,7 +587,7 @@ Remessas, eventos e devoluções seguem a ADR-027:
 | Entrega e ocorrências | `fulfillment.manage` ou transportadora | evento único por identificador externo; a situação só avança de expedida para entregue; evento repetido ou fora de ordem fica no histórico sem efeito |
 | Encomenda | `fulfillment.manage` | o saldo sob encomenda é reservado na medida do disponível quando o estoque chega |
 | Devolução | comprador com `portal.orders.place`, equipe com `returns.manage` | pedido sobre o entregue sem devolução aberta; autorização com depósito e inspeção, ou recusa; o recebido conta como devolvido; só o aprovado na inspeção volta ao disponível (`return_receipt`); valor a devolver registrado |
-| Frete | `pricing.manage` | condição negociada da empresa ou regra ativa de maior prioridade para a UF de entrega, com isenção por subtotal; calculado no servidor no carrinho e no checkout; mantido na reavaliação da aprovação |
+| Frete | `pricing.manage` | condição negociada da empresa ou regra ativa de maior prioridade para a UF de entrega, com isenção por subtotal; calculado no servidor no carrinho e no checkout; recalculado pela regra vigente quando a reavaliação da aprovação reprecifica os itens |
 
 No banco, os CHECKs dos itens do pedido garantem cancelado + expedido + em
 separação ≤ pedido, entregue ≤ expedido e devolvido + em devolução ≤

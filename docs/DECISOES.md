@@ -686,8 +686,12 @@ isolamento por tenant e por pessoa.
   regra do distribuidor (por UF do endereço de entrega, com valor fixo e
   isenção a partir de um subtotal) ou por condição negociada da empresa
   compradora (isento ou valor fixo), e exibido como frete do distribuidor,
-  nunca como cotação de transportadora. Pedido de cotação usa o frete da
-  proposta (zero quando não negociado).
+  nunca como cotação de transportadora. Na reavaliação da aprovação
+  interna, que reprecifica os itens, o frete é recalculado pela regra
+  vigente para o novo subtotal. Pedido de cotação usa o frete da proposta
+  (zero quando não negociado).
+- O cancelamento de itens não libera a parte da reserva comprometida com
+  remessas em separação de cada depósito.
 - Tabelas de expedição e devolução são somente leitura no contexto de
   comprador (ADR-024); o pedido de devolução do comprador é gravado no
   contexto de sistema do mesmo usuário.

@@ -63,8 +63,8 @@ it('recusa confirmar quando o total exibido não tem o frete atual', function ()
     expect(Fx::place($this->scenario, $this->buyer, ['expectedTotalCents' => 34_590])->total_cents->cents)->toBe(34_590);
 });
 
-it('mantém o frete do checkout na reavaliação da aprovação', function (): void {
-    ($this->rule)('SP', '45,90');
+it('recalcula o frete pela regra vigente na reavaliação da aprovação', function (): void {
+    ($this->rule)('SP', '45,90', freeFrom: '340,00');
     $ana = $this->scenario->tenant->addBuyerUser($this->buyer['company'], SystemRole::Approver);
     Fx::rule($this->scenario, $this->buyer['company'], [[1, [$ana]]]);
     $order = Fx::place($this->scenario, $this->buyer);
@@ -74,8 +74,10 @@ it('mantém o frete do checkout na reavaliação da aprovação', function (): v
     expect(Fx::decide($this->scenario, $ana, $order))->toBe(ApprovalOutcome::Invalidated);
 
     $stored = Fx::fresh($this->scenario, $order);
-    expect($stored->freight_cents->cents)->toBe(4_590)
-        ->and($stored->total_cents->cents)->toBe(36_000 + 4_590);
+    // Reprecificado para 360,00: passa do mínimo de isenção da regra.
+    expect($order->freight_cents->cents)->toBe(4_590)
+        ->and($stored->freight_cents->cents)->toBe(0)
+        ->and($stored->total_cents->cents)->toBe(36_000);
 });
 
 it('valida a regra e a condição de frete e exige permissão', function (): void {
