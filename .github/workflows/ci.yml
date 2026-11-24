@@ -325,7 +325,7 @@ jobs:
   image:
     name: Build e análise da imagem
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [quality]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -386,3 +386,13 @@ jobs:
           curl -fsS -H 'Host: localhost:18080' http://127.0.0.1:18080/health/ready
           curl -fsS -o /dev/null -H 'Host: localhost:18080' http://127.0.0.1:18080/login
           $C down -v
+      - name: Chart Helm (lint e esquema do Kubernetes)
+        run: |
+          H="docker run --rm -v $PWD/deploy/helm:/apps -w /apps alpine/helm:3.19.0"
+          $H lint fornevia --strict
+          for values in "" "-f fornevia/ci/local-values.yaml"; do
+            $H template fv fornevia $values \
+              | docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 -strict -summary -kubernetes-version 1.34.0 -
+          done
+      - name: Chart Helm em cluster k3s (perda de pod e atualização)
+        run: sh scripts/k8s-smoke.sh ci

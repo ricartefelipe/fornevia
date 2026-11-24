@@ -1,0 +1,22 @@
+# Valores do teste em cluster local (scripts/k8s-smoke.sh): dependências de
+# teste no mesmo namespace, volume de nó único e sem ingress.
+config:
+  APP_URL: http://fornevia.local
+  DB_HOST: postgres
+  DB_SSLMODE: disable
+  REDIS_HOST: redis
+  SESSION_SECURE_COOKIE: "false"
+  METRICS_SCRAPE_HOSTS: fornevia-fornevia-web
+image:
+  pullPolicy: Never
+persistence:
+  accessMode: ReadWriteOnce
+  size: 1Gi
+ingress:
+  enabled: false
+app:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+horizon:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
