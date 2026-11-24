@@ -599,3 +599,34 @@ itens → saldos → reservas → contador.
 Avisos (ADR-026): quem fez o pedido recebe expedição, entrega e
 ocorrências; quem opera devoluções recebe cada nova devolução; o
 solicitante recebe a análise e a conclusão com o valor a devolver.
+
+## 14. Contas a receber, gateway e indicadores
+
+Segue a ADR-028.
+
+| Etapa | Quem | Garantia |
+|---|---|---|
+| Fatura | `finance.manage` | expedido ainda não faturado, frete na primeira fatura; parcelas pela condição do pedido; comprometimento de crédito vira recebível no mesmo movimento; número `FAT-` |
+| Pagamento manual | `finance.manage` | confirmado na hora, até o saldo em aberto da parcela |
+| Cobrança no gateway | `finance.manage` ou comprador com `portal.orders.place` | uma pendente por parcela; gravada antes da chamada; referência externa = id do pagamento; sem cobrança repetida após timeout |
+| Confirmação | webhook, simulador ou conciliação | idempotente; quita até o saldo em aberto; registra a taxa; reduz o recebível |
+| Reembolso | `finance.manage` | só de confirmado; reservado sob lock antes do gateway; pendente + efetivado ≤ pago (CHECK) |
+| Crédito e ajuste | `finance.manage` | lançamento compensatório com motivo; o devido nunca fica abaixo do pago e creditado |
+| Conciliação | `payments:reconcile`, a cada 15 minutos | pendentes há mais de 10 minutos: cria a cobrança que faltou ou aplica a situação do gateway |
+
+O webhook do Asaas fica em `/webhooks/pagamentos/asaas/{organização}`, fora
+do grupo web, autenticado pelo token do distribuidor (comparado pelo hash) e
+limitado por taxa. Eventos ficam em `gateway_webhook_events` e aparecem na
+fila de conciliação do financeiro.
+
+Indicadores (`/indicadores`, `reports.view`), por período em datas do fuso
+comercial:
+
+| Indicador | Fórmula |
+|---|---|
+| Ticket médio | soma dos totais dos pedidos confirmados no período ÷ quantidade desses pedidos |
+| Conversão | versões de proposta aceitas ÷ versões enviadas no período |
+| Margem | (receita líquida − custo) ÷ receita líquida, nos itens de pedidos confirmados no período com custo registrado na confirmação, sobre a quantidade não cancelada |
+| Inadimplência | saldo em aberto das parcelas já vencidas ÷ total das parcelas com vencimento no período |
+
+Sem base (divisor zero), o indicador aparece como indefinido.

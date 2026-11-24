@@ -705,3 +705,49 @@ monotônico da situação evitam regressões. A inspeção antes do retorno ao
 disponível (RF-091) impede vender item avariado. O frete calculado no
 servidor e rotulado como do distribuidor atende RF-092 sem prometer preço
 de transportadora.
+
+---
+
+## ADR-028 — Contas a receber por lançamentos, gateway sem cobrança repetida e webhooks deduplicados
+
+**Status:** aceita
+
+**Decisão.**
+- A fatura é comercial (não fiscal) e cobre o expedido ainda não faturado
+  de um pedido confirmado, com o frete na primeira fatura. As parcelas
+  seguem a condição de pagamento retratada no pedido, com a diferença de
+  centavos na última.
+- Na mesma transação da fatura, o comprometimento de crédito do valor
+  faturado vira recebível num único movimento (RN-081). Só pagamento
+  confirmado reduz o recebível (RN-083).
+- Parcela e fatura guardam valor, ajustes, pago e creditado. Toda mudança
+  passa por um único serviço, que grava o lançamento financeiro (somente
+  inclusão), move o recebível no crédito e recalcula a situação financeira
+  do pedido. Correção é sempre lançamento compensatório: crédito concedido
+  ou ajuste com motivo (RN-100).
+- Reembolso só de pagamento confirmado. O valor é reservado como pendente
+  sob o lock do pagamento antes de qualquer chamada ao gateway. A soma dos
+  pendentes e efetivados nunca passa do pago, por regra e por CHECK
+  (RN-101). Efetivado, o valor volta a ser devido na parcela.
+- O gateway é escolhido por distribuidor: simulador local ou Asaas, com a
+  chave cifrada e o hash do token do webhook. A cobrança é gravada antes de
+  chamar o gateway, com o próprio id como referência externa. O Asaas é
+  consultado pela referência antes de criar e de novo quando a criação
+  esgota o tempo: timeout depois de criada não gera outra cobrança (RF-101).
+  Gateway indisponível deixa a cobrança pendente, que a conciliação
+  agendada cria ou aplica depois.
+- Cartão é pago na página do gateway; nenhum dado de cartão chega ao
+  Fornevia (RS-100).
+- Eventos recebidos (webhook do Asaas, autenticado pelo token do
+  distribuidor, e página do simulador) são gravados uma vez por provedor e
+  identificador e processados pela fila. Pagamento já confirmado ou
+  encerrado não muda com evento repetido.
+- Lock: pedido → fatura → parcela → pagamento → conta de crédito →
+  contador.
+
+**Motivo.** Saldos derivados de lançamentos tornam cada centavo rastreável e
+impedem correções destrutivas. Reservar o reembolso antes do gateway fecha
+a janela de dois reembolsos simultâneos. Procurar pela referência antes de
+criar é a única forma de tolerar timeout sem cobrar duas vezes, já que o
+gateway pode ter criado a cobrança sem responder. A configuração por
+distribuidor mantém o isolamento entre tenants também no recebimento.
