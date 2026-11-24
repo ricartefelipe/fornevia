@@ -136,6 +136,23 @@ final readonly class OutboxRelay
     }
 
     /**
+     * Mensagens pendentes por distribuidor (métricas por distribuidor).
+     *
+     * @return array<string, int> tenant_id => pendentes
+     */
+    public function pendingByTenant(): array
+    {
+        $rows = $this->connection()->select("select tenant_id, count(*) as pending from outbox_messages where status = 'pending' group by tenant_id");
+        $result = [];
+
+        foreach ($rows as $row) {
+            $result[(string) $row->tenant_id] = (int) $row->pending;
+        }
+
+        return $result;
+    }
+
+    /**
      * @return list<object{id: string, tenant_id: string, type: string, attempts: int}>
      */
     private function claim(string $owner, int $limit): array

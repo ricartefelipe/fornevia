@@ -32,10 +32,14 @@ final class Metrics
 
     public function __construct(private readonly RedisManager $redis) {}
 
-    public function observeRequest(string $kind, int $status, float $seconds): void
+    public function observeRequest(string $kind, int $status, float $seconds, ?string $tenantId = null): void
     {
         $class = intdiv(max(100, min(599, $status)), 100).'xx';
         $increments = ["http_requests_total|kind={$kind},status={$class}" => 1, "http_request_duration_seconds_count|kind={$kind}" => 1];
+
+        if ($tenantId !== null && (bool) config('observability.per_tenant') && preg_match('/^[0-9a-f-]{36}$/D', $tenantId) === 1) {
+            $increments["http_requests_by_tenant_total|tenant={$tenantId},status={$class}"] = 1;
+        }
 
         foreach ((array) config('observability.latency_buckets') as $bucket) {
             if ($seconds <= (float) $bucket) {

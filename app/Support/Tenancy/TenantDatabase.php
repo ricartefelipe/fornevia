@@ -21,6 +21,9 @@ use Illuminate\Support\Facades\Context;
  */
 final readonly class TenantDatabase
 {
+    /** Chave oculta do Context com o distribuidor da requisição (métricas). */
+    public const string METRICS_TENANT_KEY = 'metrics_tenant_id';
+
     private const array LOG_KEYS = ['context_kind', 'tenant_id', 'user_id', 'buyer_company_id', 'api_client_id'];
 
     public function __construct(
@@ -57,6 +60,12 @@ final readonly class TenantDatabase
         return $connection->transaction(function () use ($connection, $context, $callback): mixed {
             $this->apply($connection, $context);
             $previous = $this->current->swap($context);
+
+            // Distribuidor da requisição para as métricas por distribuidor
+            // (oculto: não vai aos logs e permanece depois da transação).
+            if ($context->tenantId !== null && ! Context::hasHidden(self::METRICS_TENANT_KEY)) {
+                Context::addHidden(self::METRICS_TENANT_KEY, $context->tenantId);
+            }
             $previousLog = Context::only(self::LOG_KEYS);
             Context::forget(self::LOG_KEYS);
             Context::add($context->toLogContext());

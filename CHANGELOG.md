@@ -7,6 +7,12 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- Métricas por distribuidor opcionais (`METRICS_PER_TENANT`): requisições
+  por status e outbox pendente, limitadas aos de maior volume
+  (`METRICS_TENANT_LIMIT`), com os demais somados em `tenant="outros"`.
+
+### Adicionado
+
 - Escrita na API v1 com `Idempotency-Key` obrigatório: cadastro de empresa
   compradora, entrada e ajuste de estoque e cancelamento de itens ou do
   pedido, cada um com permissão própria do cliente da API.

@@ -23,6 +23,8 @@ final readonly class MetricsSnapshot
         'http_request_duration_seconds' => ['histogram', 'Duração das requisições por tipo, em segundos.'],
         'db_conflicts_total' => ['counter', 'Conflitos de concorrência no banco (deadlock, serialização, lock indisponível).'],
         'jobs_failed_total' => ['counter', 'Jobs que falharam, por fila.'],
+        'http_requests_by_tenant_total' => ['counter', 'Requisições por distribuidor e classe de status (os de menor volume somam em tenant="outros").'],
+        'outbox_pending_by_tenant' => ['gauge', 'Mensagens pendentes na outbox por distribuidor (os de menor volume somam em tenant="outros").'],
         'queue_size' => ['gauge', 'Jobs aguardando, por fila.'],
         'outbox_pending' => ['gauge', 'Mensagens pendentes na outbox.'],
         'outbox_oldest_pending_age_seconds' => ['gauge', 'Idade da mensagem pendente mais antiga da outbox, em segundos.'],
@@ -53,6 +55,7 @@ final readonly class MetricsSnapshot
         }
 
         $series = self::completeHistograms($series);
+        $series = self::limitTenants($series);
 
         foreach ($this->gauges($errors) as $name => $values) {
             $series[$name] = $values;
@@ -94,6 +97,83 @@ final readonly class MetricsSnapshot
     }
 
     /**
+     * Limita as séries por distribuidor aos de maior volume; os demais somam
+     * em tenant="outros", por classe de status.
+     *
+     * @param  array<string, list<array{0: string, 1: float}>>  $series
+     * @return array<string, list<array{0: string, 1: float}>>
+     */
+    private static function limitTenants(array $series): array
+    {
+        $family = 'http_requests_by_tenant_total';
+
+        if (! isset($series[$family])) {
+            return $series;
+        }
+
+        $byTenant = [];
+        $totals = [];
+
+        foreach ($series[$family] as [$labels, $value]) {
+            if (preg_match('/^tenant=([^,]+),status=(\w+)$/', $labels, $m) !== 1) {
+                continue;
+            }
+
+            $byTenant[$m[1]][$m[2]] = ($byTenant[$m[1]][$m[2]] ?? 0.0) + $value;
+            $totals[$m[1]] = ($totals[$m[1]] ?? 0.0) + $value;
+        }
+
+        arsort($totals);
+        $kept = array_slice(array_keys($totals), 0, max(0, (int) config('observability.tenant_series_limit')));
+        $result = [];
+        $others = [];
+
+        foreach ($byTenant as $tenant => $statuses) {
+            foreach ($statuses as $status => $value) {
+                if (in_array($tenant, $kept, true)) {
+                    $result[] = ["tenant={$tenant},status={$status}", $value];
+                } else {
+                    $others[$status] = ($others[$status] ?? 0.0) + $value;
+                }
+            }
+        }
+
+        foreach ($others as $status => $value) {
+            $result[] = ["tenant=outros,status={$status}", $value];
+        }
+
+        $series[$family] = $result;
+
+        return $series;
+    }
+
+    /**
+     * @param  array<string, int>  $values  tenant => valor
+     * @return list<array{0: string, 1: float}>
+     */
+    private static function topTenants(array $values): array
+    {
+        arsort($values);
+        $limit = max(0, (int) config('observability.tenant_series_limit'));
+        $result = [];
+        $others = 0;
+
+        foreach (array_keys($values) as $i => $tenant) {
+            if ($i < $limit) {
+                $result[] = ['tenant='.$tenant, (float) $values[$tenant]];
+            } else {
+                $others += $values[$tenant];
+            }
+        }
+
+        if (count($values) > $limit) {
+            $result[] = ['tenant=outros', (float) $others];
+        }
+
+        return $result;
+    }
+
+    /**
      * @return array<string, list<array{0: string, 1: float}>>
      */
     private function gauges(int &$errors): array
@@ -115,6 +195,14 @@ final readonly class MetricsSnapshot
             $gauges['outbox_dead'] = [['', (float) $stats['dead']]];
         } catch (Throwable) {
             $errors++;
+        }
+
+        if ((bool) config('observability.per_tenant')) {
+            try {
+                $gauges['outbox_pending_by_tenant'] = self::topTenants($this->outbox->pendingByTenant());
+            } catch (Throwable) {
+                $errors++;
+            }
         }
 
         try {
