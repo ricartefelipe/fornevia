@@ -17,6 +17,7 @@ use App\Models\Catalog\Product;
 use App\Models\Catalog\Sku;
 use App\Models\Catalog\UnitOfMeasure;
 use App\Support\Auth\Access;
+use App\Support\Clock\Clock;
 use Brick\Math\BigDecimal;
 use InvalidArgumentException;
 
@@ -75,7 +76,7 @@ final readonly class ProductsImport implements ImportKind
         /** @var array<int, list<string>> $errors */
         $errors = [];
 
-        $commercial = new ImportedCommercialData($this->access->can(Permission::PricingManage), $this->access->can(Permission::CatalogViewCosts));
+        $commercial = $this->commercial();
 
         foreach ($rows as $line => $row) {
             $code = $codes[$line];
@@ -84,6 +85,27 @@ final readonly class ProductsImport implements ImportKind
         }
 
         return $errors;
+    }
+
+    /**
+     * Guarda na linha a tabela de preço conferida na prévia: a aplicação usa
+     * a mesma, mesmo que outra tabela padrão passe a valer antes da confirmação.
+     */
+    public function prepare(array $rows): array
+    {
+        $commercial = $this->commercial();
+
+        foreach ($rows as $line => $row) {
+            if (trim($row['preco'] ?? '') !== '') {
+                $list = $commercial->priceList($row['tabela_preco'] ?? '');
+
+                if ($list !== null) {
+                    $rows[$line]['tabela_preco_id'] = $list->id;
+                }
+            }
+        }
+
+        return $rows;
     }
 
     public function apply(array $row, array &$memo): string
@@ -111,7 +133,7 @@ final readonly class ProductsImport implements ImportKind
         $price = ImportedCommercialData::money($row['preco'] ?? '');
 
         if ($price !== null) {
-            $list = ImportedCommercialData::priceList($row['tabela_preco'] ?? '')
+            $list = ImportedCommercialData::priceListById($row['tabela_preco_id'] ?? '')
                 ?? throw new InvalidIntegration('Tabela de preço não encontrada ou arquivada.');
             $this->prices->handle($list, $sku, $price);
         }
@@ -170,5 +192,10 @@ final readonly class ProductsImport implements ImportKind
         }
 
         return $errors;
+    }
+
+    private function commercial(): ImportedCommercialData
+    {
+        return new ImportedCommercialData($this->access->can(Permission::PricingManage), $this->access->can(Permission::CatalogViewCosts), app(Clock::class));
     }
 }

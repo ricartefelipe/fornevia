@@ -32,6 +32,15 @@ interface ImportKind
     public function validate(array $rows): array;
 
     /**
+     * Completa as linhas com o que a prévia resolveu e a aplicação deve usar
+     * (por exemplo, a tabela de preço conferida), guardado junto da linha.
+     *
+     * @param  array<int, array<string, string>>  $rows
+     * @return array<int, array<string, string>>
+     */
+    public function prepare(array $rows): array;
+
+    /**
      * Aplica uma linha já validada; devolve o id do registro criado ou
      * alterado. Lança BusinessRuleViolation se a regra recusar agora.
      *

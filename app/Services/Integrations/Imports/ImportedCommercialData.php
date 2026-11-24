@@ -8,16 +8,27 @@ use App\Domain\Shared\AmountOutOfRange;
 use App\Domain\Shared\Money;
 use App\Enums\Pricing\PriceListScope;
 use App\Models\Pricing\PriceList;
+use App\Support\Auth\SalesPortfolio;
+use App\Support\Clock\Clock;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 /**
  * Preço e custo opcionais da importação de catálogo: valores em reais
  * ("12,50", "1.234,56" ou "12.50"), tabela de preço pelo código ou a tabela
- * padrão ativa, e as permissões de quem importa.
+ * padrão vigente (na carteira de quem importa), e as permissões de quem
+ * importa.
  */
-final readonly class ImportedCommercialData
+final class ImportedCommercialData
 {
-    public function __construct(private bool $canPrice, private bool $canCost) {}
+    /** @var array<string, PriceList|null> */
+    private array $lists;
+
+    public function __construct(private bool $canPrice, private bool $canCost, private Clock $clock)
+    {
+        $this->lists = [];
+    }
 
     /**
      * @param  array<string, string>  $row
@@ -35,8 +46,8 @@ final readonly class ImportedCommercialData
                 $errors[] = 'Sem permissão para definir preço (pricing.manage).';
             } elseif (! (self::money($price)?->isPositive() ?? false)) {
                 $errors[] = 'Preço inválido (valor positivo, ex.: 12,50).';
-            } elseif (self::priceList($listCode) === null) {
-                $errors[] = $listCode === '' ? 'Não há tabela de preço padrão ativa: informe tabela_preco.' : 'Tabela de preço não encontrada ou arquivada.';
+            } elseif ($this->priceList($listCode) === null) {
+                $errors[] = $listCode === '' ? 'Não há tabela de preço padrão vigente: informe tabela_preco.' : 'Tabela de preço não encontrada ou arquivada.';
             }
         } elseif ($listCode !== '') {
             $errors[] = 'Tabela de preço informada sem preço.';
@@ -69,16 +80,40 @@ final readonly class ImportedCommercialData
     }
 
     /**
-     * Tabela pelo código (sem diferenciar maiúsculas) ou, sem código, a
-     * tabela padrão ativa de maior prioridade; arquivada não serve.
+     * Tabela pelo código ou, sem código, a tabela padrão ativa e vigente de
+     * maior prioridade; arquivada ou fora da carteira do representante não
+     * serve. Resultado guardado por código para o arquivo inteiro.
      */
-    public static function priceList(string $code): ?PriceList
+    public function priceList(string $code): ?PriceList
     {
-        $code = trim($code);
-        $query = PriceList::query()->where('status', '!=', 'archived');
+        $code = mb_strtoupper(trim($code));
 
-        return $code !== ''
-            ? $query->whereRaw('upper(code) = ?', [mb_strtoupper($code)])->first()
-            : $query->where('scope', PriceListScope::Default->value)->where('status', 'active')->orderByDesc('priority')->orderByDesc('valid_from')->first();
+        if (! array_key_exists($code, $this->lists)) {
+            $query = self::available();
+            $today = $this->clock->now()->setTimezone((string) config('app.business_timezone'))->toDateString();
+
+            $this->lists[$code] = $code !== ''
+                ? $query->where('code', $code)->first()
+                : $query->where('scope', PriceListScope::Default->value)->where('status', 'active')
+                    ->where('valid_from', '<=', $today)
+                    ->where(static fn (Builder $q) => $q->whereNull('valid_until')->orWhere('valid_until', '>=', $today))
+                    ->orderByDesc('priority')->orderByDesc('valid_from')->first();
+        }
+
+        return $this->lists[$code];
+    }
+
+    /** Tabela resolvida na prévia, conferida de novo na aplicação. */
+    public static function priceListById(string $id): ?PriceList
+    {
+        return Str::isUuid($id) ? self::available()->whereKey($id)->first() : null;
+    }
+
+    /**
+     * @return Builder<PriceList>
+     */
+    private static function available(): Builder
+    {
+        return app(SalesPortfolio::class)->restrictOptional(PriceList::query())->where('status', '!=', 'archived');
     }
 }

@@ -49,7 +49,7 @@
                             <tr wire:key="row-{{ $row->id }}">
                                 <td class="px-3 py-2">{{ $row->line }}</td>
                                 <td class="px-3 py-2"><x-ui.badge :color="$rowLabels[$row->status][1] ?? 'slate'">{{ $rowLabels[$row->status][0] ?? $row->status }}</x-ui.badge></td>
-                                <td class="px-3 py-2 text-xs text-slate-600">{{ collect($row->data)->filter()->implode(' · ') }}</td>
+                                <td class="px-3 py-2 text-xs text-slate-600">{{ collect($row->data)->except('tabela_preco_id')->filter()->implode(' · ') }}</td>
                                 <td class="px-3 py-2 text-red-700">{{ implode(' ', $row->errors) }}</td>
                             </tr>
                         @endforeach
