@@ -122,3 +122,69 @@ it('não derruba a operação e suspende as gravações quando o Redis das métr
 
     Illuminate\Support\Facades\Log::shouldHaveReceived('warning')->once();
 });
+
+it('não expõe séries por distribuidor quando desligadas, nem as gravadas antes', function (): void {
+    config(['observability.per_tenant' => true]);
+    app(Metrics::class)->observeRequest('web', 200, 0.01, '0193a1f0-0000-7000-8000-000000000001');
+    expect(($this->scrape)()->getContent())->toContain('by_tenant');
+
+    config(['observability.per_tenant' => false]);
+    app(Metrics::class)->observeRequest('web', 200, 0.01, '0193a1f0-0000-7000-8000-000000000002');
+
+    expect(($this->scrape)()->getContent())->not->toContain('by_tenant')->not->toContain('0193a1f0');
+});
+
+it('mantém fixos os distribuidores com série própria, para os contadores nunca diminuírem', function (): void {
+    config(['observability.per_tenant' => true, 'observability.tenant_series_limit' => 1]);
+    $small = '0193a1f0-0000-7000-8000-000000000011';
+    $big = '0193a1f0-0000-7000-8000-000000000012';
+    app(Metrics::class)->observeRequest('web', 200, 0.01, $small);
+
+    // Um distribuidor de volume maior chega depois: fica em "outros".
+    for ($i = 0; $i < 5; $i++) {
+        app(Metrics::class)->observeRequest('web', 200, 0.01, $big);
+    }
+
+    expect(($this->scrape)()->getContent())->toContain("fornevia_http_requests_by_tenant_total{tenant=\"{$small}\",status=\"2xx\"} 1")
+        ->toContain('fornevia_http_requests_by_tenant_total{tenant="outros",status="2xx"} 5')
+        ->not->toContain($big);
+});
+
+it('conta requisições por distribuidor e soma os de menor volume em outros', function (): void {
+    config(['observability.per_tenant' => true, 'observability.tenant_series_limit' => 2]);
+    $tenants = ['0193a1f0-0000-7000-8000-00000000000a' => 3, '0193a1f0-0000-7000-8000-00000000000b' => 2, '0193a1f0-0000-7000-8000-00000000000c' => 1, '0193a1f0-0000-7000-8000-00000000000d' => 1];
+
+    foreach ($tenants as $tenant => $count) {
+        for ($i = 0; $i < $count; $i++) {
+            app(Metrics::class)->observeRequest('web', 200, 0.01, $tenant);
+        }
+    }
+    app(Metrics::class)->observeRequest('web', 500, 0.01, '0193a1f0-0000-7000-8000-00000000000a');
+    app(Metrics::class)->observeRequest('web', 200, 0.01, 'nao-e-uuid');
+
+    $body = ($this->scrape)()->getContent();
+
+    expect($body)->toContain('fornevia_http_requests_by_tenant_total{tenant="0193a1f0-0000-7000-8000-00000000000a",status="2xx"} 3')
+        ->toContain('fornevia_http_requests_by_tenant_total{tenant="0193a1f0-0000-7000-8000-00000000000a",status="5xx"} 1')
+        ->toContain('fornevia_http_requests_by_tenant_total{tenant="0193a1f0-0000-7000-8000-00000000000b",status="2xx"} 2')
+        ->toContain('fornevia_http_requests_by_tenant_total{tenant="outros",status="2xx"} 2')
+        ->not->toContain('00000000000c')
+        ->not->toContain('nao-e-uuid');
+});
+
+it('identifica o distribuidor da requisição autenticada e a outbox pendente por distribuidor', function (): void {
+    config(['observability.per_tenant' => true]);
+    $scenario = Tests\Support\Builders\OrderingScenario::create();
+    Tests\Integration\Approvals\ApprovalFixtures::place($scenario, $scenario->buyerWithCart(quantity: '1'));
+    [, $token] = $scenario->tenant->actingAs($scenario->tenant->ownerMembership, static fn (): array => app(App\Actions\Integrations\ManageApiClients::class)->create('ERP', ['orders.view'], 30));
+    app(Metrics::class)->reset();
+    // O distribuidor precisa vir da própria requisição, não da preparação do teste.
+    Illuminate\Support\Facades\Context::forgetHidden(App\Support\Tenancy\TenantDatabase::METRICS_TENANT_KEY);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])->getJson('/api/v1/orders')->assertOk();
+    $tenant = $scenario->tenant->organization->id;
+    $body = ($this->scrape)()->getContent();
+
+    expect($body)->toContain("fornevia_http_requests_by_tenant_total{tenant=\"{$tenant}\",status=\"2xx\"} 1")
+        ->toContain("fornevia_outbox_pending_by_tenant{tenant=\"{$tenant}\"}");
+});
