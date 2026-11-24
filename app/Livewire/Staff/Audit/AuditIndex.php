@@ -6,11 +6,13 @@ namespace App\Livewire\Staff\Audit;
 
 use App\Models\Audit\AuditLog;
 use App\Models\Identity\User;
+use App\Support\Auth\Access;
 use App\Support\Validation\BusinessDate;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -31,6 +33,9 @@ final class AuditIndex extends Component
     use WithPagination;
 
     public const int PER_PAGE = 50;
+
+    /** Validade, em segundos, das opções de filtro. */
+    public const int OPTIONS_TTL = 300;
 
     private const array FILTERS = ['action', 'actor', 'subject', 'dateFrom', 'dateUntil'];
 
@@ -87,12 +92,15 @@ final class AuditIndex extends Component
             $logs->where(static fn (Builder $q) => $q->where('action', $action)->orWhere('action', 'like', str_replace('_', '\\_', $action).'.%'));
         }
 
-        if (Str::isUuid($this->actor)) {
-            $logs->where('actor_user_id', strtolower($this->actor));
+        $actor = trim($this->actor);
+        $subject = trim($this->subject);
+
+        if (Str::isUuid($actor)) {
+            $logs->where('actor_user_id', strtolower($actor));
         }
 
-        if (Str::isUuid($this->subject)) {
-            $logs->where('subject_id', strtolower($this->subject));
+        if (Str::isUuid($subject)) {
+            $logs->where('subject_id', strtolower($subject));
         }
 
         $timezone = (string) config('app.business_timezone');
@@ -109,21 +117,25 @@ final class AuditIndex extends Component
     }
 
     /**
-     * Grupos e ações já registrados no tenant.
+     * Grupos e ações já registrados no tenant (guardados por alguns minutos,
+     * para que cada filtro não percorra o histórico inteiro).
      *
      * @return array<string, string>
      */
     private function actionOptions(): array
     {
-        $options = [];
+        /** @var array<string, string> */
+        return Cache::remember($this->cacheKey('actions'), self::OPTIONS_TTL, static function (): array {
+            $options = [];
 
-        foreach (AuditLog::query()->distinct()->orderBy('action')->limit(500)->pluck('action') as $action) {
-            $group = Str::before((string) $action, '.');
-            $options[$group] ??= $group.' (todas)';
-            $options[(string) $action] = '— '.$action;
-        }
+            foreach (AuditLog::query()->distinct()->orderBy('action')->limit(500)->pluck('action') as $action) {
+                $group = Str::before((string) $action, '.');
+                $options[$group] ??= $group.' (todas)';
+                $options[(string) $action] = '— '.$action;
+            }
 
-        return $options;
+            return $options;
+        });
     }
 
     /**
@@ -133,10 +145,18 @@ final class AuditIndex extends Component
      */
     private function actorOptions(): array
     {
-        $ids = AuditLog::query()->whereNotNull('actor_user_id')->distinct()->limit(200)->pluck('actor_user_id')->all();
+        /** @var array<string, string> */
+        return Cache::remember($this->cacheKey('actors'), self::OPTIONS_TTL, static function (): array {
+            $ids = AuditLog::query()->whereNotNull('actor_user_id')->distinct()->limit(200)->pluck('actor_user_id')->all();
 
-        return User::query()->whereIn('id', $ids)->orderBy('name')->get(['id', 'name', 'email'])
-            ->mapWithKeys(static fn (User $u): array => [$u->id => $u->name.' · '.$u->email])->all();
+            return User::query()->whereIn('id', $ids)->orderBy('name')->get(['id', 'name', 'email'])
+                ->mapWithKeys(static fn (User $u): array => [$u->id => $u->name.' · '.$u->email])->all();
+        });
+    }
+
+    private function cacheKey(string $kind): string
+    {
+        return 'audit:options:'.$kind.':'.app(Access::class)->membership()->tenant_id;
     }
 
     private static function date(string $value): ?string

@@ -12,6 +12,7 @@ use App\Http\Middleware\RequireTwoFactor;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrustConfiguredProxies;
 use App\Support\Http\ApiExceptionRenderer;
+use App\Support\Observability\Metrics;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -32,7 +33,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(static function (Middleware $middleware): void {
         $middleware->prepend(AssignCorrelationId::class);
-        $middleware->append(RecordRequestMetrics::class);
+        // Métricas por fora de toda a pilha global: manutenção (503), corpo
+        // grande (413), host recusado (400) e CORS também entram na conta.
+        $middleware->prepend(RecordRequestMetrics::class);
         $middleware->append(SecurityHeaders::class);
         $middleware->replace(TrustProxies::class, TrustConfiguredProxies::class);
         $middleware->encryptCookies();
@@ -41,9 +44,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->authenticateSessions();
 
         // Somente o host configurado em APP_URL é aceito (fora de local/testes).
-        $middleware->trustHosts(at: static fn (): array => [
+        // Hosts internos de coleta de métricas (METRICS_SCRAPE_HOSTS) também.
+        $middleware->trustHosts(at: static fn (): array => array_values(array_filter([
             (string) parse_url((string) config('app.url'), PHP_URL_HOST),
-        ], subdomains: false);
+            ...array_map('trim', explode(',', (string) config('observability.scrape_hosts'))),
+        ])), subdomains: false);
 
         // Contexto de tenant antes do route model binding: bindings, policies
         // e componentes Livewire já consultam o banco sob RLS.
@@ -62,6 +67,11 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(static function (Exceptions $exceptions): void {
         $exceptions->dontReportDuplicates();
+
+        // Conflitos de concorrência no banco entram nas métricas (RQ-121).
+        $exceptions->report(static function (Throwable $e): void {
+            app(Metrics::class)->recordConflictFrom($e);
+        });
         $exceptions->dontFlash(['current_password', 'password', 'password_confirmation', 'token', 'code', 'recovery_code']);
 
         $exceptions->shouldRenderJsonWhen(

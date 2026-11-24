@@ -565,3 +565,17 @@ webhooks foi verificado com HTTP simulado, sem chamada a um receptor real.
   por tipo de requisição, filas, idade da outbox, falhas de jobs e
   conflitos de concorrência no banco (RQ-121).
 
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Conflitos de banco em requisições web e da API nunca chegavam ao
+  contador, porque a exceção já tinha virado resposta antes de sair da
+  transação; a `DeadlockException` de transações aninhadas também escapava.
+- Histograma exportado sem os limites vazios, distorcendo percentis.
+- Middleware de métricas no fim da pilha global, sem contar manutenção,
+  corpo grande e host recusado.
+- Redis indisponível somava uma tentativa de conexão, sem tempo limite, a
+  cada requisição.
+- Coleta pelo host interno recusada pela verificação de host.
+- Opções de filtro da auditoria recalculadas sobre o histórico inteiro a
+  cada interação; identificador com espaços ignorado no filtro.
+

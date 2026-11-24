@@ -82,3 +82,15 @@ it('exige audit.view e mostra só o próprio distribuidor', function (): void {
 
     ($this->page)()->assertOk()->assertDontSeeText('outro.tenant');
 });
+
+it('aceita o id com espaços em volta e guarda as opções de filtro', function (): void {
+    $id = $this->tenant->actingAs($this->manager, fn (): string => app(AuditRecorder::class)->record('quote.sent', $this->manager, ['number' => 'COT-000777'])->subject_id);
+
+    ($this->as)(fn () => Livewire::test(AuditIndex::class)->set('subject', '  '.$id.'  ')->assertSee('COT-000777')->assertDontSee('PED-000101'));
+
+    Illuminate\Support\Facades\DB::enableQueryLog();
+    ($this->as)(fn () => Livewire::test(AuditIndex::class)->set('action', 'order'));
+    $distinct = array_filter(Illuminate\Support\Facades\DB::getQueryLog(), static fn (array $q): bool => str_contains($q['query'], 'distinct'));
+
+    expect($distinct)->toBe([]);
+});

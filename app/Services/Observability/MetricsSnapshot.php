@@ -52,6 +52,8 @@ final readonly class MetricsSnapshot
             $errors++;
         }
 
+        $series = self::completeHistograms($series);
+
         foreach ($this->gauges($errors) as $name => $values) {
             $series[$name] = $values;
         }
@@ -59,6 +61,36 @@ final readonly class MetricsSnapshot
         $series['metrics_collection_errors'] = [['', (float) $errors]];
 
         return $this->format($series);
+    }
+
+    /**
+     * Todo limite configurado aparece em cada tipo com contagem (zero se
+     * nenhuma requisição caiu nele), como o Prometheus espera de um histograma.
+     *
+     * @param  array<string, list<array{0: string, 1: float}>>  $series
+     * @return array<string, list<array{0: string, 1: float}>>
+     */
+    private static function completeHistograms(array $series): array
+    {
+        $existing = [];
+
+        foreach ($series['http_request_duration_seconds_bucket'] ?? [] as [$labels]) {
+            $existing[$labels] = true;
+        }
+
+        $limits = [...array_map(static fn (mixed $b): string => Metrics::number((float) $b), (array) config('observability.latency_buckets')), '+Inf'];
+
+        foreach ($series['http_request_duration_seconds_count'] ?? [] as [$labels]) {
+            foreach ($limits as $limit) {
+                $bucket = $labels.',le='.$limit;
+
+                if (! isset($existing[$bucket])) {
+                    $series['http_request_duration_seconds_bucket'][] = [$bucket, 0.0];
+                }
+            }
+        }
+
+        return $series;
     }
 
     /**
