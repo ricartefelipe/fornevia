@@ -7,6 +7,7 @@ namespace App\Services\Notifications;
 use App\Domain\Shared\Money;
 use App\Enums\Identity\Permission;
 use App\Enums\Ordering\CommercialStatus;
+use App\Models\Finance\Invoice;
 use App\Models\Fulfillment\ReturnRequest;
 use App\Models\Fulfillment\Shipment;
 use App\Models\Identity\Membership;
@@ -52,6 +53,7 @@ final readonly class ActivityNotifier implements OutboxConsumer
             'order.confirmed', 'order.cancelled',
             'shipment.shipped', 'shipment.delivered', 'shipment.exception',
             'return.requested', 'return.decided', 'return.closed',
+            'invoice.issued', 'payment.confirmed', 'payment.refunded',
         ];
     }
 
@@ -61,6 +63,7 @@ final readonly class ActivityNotifier implements OutboxConsumer
             str_starts_with($message->type, 'quote.') => $this->quote($message),
             str_starts_with($message->type, 'shipment.') => $this->shipment($message),
             str_starts_with($message->type, 'return.') => $this->returnRequest($message),
+            str_starts_with($message->type, 'invoice.'), str_starts_with($message->type, 'payment.') => $this->finance($message),
             default => $this->order($message),
         };
 
@@ -256,6 +259,29 @@ final readonly class ActivityNotifier implements OutboxConsumer
                 new NotificationContent($message->type, "Devolução {$return->number} concluída", 'Valor a devolver: '.$return->refund_cents->format().'.', $portalPath, 'Ver a devolução'),
                 $requester(),
             ],
+            default => null,
+        };
+    }
+
+    /**
+     * @return array{NotificationContent, Collection<int, Membership>}|null
+     */
+    private function finance(OutboxMessage $message): ?array
+    {
+        $invoice = Invoice::query()->with('order')->find($message->string('invoice_id'));
+
+        if ($invoice === null) {
+            return null;
+        }
+
+        $path = route('portal.invoices.show', $invoice->id, false);
+        $placer = $this->recipients->memberships([$invoice->order->placed_by_membership_id]);
+        $amount = is_int($message->payload['amount_cents'] ?? null) ? Money::ofCents($message->payload['amount_cents'])->format() : null;
+
+        return match ($message->type) {
+            'invoice.issued' => [new NotificationContent($message->type, "Fatura {$invoice->number} emitida", "Pedido {$invoice->order->number}: total de {$invoice->total_cents->format()}.", $path, 'Ver a fatura'), $placer],
+            'payment.confirmed' => [new NotificationContent($message->type, "Pagamento confirmado: fatura {$invoice->number}", 'Recebemos '.($amount ?? 'o pagamento').'.', $path, 'Ver a fatura'), $placer],
+            'payment.refunded' => [new NotificationContent($message->type, "Reembolso efetuado: fatura {$invoice->number}", 'Devolvemos '.($amount ?? 'o valor').'.', $path, 'Ver a fatura'), $placer],
             default => null,
         };
     }

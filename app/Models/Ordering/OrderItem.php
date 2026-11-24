@@ -42,6 +42,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property Quantity $quantity_reserved
  * @property Quantity $quantity_picking quantidade em remessas em separação (unidade de venda)
  * @property Quantity $quantity_return_open quantidade em devoluções abertas (unidade de venda)
+ * @property Quantity $quantity_invoiced quantidade expedida já faturada (unidade de venda)
  * @property Quantity $quantity_backordered
  * @property Quantity $quantity_cancelled
  * @property Quantity $quantity_shipped
@@ -78,6 +79,7 @@ class OrderItem extends Model
             'quantity_returned' => AsQuantity::class,
             'quantity_picking' => AsQuantity::class,
             'quantity_return_open' => AsQuantity::class,
+            'quantity_invoiced' => AsQuantity::class,
             'line_number' => 'integer',
         ];
     }

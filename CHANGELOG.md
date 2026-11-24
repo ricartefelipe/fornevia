@@ -5,6 +5,28 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Contas a receber: faturas comerciais (não fiscais) do expedido, com o
+  frete na primeira fatura e parcelas pela condição do pedido; pagamentos
+  parciais, taxas, reembolsos, créditos e ajustes por lançamentos
+  compensatórios; o faturamento transfere o comprometimento de crédito para
+  recebível.
+- Gateway de pagamento por distribuidor: Asaas e, fora de produção, um
+  simulador local; cobrança criada depois do commit e sem repetição após
+  timeout; webhook autenticado e deduplicado; conciliação agendada;
+  pagamento de faturas pelo portal.
+- Indicadores de ticket médio, conversão de propostas, margem e
+  inadimplência, com as fórmulas exibidas.
+
+### Segurança
+
+- Nenhum dado de cartão armazenado: o cartão é pago na página do gateway.
+- Chave do gateway cifrada e token do webhook guardado só como hash; a
+  configuração é invisível ao comprador.
+- Reembolsos limitados ao valor pago também por CHECK no banco; reembolso
+  sem resposta do gateway fica em verificação, sem repetir.
+
 ## [0.3.0] - 2026-11-23
 
 ### Adicionado

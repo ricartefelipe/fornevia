@@ -31,6 +31,7 @@ final readonly class Menu
         'fulfillment.index' => ['Expedição', Permission::FulfillmentView],
         'returns.index' => ['Devoluções', Permission::ReturnsView],
         'finance.index' => ['Financeiro', Permission::FinanceView],
+        'reports.indicators' => ['Indicadores', Permission::ReportsView],
         'integrations.index' => ['Integrações', Permission::IntegrationsManage],
         'audit.index' => ['Auditoria', Permission::AuditView],
         'team.index' => ['Equipe e permissões', Permission::MembersManage],
@@ -51,6 +52,7 @@ final readonly class Menu
         'portal.delegations' => ['Delegações', Permission::PortalApprovals],
         'portal.orders' => ['Pedidos', null],
         'portal.returns' => ['Devoluções', null],
+        'portal.invoices' => ['Faturas', null],
         'portal.budgets' => ['Orçamentos', Permission::PortalBudgets],
         'portal.users' => ['Usuários da empresa', Permission::PortalUsers],
     ];

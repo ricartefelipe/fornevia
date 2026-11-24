@@ -436,3 +436,62 @@ equipe (o recebimento por webhook fica para o incremento de integrações);
 o valor a devolver é registrado para o financeiro, sem estorno automático
 (incremento financeiro); o SonarCloud aponta `require` no registro de
 cenários de concorrência, onde o valor de retorno do arquivo é necessário.
+
+## Incremento 9 — Contas a receber, gateway e indicadores (`feature/financeiro`)
+
+### Implementado
+
+- Faturas comerciais (não fiscais) do expedido ainda não faturado, com o
+  frete na primeira fatura e parcelas pela condição do pedido; o
+  comprometimento de crédito vira recebível no mesmo movimento (RF-100,
+  RN-081).
+- Pagamentos manuais e pelo gateway, parciais, com taxa; só o confirmado
+  reduz o recebível (RN-083). Créditos e ajustes por lançamentos
+  compensatórios (RN-100). Reembolsos reservados sob lock e limitados ao
+  pago também por CHECK (RN-101).
+- Gateway por distribuidor: Asaas e simulador local (só fora de produção).
+  Cobrança e reembolso em jobs depois do commit, pelo gateway de origem; sem
+  cobrança repetida após timeout (RF-101). Cartão pago na página do gateway
+  (RS-100).
+- Webhook do Asaas autenticado pelo token do distribuidor e deduplicado;
+  conciliação agendada; eventos com falha visíveis (RF-112).
+- Indicadores de ticket médio, conversão, margem e inadimplência com as
+  fórmulas documentadas e exibidas (RF-102).
+- Telas do financeiro, da fatura, do gateway e dos indicadores; faturas e
+  pagamento no portal; avisos de fatura, pagamento e reembolso.
+
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Testes do financeiro (unitários, integração, gateway com HTTP simulado, telas, concorrência) | aprovados; os 6 de regressão da revisão falham sem a correção correspondente |
+| Concorrência | dois reembolsos simultâneos do mesmo pagamento: só um efetivado; sem os locks do financeiro, o cenário falha |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+| Suíte completa na CI do PR #18, commit `5830984` | 2.263 testes e 11.099 asserções aprovados; cobertura de linhas total 94,6%, núcleo 97,40%, caminhos críticos 100%; migrations, imagem, segredos, frontend e SonarCloud aprovados |
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Simulador disponível em qualquer ambiente e a qualquer comprador da
+  empresa, permitindo marcar pagamento sem dinheiro.
+- Chamadas ao gateway dentro da transação da requisição, segurando locks e
+  perdendo o efeito num rollback.
+- Cobrança vencida tratada como encerrada, ignorando o pagamento em atraso.
+- Reembolso, cancelamento e conciliação pelo gateway ativo, e não pelo que
+  criou o pagamento; webhook recusado depois de trocar o gateway ativo.
+- Cobrança pendente com saldo ou forma desatualizados; excedente e
+  pagamento de parcela já quitada sem registro reembolsável.
+- Conciliação presa nos 100 pendentes mais antigos.
+- Reembolso sem resposta liberado para nova tentativa (risco de reembolso
+  duplo).
+- Evento do gateway com falha nunca marcado como falho.
+- Ticket médio contando pedidos cancelados.
+- Juros e multa recebidos sem registro.
+- Controller do webhook acessando o banco (regra de arquitetura, apontada
+  pela CI).
+
+Limitações registradas: a fatura é comercial, sem emissão de nota fiscal;
+cartão só pela página do gateway; o reembolso em verificação depende de
+conferência manual no painel do Asaas; os campos do Asaas seguem a API v3
+documentada e foram verificados com respostas simuladas, sem chamada real
+ao sandbox nos testes automatizados.
