@@ -20,5 +20,10 @@
 ## Reembolso em verificação
 
 Reembolso sem resposta do gateway fica "em verificação", com o valor
-reservado, para não reembolsar duas vezes. A equipe financeira confere no
-painel do Asaas e conclui pela tela da fatura (efetivado ou recusado).
+reservado, para não reembolsar duas vezes. `payments:verify-refunds` (a
+cada 15 minutos) consulta os estornos da cobrança no Asaas pela referência
+do reembolso: efetivado conclui; recusado desfaz a reserva; sem registro
+depois de 30 minutos, o pedido não chegou e a reserva é desfeita (o
+reembolso pode ser pedido de novo). Para antecipar:
+`fv exec app php artisan payments:verify-refunds`. A equipe financeira ainda
+pode concluir manualmente pela tela da fatura.

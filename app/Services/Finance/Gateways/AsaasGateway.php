@@ -10,6 +10,7 @@ use App\Domain\Shared\Cnpj;
 use App\Domain\Shared\Money;
 use App\Enums\Finance\PaymentGatewayKind;
 use App\Enums\Finance\PaymentMethod;
+use App\Enums\Finance\RefundOutcome;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
@@ -82,10 +83,13 @@ final readonly class AsaasGateway implements PaymentGateway
         return is_array($first) ? self::result($first) : null;
     }
 
-    public function refund(string $chargeId, Money $amount): string
+    public function refund(string $chargeId, Money $amount, string $reference): string
     {
         try {
-            $response = $this->client()->post('/payments/'.rawurlencode($chargeId).'/refund', ['value' => $amount->cents / 100])->throw();
+            // A descrição leva a referência do reembolso, para a conferência.
+            $response = $this->client()->post('/payments/'.rawurlencode($chargeId).'/refund', [
+                'value' => $amount->cents / 100, 'description' => self::refundDescription($reference),
+            ])->throw();
         } catch (ConnectionException) {
             // O reembolso pode ter sido feito: nada é repetido até a conferência.
             throw new GatewayOutcomeUnknown('O Asaas não respondeu ao reembolso. Confira no painel do Asaas antes de concluir.');
@@ -94,6 +98,38 @@ final readonly class AsaasGateway implements PaymentGateway
         }
 
         return (string) ($response->json('id') ?? $chargeId);
+    }
+
+    /**
+     * Estornos da cobrança no Asaas (GET /payments/{id}/refunds), localizados
+     * pela referência na descrição. Sem estorno com a referência: Missing.
+     */
+    public function refundOutcome(string $chargeId, string $reference): RefundOutcome
+    {
+        try {
+            $refunds = (array) $this->client()->get('/payments/'.rawurlencode($chargeId).'/refunds')->throw()->json('data', []);
+        } catch (ConnectionException) {
+            throw new GatewayUnavailable('O Asaas não respondeu à consulta dos estornos.');
+        } catch (RequestException $e) {
+            throw new GatewayUnavailable('O Asaas recusou a consulta dos estornos: '.self::error($e->response).'.');
+        }
+
+        foreach ($refunds as $refund) {
+            if (is_array($refund) && str_contains((string) ($refund['description'] ?? ''), self::refundDescription($reference))) {
+                return match (strtoupper((string) ($refund['status'] ?? ''))) {
+                    'DONE' => RefundOutcome::Done,
+                    'CANCELLED', 'REFUSED', 'FAILED' => RefundOutcome::Failed,
+                    default => RefundOutcome::Pending,
+                };
+            }
+        }
+
+        return RefundOutcome::Missing;
+    }
+
+    private static function refundDescription(string $reference): string
+    {
+        return 'Fornevia reembolso '.$reference;
     }
 
     public function cancel(string $chargeId): void

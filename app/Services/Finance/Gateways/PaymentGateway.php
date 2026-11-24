@@ -7,6 +7,7 @@ namespace App\Services\Finance\Gateways;
 use App\Domain\Finance\Exceptions\GatewayUnavailable;
 use App\Domain\Shared\Money;
 use App\Enums\Finance\PaymentGatewayKind;
+use App\Enums\Finance\RefundOutcome;
 
 /**
  * Gateway de pagamento (RF-101). Toda criação de cobrança procura antes
@@ -36,7 +37,15 @@ interface PaymentGateway
      * @throws GatewayUnavailable
      * @throws \App\Domain\Finance\Exceptions\GatewayOutcomeUnknown
      */
-    public function refund(string $chargeId, Money $amount): string;
+    public function refund(string $chargeId, Money $amount, string $reference): string;
+
+    /**
+     * Situação do reembolso identificado pela referência enviada em refund()
+     * (conferência dos reembolsos sem resposta).
+     *
+     * @throws GatewayUnavailable quando o gateway não respondeu agora
+     */
+    public function refundOutcome(string $chargeId, string $reference): RefundOutcome;
 
     /**
      * Cancela a cobrança ainda não paga (substituída ou sem saldo a cobrar).

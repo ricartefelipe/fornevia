@@ -5,6 +5,12 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Conferência automática dos reembolsos sem resposta do gateway
+  (`payments:verify-refunds`, a cada 15 minutos), pela referência enviada
+  no pedido de estorno.
+
 ### Alterado
 
 - Carteira do representante comercial aplicada a todas as telas da equipe:

@@ -47,7 +47,7 @@ final class ProcessGatewayRefund implements ShouldQueue
         }
 
         try {
-            $gatewayRefundId = $gateway->refund($payment->gateway_charge_id, $refund->amount_cents);
+            $gatewayRefundId = $gateway->refund($payment->gateway_charge_id, $refund->amount_cents, $refund->id);
         } catch (GatewayOutcomeUnknown $e) {
             $db->run($context, fn () => $settlement->verifying($refund->id, $e->getMessage()));
 
