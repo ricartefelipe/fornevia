@@ -642,3 +642,17 @@ webhooks foi verificado com HTTP simulado, sem chamada a um receptor real.
 - O `tmpfs` de configuração do nginx sem permissão para o usuário sem
   privilégios impedia a geração do servidor a partir do template.
 
+### Defeitos encontrados pela revisão (corrigidos)
+
+- `demo:seed` podia deixar dados pela metade: conferência de CNPJs e
+  e-mails antes de gravar e mensagem clara para qualquer falha.
+- Contas de crédito da demonstração sem histórico do limite nem auditoria;
+  agora abertas pela ação de crédito.
+- Healthcheck do PostgreSQL aprovado pelo servidor temporário da
+  inicialização, liberando as migrations cedo demais.
+- Senha do Redis visível na lista de processos.
+- Comandos do runbook e do modelo de ambiente que falhavam como escritos
+  (host da verificação, geração da chave) e nomes de papéis do banco que
+  pareciam configuráveis.
+- CEP de Campinas em compradores de Minas Gerais na demonstração.
+

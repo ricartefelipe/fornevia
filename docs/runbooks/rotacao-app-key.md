@@ -10,7 +10,7 @@ gateway de pagamento guardados no banco. Ela deve ser estável por ambiente.
 
 ## Procedimento
 
-1. Gere a nova chave: `fv run --rm app php artisan key:generate --show`.
+1. Gere a nova chave: `fv run --rm --no-deps app php artisan key:generate --show`.
 2. Em `.env.production`, mova a chave atual para `APP_PREVIOUS_KEYS`
    (separadas por vírgula, a mais recente primeiro) e coloque a nova em
    `APP_KEY`.

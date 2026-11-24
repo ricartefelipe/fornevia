@@ -17,8 +17,11 @@ fv build
 fv up -d postgres redis          # o init cria os papéis owner, app e relay
 fv run --rm migrate              # schema com o papel de manutenção
 fv up -d                         # app, web, horizon, scheduler, outbox
-curl -fsS http://127.0.0.1:8080/health/ready
+curl -fsS -H 'Host: app.exemplo.com.br' http://127.0.0.1:8080/health/ready
 ```
+
+O `Host` precisa ser o de `APP_URL` (ou um de `METRICS_SCRAPE_HOSTS`):
+requisições com outro host são recusadas com 400.
 
 `/health/ready` responde 503 enquanto houver migration pendente ou o banco
 ou o Redis estiverem indisponíveis.
@@ -32,7 +35,7 @@ ou o Redis estiverem indisponíveis.
 5. Suba os processos: `FORNEVIA_TAG=1.0.0 fv up -d`. O Horizon termina os
    jobs em andamento (60 s) e o relay da outbox devolve as mensagens
    reivindicadas antes de parar.
-6. Verifique `/health/ready`, o login e `fornevia_http_requests_total` com
+6. Verifique `/health/ready` (com o `Host` de `APP_URL`), o login e `fornevia_http_requests_total` com
    status `5xx` em [alertas](alertas.md).
 
 ## Volta de versão
