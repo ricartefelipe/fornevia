@@ -601,4 +601,20 @@ webhooks foi verificado com HTTP simulado, sem chamada a um receptor real.
   de 90% no código coberto; testes unitários novos de fronteira (limites,
   igualdade, sinal, espaços), mensagens e detalhes de recusa, campos de
   cadastro e dígito verificador do CNPJ contra implementação de referência.
+- CNPJ alfanumérico aceito em cadastro, importação, buscas e API, com
+  migration que ajusta as restrições do banco.
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Teste de compra pelo catálogo esperava um texto que já estava na página
+  e seguia para o carrinho antes de o item ser gravado (instável).
+- Servidor e ChromeDriver da CI e do script local sem conferência de que
+  subiram; servidor com chave da aplicação e prefixo do Redis diferentes
+  dos do processo de teste.
+- Testes do mesmo arquivo compartilhavam a sessão do navegador.
+- Argumentos do script local reinterpretados pelo shell.
+- ADR-030 descrevia o critério de mutação de forma mais rígida do que o
+  aplicado.
+- CNPJ alfanumérico (emitido desde julho de 2026) recusado no cadastro de
+  compradores e de distribuidores (preexistente).
 

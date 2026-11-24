@@ -859,8 +859,8 @@ distribuidor mantém o isolamento entre tenants também no recebimento.
   em código de infraestrutura; o domínio concentra as regras.
 
 **Consequências.**
-- Cada PR roda os fluxos principais num navegador real e falha se uma
-  mutação no domínio coberto deixar de ser detectada.
+- Cada PR roda os fluxos principais num navegador real e falha se a nota
+  de mutação no domínio coberto cair abaixo de 90%.
 - Mutantes equivalentes (conversões de tipo redundantes, fechamento de
   recurso) permanecem e limitam a nota máxima possível.
 
