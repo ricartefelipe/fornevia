@@ -74,7 +74,12 @@
                                 <td class="px-3 py-2">{{ $item->original_name }}</td>
                                 <td class="px-3 py-2"><x-ui.badge :color="$statusLabels[$item->status][1] ?? 'slate'">{{ $statusLabels[$item->status][0] ?? $item->status }}</x-ui.badge></td>
                                 <td class="px-3 py-2">{{ $item->rows_applied }} de {{ $item->rows_total }} aplicada(s)</td>
-                                <td class="px-3 py-2"><button type="button" class="text-brand-700 underline" wire:click="open('{{ $item->id }}')">Ver linhas</button></td>
+                                <td class="px-3 py-2 whitespace-nowrap">
+                                    <button type="button" class="text-brand-700 underline" wire:click="open('{{ $item->id }}')">Ver linhas</button>
+                                    @if ($item->status === 'failed')
+                                        <button type="button" class="ml-3 text-brand-700 underline" wire:click="reprocess('{{ $item->id }}')">Reprocessar</button>
+                                    @endif
+                                </td>
                             </tr>
                         @endforeach
                     </tbody>

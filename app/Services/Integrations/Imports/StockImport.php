@@ -6,6 +6,7 @@ namespace App\Services\Integrations\Imports;
 
 use App\Actions\Inventory\ReceiveStock;
 use App\Actions\Inventory\Support\StockGuard;
+use App\Domain\Integrations\Exceptions\InvalidIntegration;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Quantity;
 use App\Enums\Identity\Permission;
@@ -85,8 +86,11 @@ final readonly class StockImport implements ImportKind
 
     public function apply(array $row, array &$memo): string
     {
-        $warehouse = Warehouse::query()->whereRaw('upper(code) = ?', [mb_strtoupper($row['deposito'])])->firstOrFail();
-        $sku = Sku::query()->whereRaw('upper(code) = ?', [mb_strtoupper($row['codigo_sku'])])->firstOrFail();
+        // O cadastro pode ter mudado depois da prévia: a linha é recusada, não a importação.
+        $warehouse = Warehouse::query()->where('is_active', true)->whereRaw('upper(code) = ?', [mb_strtoupper($row['deposito'])])->first()
+            ?? throw new InvalidIntegration('Depósito não cadastrado ou inativo.');
+        $sku = Sku::query()->whereRaw('upper(code) = ?', [mb_strtoupper($row['codigo_sku'])])->first()
+            ?? throw new InvalidIntegration('SKU não cadastrado.');
         $this->receive->handle($warehouse, $sku, Quantity::parseLocalized(trim($row['quantidade'])), 'Importação de estoque');
 
         return $sku->id;

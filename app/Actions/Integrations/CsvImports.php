@@ -22,8 +22,8 @@ use Illuminate\Support\Str;
  * tipo: prévia (limites de tamanho e linhas, validação de cada linha,
  * duplicidade no arquivo e no cadastro, resultado por linha), confirmação
  * com a política escolhida (tudo ou nada recusa se houver linha inválida;
- * só as válidas aplica as demais) e aplicação assíncrona. Reprocessar não
- * repete: linha aplicada não é aplicada de novo.
+ * só as válidas aplica as demais) e aplicação assíncrona. Reprocessar uma
+ * importação com falha não repete: linha aplicada não é aplicada de novo.
  */
 final readonly class CsvImports
 {
@@ -106,6 +106,31 @@ final readonly class CsvImports
             $import->forceFill(['status' => 'queued', 'confirmed_at' => $this->clock->now()])->save();
             ApplyCsvImport::dispatch($import->id, $import->tenant_id, (string) $this->access->membership()->id)->onQueue('default')->afterCommit();
             $this->audit->record('csv_import.confirmed', $import, ['policy' => $import->policy]);
+
+            return $import;
+        });
+    }
+
+    /**
+     * Reprocessa uma importação que falhou (interrompida ou com erro
+     * inesperado): só as linhas ainda válidas são aplicadas; as aplicadas
+     * ficam como estão.
+     */
+    public function reprocess(mixed $importId): CsvImport
+    {
+        $this->access->authorize(Permission::IntegrationsManage);
+
+        return DB::transaction(function () use ($importId): CsvImport {
+            $import = CsvImport::query()->lockForUpdate()->findOrFail(UntrustedId::uuid($importId, CsvImport::class));
+            $this->access->authorize($this->kinds->get($import->kind)->permission());
+
+            if ($import->status !== 'failed') {
+                throw new InvalidIntegration('Só uma importação com falha pode ser reprocessada.');
+            }
+
+            $import->forceFill(['status' => 'queued', 'failure' => null, 'finished_at' => null])->save();
+            ApplyCsvImport::dispatch($import->id, $import->tenant_id, (string) $this->access->membership()->id)->onQueue('default')->afterCommit();
+            $this->audit->record('csv_import.reprocessed', $import);
 
             return $import;
         });

@@ -110,6 +110,21 @@ final class CsvImportsPage extends Component
             : 'Importação confirmada; a aplicação segue em segundo plano e o resultado aparece no histórico.';
     }
 
+    public function reprocess(string $importId, CsvImports $imports): void
+    {
+        $this->resetErrorBag();
+
+        try {
+            $imports->reprocess($importId);
+        } catch (BusinessRuleViolation $e) {
+            $this->addError('confirm', $e->getMessage());
+
+            return;
+        }
+
+        $this->message = 'Reprocessamento agendado; só as linhas ainda não aplicadas serão aplicadas.';
+    }
+
     public function discard(): void
     {
         $this->previewId = null;

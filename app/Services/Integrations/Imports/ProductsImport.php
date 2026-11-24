@@ -8,6 +8,8 @@ use App\Actions\Catalog\SaveProduct;
 use App\Actions\Catalog\SaveSku;
 use App\Data\Catalog\ProductData;
 use App\Data\Catalog\SkuData;
+use App\Domain\Integrations\Exceptions\InvalidIntegration;
+use App\Domain\Shared\BusinessRuleViolation;
 use App\Domain\Shared\Quantity;
 use App\Enums\Identity\Permission;
 use App\Models\Catalog\Product;
@@ -93,13 +95,15 @@ final readonly class ProductsImport implements ImportKind
 
     public function apply(array $row, array &$memo): string
     {
-        $unitId = (string) UnitOfMeasure::query()->whereRaw('upper(code) = ?', [mb_strtoupper($row['unidade'])])->value('id');
+        // O cadastro pode ter mudado depois da prévia: a linha é recusada, não a importação.
+        $unitId = UnitOfMeasure::query()->whereRaw('upper(code) = ?', [mb_strtoupper($row['unidade'])])->value('id')
+            ?? throw new InvalidIntegration('Unidade de medida não cadastrada.');
+        $unitId = (string) $unitId;
         $name = trim($row['produto']);
         $key = 'product:'.mb_strtolower($name);
         $productId = $memo[$key] ?? Product::query()->whereRaw('lower(name) = ?', [mb_strtolower($name)])->orderBy('created_at')->value('id');
-        $product = $productId !== null
-            ? Product::query()->whereKey((string) $productId)->firstOrFail()
-            : $this->products->handle(null, new ProductData(name: $name, baseUnitId: $unitId));
+        $product = $productId !== null ? Product::query()->whereKey((string) $productId)->first() : null;
+        $product ??= $this->products->handle(null, new ProductData(name: $name, baseUnitId: $unitId));
         $memo[$key] = $product->id;
 
         return $this->skus->handle($product, null, new SkuData(
@@ -115,7 +119,8 @@ final readonly class ProductsImport implements ImportKind
     {
         try {
             $quantity = Quantity::parseLocalized(trim($value));
-        } catch (InvalidArgumentException) {
+        } catch (InvalidArgumentException|BusinessRuleViolation) {
+            // Formato inválido ou fora do intervalo suportado: erro da linha.
             return null;
         }
 

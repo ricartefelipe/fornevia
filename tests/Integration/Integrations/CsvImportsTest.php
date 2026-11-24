@@ -213,3 +213,54 @@ it('exige integrations.manage e a permissão do tipo importado', function (): vo
         ->and(fn () => ($this->preview)('pedidos', 'a'))->toThrow(InvalidIntegration::class, 'tipo')
         ->and(fn () => ($this->preview)('stock', "deposito;codigo_sku;quantidade\nCD1;X;1\n", 'parcial'))->toThrow(InvalidIntegration::class, 'política');
 });
+
+it('recusa só a linha cujo cadastro mudou depois da prévia', function (): void {
+    $sku = $this->scenario->sku;
+    $other = $this->scenario->addSku(stock: '1');
+    $import = ($this->preview)('stock', "deposito;codigo_sku;quantidade\nCD1;{$sku->code};3\nCD1;{$other->code};4\n");
+
+    // Entre a prévia e a aplicação, o SKU da linha 3 muda de código.
+    $this->scenario->system(fn () => Sku::query()->whereKey($other->id)->update(['code' => 'RENOMEADO-1']));
+    ($this->confirm)($import);
+    [$fresh, $rows] = ($this->fresh)($import);
+
+    expect($fresh->status)->toBe('done')->and($fresh->rows_applied)->toBe(1)
+        ->and($rows->pluck('status')->all())->toBe(['applied', 'skipped'])
+        ->and($rows[1]->errors)->toBe(['SKU não cadastrado.']);
+});
+
+it('aponta na linha o número fora do intervalo suportado', function (): void {
+    $import = ($this->preview)('products', "codigo_sku;produto;unidade;fator_conversao;quantidade_minima;multiplo\nIMP-030;Fio;UN;1000000000000000;1;1\nIMP-031;Fio;UN;1;1;1\n");
+    [$fresh, $rows] = ($this->fresh)($import);
+
+    expect($fresh->rows_invalid)->toBe(1)->and($rows[0]->errors)->toBe(['Fator de conversão inválido (número positivo).']);
+});
+
+it('marca como falha a aplicação interrompida e reprocessa só as linhas pendentes', function (): void {
+    $sku = $this->scenario->sku;
+    $import = ($this->preview)('stock', "deposito;codigo_sku;quantidade\nCD1;{$sku->code};1\nCD1;{$sku->code};2\n");
+    $onHand = fn (): string => $this->scenario->system(fn () => StockLevel::query()->where('sku_id', $sku->id)->sole()->on_hand->toDatabase());
+
+    // Simula a interrupção: em aplicação, a primeira linha aplicada e o job encerrado.
+    $this->scenario->system(fn () => CsvImport::query()->whereKey($import->id)->update(['status' => 'processing']));
+    $this->scenario->system(fn () => CsvImportRow::query()->where('csv_import_id', $import->id)->where('line', 2)->update(['status' => 'applied']));
+    (new ApplyCsvImport($import->id, $import->tenant_id, $this->owner->id))->failed(new RuntimeException('tempo esgotado'));
+
+    [$failed] = ($this->fresh)($import);
+    expect($failed->status)->toBe('failed')->and($failed->rows_applied)->toBe(1)->and($failed->failure)->toContain('reprocesse')
+        ->and(fn () => ($this->imports)(fn (CsvImports $i) => $i->confirm($import->id)))->toThrow(InvalidIntegration::class);
+
+    $before = (float) $onHand();
+    ($this->imports)(fn (CsvImports $i) => $i->reprocess($import->id));
+    [$fresh, $rows] = ($this->fresh)($import);
+
+    expect($fresh->status)->toBe('done')->and($fresh->rows_applied)->toBe(2)->and($rows->pluck('status')->all())->toBe(['applied', 'applied'])
+        ->and((float) $onHand())->toBe($before + 2.0)
+        ->and(fn () => ($this->imports)(fn (CsvImports $i) => $i->reprocess($import->id)))->toThrow(InvalidIntegration::class, 'Só uma importação com falha');
+});
+
+it('termina antes de a fila entregar o job a outro worker', function (): void {
+    $job = new ApplyCsvImport('x', 'y', 'z');
+
+    expect($job->timeout)->toBeLessThan((int) config('queue.connections.redis.retry_after'));
+});

@@ -31,7 +31,8 @@ final class ApplyCsvImport implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 600;
+    /** Abaixo do retry_after da fila Redis (330 s), para não ser entregue a outro worker enquanto roda. */
+    public int $timeout = 300;
 
     public function __construct(
         public readonly string $importId,
@@ -116,6 +117,22 @@ final class ApplyCsvImport implements ShouldQueue
                 throw $e;
             }
         }
+    }
+
+    /**
+     * Job interrompido (tempo esgotado, worker encerrado): a importação fica
+     * como falha, e o reprocessamento aplica só as linhas ainda pendentes.
+     */
+    public function failed(?Throwable $e): void
+    {
+        app(TenantDatabase::class)->run(ExecutionContext::system($this->tenantId), function (): void {
+            CsvImport::query()->whereKey($this->importId)->whereIn('status', ['queued', 'processing'])->update([
+                'status' => 'failed',
+                'failure' => 'A aplicação foi interrompida; reprocesse para aplicar as linhas pendentes.',
+                'rows_applied' => CsvImportRow::query()->where('csv_import_id', $this->importId)->where('status', 'applied')->count(),
+                'finished_at' => app(Clock::class)->now(),
+            ]);
+        });
     }
 
     private function finish(TenantDatabase $db, ExecutionContext $context, Access $access, Membership $membership, Clock $clock, ?string $failure): void
