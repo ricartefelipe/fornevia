@@ -7,6 +7,9 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- Escrita na API v1 com `Idempotency-Key` obrigatório: cadastro de empresa
+  compradora, entrada e ajuste de estoque e cancelamento de itens ou do
+  pedido, cada um com permissão própria do cliente da API.
 - Importação de catálogo com preço (na tabela informada ou na padrão ativa)
   e custo opcionais, conferindo as permissões de preço e de custo de quem
   importa.

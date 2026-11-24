@@ -77,8 +77,8 @@ final readonly class TenantDatabase
      * crédito, pedidos, níveis e decisões de aprovação, orçamento). Quem
      * chama já autorizou a operação no contexto original; dentro do
      * callback as consultas enxergam todas as empresas do tenant e precisam
-     * filtrar a empresa explicitamente. Contextos sem usuário (integração)
-     * não elevam: a API precisará de regra própria.
+     * filtrar a empresa explicitamente. O cliente da API eleva da mesma forma,
+     * para o sistema do próprio tenant, e continua identificado como autor.
      *
      * @template T
      *
@@ -89,7 +89,7 @@ final readonly class TenantDatabase
     {
         $active = $this->current->require();
 
-        return $this->run(ExecutionContext::system($active->requireTenantId(), $active->userId), $callback);
+        return $this->run(ExecutionContext::system($active->requireTenantId(), $active->userId, $active->apiClientId), $callback);
     }
 
     /**
@@ -118,8 +118,14 @@ final readonly class TenantDatabase
      */
     private function canElevate(ExecutionContext $active, ExecutionContext $requested): bool
     {
-        return $active->userId !== null
-            && $requested->userId === $active->userId;
+        if ($active->userId !== null) {
+            return $requested->userId === $active->userId;
+        }
+
+        return $active->apiClientId !== null
+            && $requested->kind === ContextKind::System
+            && $requested->apiClientId === $active->apiClientId
+            && $requested->tenantId === $active->tenantId;
     }
 
     /**
