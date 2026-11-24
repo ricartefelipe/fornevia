@@ -1,0 +1,57 @@
+# Regras de alerta de referência para o Fornevia (Prometheus).
+groups:
+  - name: fornevia
+    rules:
+      - alert: ForneviaErros5xx
+        expr: sum(rate(fornevia_http_requests_total{status="5xx"}[5m])) / clamp_min(sum(rate(fornevia_http_requests_total[5m])), 1) > 0.02
+        for: 10m
+        labels: {severity: page}
+        annotations:
+          summary: Mais de 2% das requisições com erro 5xx
+
+      - alert: ForneviaLatenciaAlta
+        expr: histogram_quantile(0.95, sum by (le, kind) (rate(fornevia_http_request_duration_seconds_bucket{kind=~"web|livewire|api"}[5m]))) > 2.5
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: "p95 de {{ $labels.kind }} acima de 2,5 s"
+
+      - alert: ForneviaOutboxAtrasada
+        expr: fornevia_outbox_oldest_pending_age_seconds > 300
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: Mensagem pendente na outbox há mais de 5 minutos
+
+      - alert: ForneviaOutboxSemTentativas
+        expr: fornevia_outbox_dead > 0
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: Mensagens da outbox sem novas tentativas
+
+      - alert: ForneviaFilaAcumulada
+        expr: max by (queue) (fornevia_queue_size) > 500
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Fila {{ $labels.queue }} com mais de 500 jobs"
+
+      - alert: ForneviaJobsComFalha
+        expr: increase(fornevia_jobs_failed_total[30m]) > 5
+        labels: {severity: ticket}
+        annotations:
+          summary: Jobs falhando nos últimos 30 minutos
+
+      - alert: ForneviaConflitosBanco
+        expr: sum(increase(fornevia_db_conflicts_total[15m])) > 10
+        labels: {severity: ticket}
+        annotations:
+          summary: Conflitos de concorrência recorrentes no banco
+
+      - alert: ForneviaColetaIncompleta
+        expr: fornevia_metrics_collection_errors > 0
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: Medidas operacionais não puderam ser lidas

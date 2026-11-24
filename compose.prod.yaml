@@ -1,0 +1,161 @@
+# Implantação de referência do Fornevia em um único host (docs/runbooks/implantacao.md).
+#
+#   cp .env.production.example .env.production   # preencha os segredos
+#   docker compose -f compose.prod.yaml --env-file .env.production build
+#   docker compose -f compose.prod.yaml --env-file .env.production up -d postgres redis
+#   docker compose -f compose.prod.yaml --env-file .env.production run --rm migrate
+#   docker compose -f compose.prod.yaml --env-file .env.production up -d
+#
+# Imagens de produção (alvos "prod" e "web" do Dockerfile), sem código montado
+# do host, processos sem privilégios e sistema de arquivos somente leitura,
+# exceto os diretórios graváveis declarados. O banco e o Redis não publicam
+# portas; o TLS termina no proxy à frente do serviço "web".
+name: fornevia-prod
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/php/Dockerfile
+    target: prod
+  image: ${FORNEVIA_IMAGE:-fornevia-app}:${FORNEVIA_TAG:-latest}
+  env_file: .env.production
+  environment:
+    APP_ENV: production
+    APP_DEBUG: "false"
+    DB_HOST: postgres
+    DB_PORT: 5432
+    REDIS_HOST: redis
+    REDIS_PORT: 6379
+    LOG_STACK: json
+  read_only: true
+  tmpfs:
+    - /tmp
+    - /var/www/html/bootstrap/cache:uid=82,gid=82
+    - /var/www/html/storage/framework:uid=82,gid=82
+  volumes:
+    - storage-app:/var/www/html/storage/app
+    - storage-logs:/var/www/html/storage/logs
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  app:
+    <<: *app
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: web
+    image: ${FORNEVIA_WEB_IMAGE:-fornevia-web}:${FORNEVIA_TAG:-latest}
+    environment:
+      FPM_HOST: app
+      FPM_PORT: 9000
+    read_only: true
+    # Diretórios graváveis do nginx sem privilégios (usuário 101): cache e a
+    # configuração gerada a partir do template na inicialização.
+    tmpfs:
+      - /tmp:uid=101,gid=101
+      - /var/cache/nginx:uid=101,gid=101
+      - /etc/nginx/conf.d:uid=101,gid=101
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:8080"
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  horizon:
+    <<: *app
+    command: ["fornevia-start", "php", "artisan", "horizon"]
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "php", "artisan", "horizon:status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  scheduler:
+    <<: *app
+    command: ["fornevia-start", "php", "artisan", "schedule:work"]
+    healthcheck:
+      disable: true
+
+  outbox:
+    <<: *app
+    command: ["fornevia-start", "php", "artisan", "outbox:relay"]
+    stop_grace_period: 30s
+    healthcheck:
+      disable: true
+
+  # Migrations com o papel de manutenção, antes de liberar a nova versão.
+  migrate:
+    <<: *app
+    profiles: ["tools"]
+    restart: "no"
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_CONNECTION: pgsql_owner
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    command: ["fornevia-start", "php", "artisan", "migrate", "--force"]
+    healthcheck:
+      disable: true
+
+  postgres:
+    image: postgres:18.7-alpine3.24
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_SUPERUSER_PASSWORD:?defina DB_SUPERUSER_PASSWORD}
+      FORNEVIA_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:?defina DB_OWNER_PASSWORD}
+      FORNEVIA_APP_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD}
+      FORNEVIA_RELAY_PASSWORD: ${DB_RELAY_PASSWORD:?defina DB_RELAY_PASSWORD}
+      FORNEVIA_DATABASES: fornevia
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      - pgbackups:/backups
+    healthcheck:
+      # Pela rede: o servidor temporário da inicialização só atende pelo socket.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d fornevia"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    shm_size: 256m
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.8.4-alpine3.23
+    # A senha vai para um arquivo de configuração, e não para a linha de
+    # comando (visível na lista de processos).
+    command: ["sh", "-c", "umask 077 && printf 'requirepass %s\\n' \"$$REDIS_PASSWORD\" > /tmp/redis.conf && chown redis:redis /tmp/redis.conf && exec docker-entrypoint.sh redis-server /tmp/redis.conf --appendonly yes --save 60 1000"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?defina REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  pgbackups:
+  redisdata:
+  storage-app:
+  storage-logs:
