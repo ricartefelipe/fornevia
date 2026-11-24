@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Web\ContextController;
 use App\Http\Controllers\Web\InvitationController;
+use App\Livewire\Finance\PaymentSimulator;
 use App\Livewire\Notifications\NotificationsPage;
 use App\Livewire\Onboarding\CreateOrganizationForm;
 use App\Livewire\Platform\OrganizationsIndex;
@@ -63,6 +64,9 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
             require $file;
         }
     });
+
+    // Simulador local do gateway: comprador ou equipe que vê a cobrança.
+    Route::livewire('/simulador-de-pagamento/{payment}', PaymentSimulator::class)->middleware('context:any')->whereUuid('payment')->name('payments.simulator');
 
     Route::middleware(['platform-admin', 'two-factor'])->prefix('plataforma')->name('platform.')->group(function (): void {
         Route::livewire('/planos', PlansIndex::class)->name('plans');
