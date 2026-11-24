@@ -138,7 +138,10 @@ return new class extends Migration
             $table->string('status', 10)->default('pending');
             $table->bigInteger('refunded_cents')->default(0);
             $table->bigInteger('refund_pending_cents')->default(0);
+            // Recebido que não quitou a parcela (excedente ou parcela já quitada): reembolsável.
+            $table->bigInteger('unapplied_cents')->default(0);
             $table->timestampTz('confirmed_at')->nullable();
+            $table->timestampTz('last_checked_at')->nullable();
             $table->string('failure_reason', 500)->nullable();
             $table->foreignUuid('created_by_user_id')->nullable()->constrained('users')->nullOnDelete();
             $table->timestampsTz();
@@ -155,6 +158,7 @@ return new class extends Migration
             and (status = 'confirmed') = (confirmed_at is not null)
             and refunded_cents >= 0 and refund_pending_cents >= 0
             and refunded_cents + refund_pending_cents <= amount_cents
+            and unapplied_cents >= 0 and unapplied_cents <= amount_cents
             and (status = 'confirmed' or refunded_cents + refund_pending_cents = 0))");
         TenantSchema::companyKey('payments');
         TenantSchema::enableRowLevelSecurity('payments', 'required');
@@ -172,7 +176,8 @@ return new class extends Migration
             $table->foreignUuid('created_by_user_id')->nullable()->constrained('users')->nullOnDelete();
             $table->timestampsTz();
         });
-        DB::statement("alter table payment_refunds add constraint payment_refunds_values_check check (amount_cents > 0 and status in ('pending', 'done', 'failed'))");
+        // verifying: o gateway não confirmou nem recusou (tempo esgotado); a reserva continua até a equipe conferir.
+        DB::statement("alter table payment_refunds add constraint payment_refunds_values_check check (amount_cents > 0 and status in ('pending', 'verifying', 'done', 'failed'))");
         TenantSchema::enableRowLevelSecurity('payment_refunds', 'required');
         TenantSchema::buyerReadOnly('payment_refunds');
 

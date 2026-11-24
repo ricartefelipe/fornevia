@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Finance\Gateways;
 
+use App\Domain\Finance\Exceptions\GatewayOutcomeUnknown;
 use App\Domain\Finance\Exceptions\GatewayUnavailable;
 use App\Domain\Shared\Money;
 use App\Enums\Finance\PaymentGatewayKind;
@@ -85,7 +86,8 @@ final readonly class AsaasGateway implements PaymentGateway
         try {
             $response = $this->client()->post('/payments/'.rawurlencode($chargeId).'/refund', ['value' => $amount->cents / 100])->throw();
         } catch (ConnectionException) {
-            throw new GatewayUnavailable('O Asaas não respondeu ao reembolso. Confira a cobrança antes de tentar de novo.');
+            // O reembolso pode ter sido feito: nada é repetido até a conferência.
+            throw new GatewayOutcomeUnknown('O Asaas não respondeu ao reembolso. Confira no painel do Asaas antes de concluir.');
         } catch (RequestException $e) {
             throw new GatewayUnavailable('O Asaas recusou o reembolso: '.self::error($e->response).'.');
         }
@@ -93,7 +95,26 @@ final readonly class AsaasGateway implements PaymentGateway
         return (string) ($response->json('id') ?? $chargeId);
     }
 
+    public function cancel(string $chargeId): void
+    {
+        try {
+            $this->client()->delete('/payments/'.rawurlencode($chargeId))->throw();
+        } catch (ConnectionException) {
+            throw new GatewayUnavailable('O Asaas não respondeu ao cancelar a cobrança.');
+        } catch (RequestException $e) {
+            // Já paga ou já removida: o webhook ou a conciliação trazem a situação real.
+            if ($e->response->status() !== 404) {
+                throw new GatewayUnavailable('O Asaas recusou o cancelamento: '.self::error($e->response).'.');
+            }
+        }
+    }
+
     /**
+     * Situação da cobrança no Asaas. Vencida continua pendente (ainda pode
+     * ser paga); só removida encerra. O valor pago é "value" (com juros e
+     * multa quando pago em atraso; o valor original vem em "originalValue"),
+     * e a taxa é value − netValue.
+     *
      * @param  array<mixed>  $payment
      */
     public static function result(array $payment): ChargeResult
@@ -106,12 +127,13 @@ final readonly class AsaasGateway implements PaymentGateway
             (string) ($payment['id'] ?? ''),
             match ($status) {
                 'RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH' => ChargeResult::CONFIRMED,
-                'REFUNDED', 'OVERDUE', 'DELETED', 'CHARGEBACK_REQUESTED', 'REFUND_REQUESTED' => ChargeResult::FAILED,
+                'DELETED' => ChargeResult::FAILED,
                 default => ChargeResult::PENDING,
             },
             isset($payment['invoiceUrl']) ? (string) $payment['invoiceUrl'] : null,
             $value,
             $value !== null && $net !== null ? Money::max(Money::zero(), $value->minus($net)) : null,
+            isset($payment['originalValue']) ? Money::ofCents((int) round(((float) $payment['originalValue']) * 100)) : null,
         );
     }
 

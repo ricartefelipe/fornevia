@@ -32,16 +32,24 @@ final readonly class Receivables
 {
     public function __construct(
         private CreditLedger $credit,
+        private PendingCharges $charges,
         private Access $access,
         private Clock $clock,
     ) {}
 
-    /** Pagamento confirmado: quita a parcela até o valor. */
+    /**
+     * Pagamento confirmado: quita a parcela com a parte aplicada (o recebido
+     * menos o não aplicado, que fica reembolsável).
+     */
     public function pay(ReceivableInstallment $installment, Payment $payment): void
     {
-        $this->change($installment, paid: $payment->amount_cents);
-        $this->entry($installment, $payment, FinanceEntryType::Payment, $payment->amount_cents->negated(), $payment->amount_cents, null);
-        $this->credit->receivable($installment->buyer_company_id, CreditMovementType::PaymentSettlement, 'payment', $payment->id, $payment->amount_cents->negated());
+        $applied = $payment->amount_cents->minus($payment->unapplied_cents);
+
+        if ($applied->isPositive()) {
+            $this->change($installment, paid: $applied, exceptPaymentId: $payment->id);
+            $this->entry($installment, $payment, FinanceEntryType::Payment, $applied->negated(), $applied, null);
+            $this->credit->receivable($installment->buyer_company_id, CreditMovementType::PaymentSettlement, 'payment', $payment->id, $applied->negated());
+        }
 
         if ($payment->fee_cents->isPositive()) {
             $this->entry($installment, $payment, FinanceEntryType::Fee, Money::zero(), $payment->fee_cents, 'Taxa do gateway');
@@ -51,7 +59,7 @@ final readonly class Receivables
     /** Reembolso efetivado: o valor devolvido volta a ser devido na parcela. */
     public function refund(ReceivableInstallment $installment, Payment $payment, Money $amount, string $reason): void
     {
-        $this->change($installment, paid: $amount->negated());
+        $this->change($installment, paid: $amount->negated(), exceptPaymentId: $payment->id);
         $this->entry($installment, $payment, FinanceEntryType::Refund, $amount, $amount, $reason);
         $this->credit->receivable($installment->buyer_company_id, CreditMovementType::ReceivableAdjustment, 'payment', $payment->id, $amount, $reason);
     }
@@ -65,9 +73,9 @@ final readonly class Receivables
     }
 
     /** Ajuste compensatório do devido (juros, multa, correção), positivo ou negativo. */
-    public function adjust(ReceivableInstallment $installment, Money $delta, string $reason): void
+    public function adjust(ReceivableInstallment $installment, Money $delta, string $reason, ?string $exceptPaymentId = null): void
     {
-        $this->change($installment, adjusted: $delta);
+        $this->change($installment, adjusted: $delta, exceptPaymentId: $exceptPaymentId);
         $this->entry($installment, null, FinanceEntryType::Adjustment, $delta, Money::ofCents(abs($delta->cents)), $reason);
         $this->credit->receivable($installment->buyer_company_id, CreditMovementType::ReceivableAdjustment, 'receivable_installment', $installment->id, $delta, $reason);
     }
@@ -101,7 +109,7 @@ final readonly class Receivables
         }
     }
 
-    private function change(ReceivableInstallment $installment, ?Money $paid = null, ?Money $credited = null, ?Money $adjusted = null): void
+    private function change(ReceivableInstallment $installment, ?Money $paid = null, ?Money $credited = null, ?Money $adjusted = null, ?string $exceptPaymentId = null): void
     {
         $paid ??= Money::zero();
         $credited ??= Money::zero();
@@ -117,6 +125,9 @@ final readonly class Receivables
             'adjusted_cents' => $newAdjusted,
             'status' => $settled ? InstallmentStatus::Paid : InstallmentStatus::Open,
         ])->save();
+
+        // Cobrança pendente com o saldo antigo deixa de valer.
+        $this->charges->cancelFor($installment, $exceptPaymentId, 'O saldo da parcela mudou; gere nova cobrança.');
 
         $invoice = Invoice::query()->whereKey($installment->invoice_id)->lockForUpdate()->firstOrFail();
         $invoicePaid = $invoice->paid_cents->plus($paid);

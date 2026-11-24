@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Finance\Staff;
 
-use App\Domain\Finance\Exceptions\GatewayUnavailable;
 use App\Domain\Finance\Exceptions\InvalidPayment;
 use App\Domain\Finance\Exceptions\RefundNotAllowed;
 use App\Domain\Finance\RefundLimit;
@@ -12,31 +11,28 @@ use App\Enums\Finance\PaymentSource;
 use App\Enums\Finance\PaymentStatus;
 use App\Enums\Finance\RefundStatus;
 use App\Enums\Identity\Permission;
+use App\Jobs\ProcessGatewayRefund;
 use App\Models\Finance\PaymentRefund;
-use App\Services\Audit\AuditRecorder;
 use App\Services\Finance\FinanceLocks;
-use App\Services\Finance\Gateways\PaymentGateways;
-use App\Services\Finance\Receivables;
+use App\Services\Finance\RefundSettlement;
 use App\Support\Auth\Access;
-use App\Support\Outbox\Outbox;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Reembolso de pagamento confirmado (RF-100, RN-101). O valor é reservado
- * como pendente sob o lock do pagamento antes de qualquer chamada ao
- * gateway: a soma dos pendentes e efetivados nunca passa do pago (também
- * garantido por CHECK). Efetivado, o valor volta a ser devido na parcela;
- * recusado pelo gateway, a reserva é desfeita.
+ * como pendente sob o lock do pagamento: a soma dos pendentes e efetivados
+ * nunca passa do pago (também por CHECK). Pagamento manual é reembolsado na
+ * hora; pelo gateway, a chamada roda num job depois do commit, sem segurar
+ * locks, e o resultado é aplicado em transação própria. Sem resposta do
+ * gateway, o reembolso fica em verificação com a reserva mantida, até a
+ * equipe conferir (nada é repetido).
  */
 final readonly class RefundPayment
 {
     public function __construct(
         private Access $access,
         private FinanceLocks $locks,
-        private Receivables $receivables,
-        private PaymentGateways $gateways,
-        private Outbox $outbox,
-        private AuditRecorder $audit,
+        private RefundSettlement $settlement,
     ) {}
 
     public function handle(mixed $paymentId, string $amount, string $reason): PaymentRefund
@@ -49,7 +45,7 @@ final readonly class RefundPayment
             throw new InvalidPayment('Informe o motivo do reembolso (de 5 a 500 caracteres).', ['field' => 'reason']);
         }
 
-        [$refund, $payment] = DB::transaction(function () use ($paymentId, $value, $reason): array {
+        return DB::transaction(function () use ($paymentId, $value, $reason): PaymentRefund {
             [, , , $payment] = $this->locks->payment($paymentId);
 
             if ($payment->status !== PaymentStatus::Confirmed) {
@@ -73,44 +69,29 @@ final readonly class RefundPayment
                 'created_by_user_id' => $this->access->userId(),
             ])->save();
 
-            return [$refund, $payment];
-        });
+            if ($payment->source === PaymentSource::Gateway && $payment->gateway_charge_id !== null) {
+                ProcessGatewayRefund::dispatch($refund->id, $refund->tenant_id)->onQueue('critical')->afterCommit();
 
-        $gatewayRefundId = null;
-
-        if ($payment->source === PaymentSource::Gateway && $payment->gateway_charge_id !== null) {
-            try {
-                $gatewayRefundId = $this->gateways->current()->refund($payment->gateway_charge_id, $value);
-            } catch (GatewayUnavailable $e) {
-                $this->finish($refund, false, null);
-
-                throw $e;
+                return $refund;
             }
-        }
 
-        return $this->finish($refund, true, $gatewayRefundId);
+            return $this->settlement->finish($refund->id, true, null);
+        });
     }
 
-    private function finish(PaymentRefund $refund, bool $done, ?string $gatewayRefundId): PaymentRefund
+    /**
+     * Conclusão pela equipe de um reembolso em verificação, depois de
+     * conferir no painel do gateway.
+     */
+    public function resolve(mixed $refundId, bool $done): PaymentRefund
     {
-        return DB::transaction(function () use ($refund, $done, $gatewayRefundId): PaymentRefund {
-            [, $invoice, $installment, $payment] = $this->locks->payment($refund->payment_id);
-            $refund = PaymentRefund::query()->lockForUpdate()->findOrFail($refund->id);
+        $this->access->authorize(Permission::FinanceManage);
+        $refund = PaymentRefund::query()->findOrFail(\App\Support\Http\UntrustedId::uuid($refundId, PaymentRefund::class));
 
-            $payment->forceFill([
-                'refund_pending_cents' => $payment->refund_pending_cents->minus($refund->amount_cents),
-                'refunded_cents' => $done ? $payment->refunded_cents->plus($refund->amount_cents) : $payment->refunded_cents,
-            ])->save();
-            $refund->forceFill(['status' => $done ? RefundStatus::Done : RefundStatus::Failed, 'gateway_refund_id' => $gatewayRefundId])->save();
+        if ($refund->status !== RefundStatus::Verifying) {
+            throw new RefundNotAllowed('Só reembolsos em verificação são concluídos manualmente.');
+        }
 
-            if ($done) {
-                $this->receivables->refund($installment, $payment, $refund->amount_cents, $refund->reason);
-                $this->outbox->record('payment.refunded', 'payment', $payment->id, ['payment_id' => $payment->id, 'invoice_id' => $invoice->id, 'amount_cents' => $refund->amount_cents->cents]);
-            }
-
-            $this->audit->record($done ? 'payment.refunded' : 'payment.refund_failed', $payment, ['amount_cents' => $refund->amount_cents->cents, 'buyer_company_id' => $payment->buyer_company_id], $refund->reason);
-
-            return $refund;
-        });
+        return DB::transaction(fn (): PaymentRefund => $this->settlement->finish($refund->id, $done, null));
     }
 }

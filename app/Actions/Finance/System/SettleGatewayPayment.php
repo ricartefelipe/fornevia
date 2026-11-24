@@ -16,11 +16,15 @@ use App\Support\Outbox\Outbox;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Aplica a situação informada pelo gateway (webhook ou conciliação) a um
- * pagamento pendente: confirmado quita a parcela com o valor efetivamente
- * pago e registra a taxa; falhou encerra a cobrança. Pagamento já
- * confirmado ou encerrado não muda: o mesmo aviso recebido de novo não tem
- * efeito (RN-091 aplicado ao financeiro).
+ * Aplica a situação informada pelo gateway (webhook ou conciliação).
+ *
+ * - Paga: vale para pagamento pendente, recusado ou cancelado (cobrança paga
+ *   depois de vencida ou substituída). O recebido fica no pagamento; juros e
+ *   multa (pago acima do valor original) entram como ajuste da parcela; o
+ *   que passar do saldo em aberto, ou a parcela já quitada, fica não
+ *   aplicado e reembolsável.
+ * - Removida no gateway: o pagamento pendente fica recusado.
+ * - Já confirmado não muda: o mesmo aviso de novo não tem efeito.
  *
  * Roda no contexto de sistema do tenant. Ordem de locks (ADR-006): pedido →
  * fatura → parcela → pagamento → conta de crédito.
@@ -41,39 +45,44 @@ final readonly class SettleGatewayPayment
         return DB::transaction(function () use ($paymentId, $result): bool {
             [, $invoice, $installment, $payment] = $this->locks->payment($paymentId);
 
-            if ($payment->status !== PaymentStatus::Pending || $result->status === ChargeResult::PENDING) {
+            if ($payment->status === PaymentStatus::Confirmed || $result->status === ChargeResult::PENDING) {
                 return false;
             }
 
             if ($result->status === ChargeResult::FAILED) {
-                $payment->forceFill(['status' => PaymentStatus::Failed, 'failure_reason' => 'Cobrança encerrada pelo gateway sem pagamento.'])->save();
+                if ($payment->status !== PaymentStatus::Pending) {
+                    return false;
+                }
+
+                $payment->forceFill(['status' => PaymentStatus::Failed, 'failure_reason' => 'Cobrança removida no gateway sem pagamento.'])->save();
                 $this->audit->record('payment.failed', $payment, ['invoice_id' => $invoice->id, 'buyer_company_id' => $payment->buyer_company_id]);
 
                 return true;
             }
 
-            // Vale o que foi pago, até o saldo em aberto; o excedente não quita outra parcela.
             $paid = $result->paidAmount ?? $payment->amount_cents;
-            $open = Receivables::open($installment);
-            $amount = Money::min($paid, $open);
+            $open = $installment->status === InstallmentStatus::Open ? Receivables::open($installment) : Money::zero();
 
-            if (! $amount->isPositive() || $installment->status !== InstallmentStatus::Open) {
-                $payment->forceFill(['status' => PaymentStatus::Cancelled, 'failure_reason' => 'Parcela já quitada quando o pagamento foi confirmado; devolva o valor ao comprador.'])->save();
-                $this->audit->record('payment.unapplied', $payment, ['invoice_id' => $invoice->id, 'paid_cents' => $paid->cents, 'buyer_company_id' => $payment->buyer_company_id]);
-
-                return true;
+            // Juros e multa de pagamento em atraso: acréscimo do devido.
+            if ($open->isPositive() && $result->originalAmount !== null && $paid->greaterThan($result->originalAmount)) {
+                $interest = $paid->minus($result->originalAmount);
+                $this->receivables->adjust($installment, $interest, 'Juros e multa recebidos no gateway', $payment->id);
+                $open = $open->plus($interest);
             }
 
+            $applied = Money::min($paid, $open);
             $payment->forceFill([
-                'amount_cents' => $amount,
-                'fee_cents' => Money::min($result->fee ?? Money::zero(), $amount),
+                'amount_cents' => $paid,
+                'unapplied_cents' => $paid->minus($applied),
+                'fee_cents' => Money::min($result->fee ?? Money::zero(), $paid),
                 'status' => PaymentStatus::Confirmed,
                 'confirmed_at' => $this->clock->now(),
+                'failure_reason' => $applied->equals($paid) ? null : 'Parte do valor recebido não quitou a parcela; está disponível para reembolso.',
             ])->save();
 
             $this->receivables->pay($installment, $payment);
-            $this->outbox->record('payment.confirmed', 'payment', $payment->id, ['payment_id' => $payment->id, 'invoice_id' => $invoice->id, 'amount_cents' => $amount->cents]);
-            $this->audit->record('payment.confirmed', $payment, ['invoice_id' => $invoice->id, 'amount_cents' => $amount->cents, 'buyer_company_id' => $payment->buyer_company_id]);
+            $this->outbox->record('payment.confirmed', 'payment', $payment->id, ['payment_id' => $payment->id, 'invoice_id' => $invoice->id, 'amount_cents' => $paid->cents]);
+            $this->audit->record('payment.confirmed', $payment, ['invoice_id' => $invoice->id, 'amount_cents' => $paid->cents, 'unapplied_cents' => $paid->minus($applied)->cents, 'buyer_company_id' => $payment->buyer_company_id]);
 
             return true;
         });

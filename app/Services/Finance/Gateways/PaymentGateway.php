@@ -29,7 +29,19 @@ interface PaymentGateway
     public function find(string $reference): ?ChargeResult;
 
     /**
+     * Reembolso: devolve o id do reembolso. GatewayUnavailable quando o
+     * gateway recusou (nada foi feito); GatewayOutcomeUnknown quando não
+     * respondeu (pode ter feito).
+     *
      * @throws GatewayUnavailable
+     * @throws \App\Domain\Finance\Exceptions\GatewayOutcomeUnknown
      */
     public function refund(string $chargeId, Money $amount): string;
+
+    /**
+     * Cancela a cobrança ainda não paga (substituída ou sem saldo a cobrar).
+     *
+     * @throws GatewayUnavailable
+     */
+    public function cancel(string $chargeId): void;
 }

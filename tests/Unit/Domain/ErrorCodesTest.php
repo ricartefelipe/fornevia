@@ -85,6 +85,7 @@ it('mantém os códigos de erro das regras de negócio', function (): void {
         'App\Domain\Credit\Exceptions\CreditExceptionNotActive' => 'credit_exception_not_active',
         'App\Domain\Credit\Exceptions\CreditNotApproved' => 'credit_not_approved',
         'App\Domain\Credit\Exceptions\InvalidCreditValue' => 'invalid_credit_value',
+        'App\Domain\Finance\Exceptions\GatewayOutcomeUnknown' => 'gateway_outcome_unknown',
         'App\Domain\Finance\Exceptions\GatewayUnavailable' => 'gateway_unavailable',
         'App\Domain\Finance\Exceptions\InvalidPayment' => 'invalid_payment',
         'App\Domain\Finance\Exceptions\InvoiceNotAllowed' => 'invoice_not_allowed',

@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Model;
  * Reembolso de um pagamento confirmado (RN-101).
  *
  * @property string $id
+ * @property string $tenant_id
+ * @property string $buyer_company_id
  * @property string $payment_id
  * @property Money $amount_cents
  * @property \App\Enums\Finance\RefundStatus $status

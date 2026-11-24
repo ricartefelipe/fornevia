@@ -23,5 +23,6 @@ final readonly class ChargeResult
         public ?string $checkoutUrl = null,
         public ?Money $paidAmount = null,
         public ?Money $fee = null,
+        public ?Money $originalAmount = null,
     ) {}
 }

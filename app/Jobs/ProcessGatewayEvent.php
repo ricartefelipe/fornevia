@@ -9,6 +9,7 @@ use App\Support\Tenancy\ExecutionContext;
 use App\Support\Tenancy\TenantDatabase;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Throwable;
 
 /**
  * Processa um evento recebido do gateway no contexto de sistema do tenant.
@@ -32,5 +33,10 @@ final class ProcessGatewayEvent implements ShouldQueue
     public function handle(TenantDatabase $db, GatewayEvents $events): void
     {
         $db->run(ExecutionContext::system($this->tenantId), fn (): string => $events->process($this->eventRecordId));
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        app(TenantDatabase::class)->run(ExecutionContext::system($this->tenantId), fn () => app(GatewayEvents::class)->markFailed($this->eventRecordId, $exception));
     }
 }

@@ -79,7 +79,7 @@ final class InvoiceShow extends Component
             'adjust' => $adjust->adjust($this->installmentId, $this->amount, $this->reason),
             default => $record->handle($this->installmentId, $this->amount, $method, $this->paymentKey),
         }, match ($this->operation) {
-            'charge' => 'Cobrança gerada no gateway. Envie o link ao comprador.',
+            'charge' => 'Cobrança solicitada ao gateway. O link aparece no pagamento em instantes.',
             'credit' => 'Crédito concedido.',
             'adjust' => 'Ajuste registrado.',
             default => 'Pagamento registrado.',

@@ -15,7 +15,8 @@ use Illuminate\Support\Str;
 
 /**
  * Webhook do Asaas por distribuidor (RF-112): autenticado pelo token
- * configurado (comparado pelo hash, em tempo constante), gravado uma vez
+ * configurado (comparado pelo hash, em tempo constante), mesmo que o
+ * gateway ativo tenha mudado (cobranças antigas continuam no Asaas), gravado uma vez
  * por evento e processado pela fila. Responde 200 para evento repetido,
  * para o Asaas não reenviar.
  */
@@ -28,7 +29,7 @@ final class AsaasWebhookController
         }
 
         $token = (string) $request->header('asaas-access-token', '');
-        $expected = $db->run(ExecutionContext::system($organization), static fn (): mixed => DB::table('payment_gateway_settings')->where('gateway', 'asaas')->value('webhook_token_hash'));
+        $expected = $db->run(ExecutionContext::system($organization), static fn (): mixed => DB::table('payment_gateway_settings')->value('webhook_token_hash'));
 
         if (! is_string($expected) || $token === '' || ! hash_equals($expected, hash('sha256', $token))) {
             return new JsonResponse(['message' => 'Não autorizado.'], 401);

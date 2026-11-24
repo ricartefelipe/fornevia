@@ -6,7 +6,10 @@
         </x-slot:actions>
     </x-ui.page-header>
 
-    <div aria-live="polite" class="mb-4">@if ($failure)<x-ui.alert type="error">{{ $failure }}</x-ui.alert>@endif</div>
+    <div aria-live="polite" class="mb-4 space-y-2">
+        @if ($message)<x-ui.alert type="info">{{ $message }}</x-ui.alert>@endif
+        @if ($failure)<x-ui.alert type="error">{{ $failure }}</x-ui.alert>@endif
+    </div>
 
     <section class="fv-card mb-6 overflow-x-auto p-5" aria-labelledby="fatura-itens">
         <h2 id="fatura-itens" class="text-lg font-semibold">Itens</h2>
@@ -23,7 +26,8 @@
         <p class="mt-3 text-right font-semibold">Total {{ $invoice->total_cents->format() }}</p>
     </section>
 
-    <section class="fv-card overflow-x-auto p-5" aria-labelledby="fatura-parcelas">
+    @php($waiting = $invoice->installments->contains(fn ($i) => $i->payments->contains(fn ($p) => $p->status === \App\Enums\Finance\PaymentStatus::Pending && $p->checkout_url === null && $p->failure_reason === null)))
+    <section class="fv-card overflow-x-auto p-5" aria-labelledby="fatura-parcelas" @if ($waiting) wire:poll.3s @endif>
         <h2 id="fatura-parcelas" class="text-lg font-semibold">Parcelas</h2>
         @if ($canPay)
             <div class="mt-3 max-w-xs"><x-ui.select label="Pagar com" name="method" :options="$methods" wire:model="method" /></div>
@@ -38,10 +42,17 @@
                         <td>{{ $installment->sequence }}</td>
                         <td>{{ $installment->due_date->format('d/m/Y') }}</td>
                         <td class="text-right">{{ \App\Services\Finance\Receivables::open($installment)->format() }}</td>
-                        <td>{{ $installment->status->label() }}{{ $pending ? ' · cobrança gerada' : '' }}</td>
-                        <td class="text-right">
+                        <td>{{ $installment->status->label() }}
+                            @if ($pending && $pending->checkout_url === null)
+                                <span class="block text-xs text-slate-600">{{ $pending->failure_reason ?? 'Gerando a cobrança no gateway…' }}</span>
+                            @endif
+                        </td>
+                        <td class="space-x-1 text-right">
+                            @if ($pending && $pending->checkout_url)
+                                <a href="{{ $pending->checkout_url }}" class="fv-btn-primary" @if (str_starts_with($pending->checkout_url, 'http')) target="_blank" rel="noopener noreferrer" @endif>Abrir o pagamento ({{ $pending->method->label() }})</a>
+                            @endif
                             @if ($canPay && $installment->status === \App\Enums\Finance\InstallmentStatus::Open)
-                                <x-ui.button wire:click="pay('{{ $installment->id }}')" wire:loading.attr="disabled">{{ $pending ? 'Abrir o pagamento' : 'Pagar' }}</x-ui.button>
+                                <x-ui.button :variant="$pending ? 'secondary' : 'primary'" wire:click="pay('{{ $installment->id }}')" wire:loading.attr="disabled">{{ $pending ? 'Gerar com a forma escolhida' : 'Pagar' }}</x-ui.button>
                             @endif
                         </td>
                     </tr>

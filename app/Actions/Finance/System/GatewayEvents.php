@@ -23,7 +23,8 @@ use Throwable;
 final readonly class GatewayEvents
 {
     /** Tipos do Asaas que mudam a situação de um pagamento. */
-    private const array ASAAS_TYPES = ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_OVERDUE', 'PAYMENT_DELETED', 'PAYMENT_REFUNDED'];
+    /** Tipos do Asaas que podem mudar a situação de um pagamento (vencida não encerra). */
+    private const array ASAAS_TYPES = ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_DELETED'];
 
     public function __construct(
         private SettleGatewayPayment $settle,
@@ -62,17 +63,22 @@ final readonly class GatewayEvents
             return 'skipped';
         }
 
-        try {
-            $outcome = $this->apply(PaymentGatewayKind::from((string) $event->gateway), (string) $event->event_type, $event->charge_id !== null ? (string) $event->charge_id : null, (array) json_decode((string) $event->payload, true, flags: JSON_THROW_ON_ERROR));
-        } catch (Throwable $e) {
-            DB::table('gateway_webhook_events')->where('id', $eventRecordId)->update(['status' => 'failed', 'error' => mb_substr($e::class.': '.$e->getMessage(), 0, 500), 'processed_at' => $this->clock->now()]);
-
-            throw $e;
-        }
+        // Falha propaga para o job tentar de novo; esgotadas as tentativas, o job
+        // marca o evento como falho em transação própria (failed()).
+        $outcome = $this->apply(PaymentGatewayKind::from((string) $event->gateway), (string) $event->event_type, $event->charge_id !== null ? (string) $event->charge_id : null, (array) json_decode((string) $event->payload, true, flags: JSON_THROW_ON_ERROR));
 
         DB::table('gateway_webhook_events')->where('id', $eventRecordId)->update(['status' => $outcome, 'processed_at' => $this->clock->now()]);
 
         return $outcome;
+    }
+
+    public function markFailed(string $eventRecordId, ?Throwable $error): void
+    {
+        DB::table('gateway_webhook_events')->where('id', $eventRecordId)->where('status', 'pending')->update([
+            'status' => 'failed',
+            'error' => mb_substr($error === null ? 'Falha sem exceção.' : $error::class.': '.$error->getMessage(), 0, 500),
+            'processed_at' => $this->clock->now(),
+        ]);
     }
 
     /**

@@ -29,6 +29,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property \App\Enums\Finance\PaymentStatus $status
  * @property Money $refunded_cents
  * @property Money $refund_pending_cents
+ * @property Money $unapplied_cents
+ * @property \Carbon\CarbonImmutable|null $last_checked_at
  * @property \Carbon\CarbonImmutable|null $confirmed_at
  * @property string|null $failure_reason
  * @property \Carbon\CarbonImmutable $created_at
@@ -43,7 +45,7 @@ class Payment extends Model
     protected $guarded = ['*'];
 
     /** Valores iniciais iguais aos padrões do banco. */
-    protected $attributes = ['fee_cents' => 0, 'refunded_cents' => 0, 'refund_pending_cents' => 0];
+    protected $attributes = ['fee_cents' => 0, 'refunded_cents' => 0, 'refund_pending_cents' => 0, 'unapplied_cents' => 0];
 
     /**
      * @return array<string, mixed>
@@ -59,6 +61,8 @@ class Payment extends Model
             'status' => \App\Enums\Finance\PaymentStatus::class,
             'refunded_cents' => AsMoney::class,
             'refund_pending_cents' => AsMoney::class,
+            'unapplied_cents' => AsMoney::class,
+            'last_checked_at' => 'immutable_datetime',
             'confirmed_at' => 'immutable_datetime',
             'created_at' => 'immutable_datetime',
             'updated_at' => 'immutable_datetime',

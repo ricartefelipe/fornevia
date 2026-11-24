@@ -30,6 +30,8 @@ final class SimulatorGateway implements PaymentGateway
         return null;
     }
 
+    public function cancel(string $chargeId): void {}
+
     public function refund(string $chargeId, Money $amount): string
     {
         return 'sim_refund_'.Str::uuid7();

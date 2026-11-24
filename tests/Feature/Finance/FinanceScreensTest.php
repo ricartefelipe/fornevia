@@ -84,8 +84,10 @@ it('fatura pela fila e opera a fatura pela tela', function (): void {
         ->call('select', $installment->id, 'charge')
         ->set('method', 'pix')
         ->call('submit')
-        ->assertSee('Cobrança gerada no gateway')
-        ->assertSee('link de pagamento'));
+        ->assertSee('Cobrança solicitada ao gateway'));
+
+    // Criada no gateway depois do commit: o link aparece na tela.
+    ($this->as)(fn () => Livewire::test(InvoiceShow::class, ['invoice' => $invoice->id])->assertSee('link de pagamento'));
 
     $payment = $this->scenario->system(fn (): Payment => Payment::query()->where('status', PaymentStatus::Confirmed->value)->firstOrFail());
     ($this->as)(fn () => Livewire::test(InvoiceShow::class, ['invoice' => $invoice->id])
@@ -99,7 +101,7 @@ it('fatura pela fila e opera a fatura pela tela', function (): void {
         ->assertSee('Reembolso efetuado.')
         ->assertSee('Crédito concedido'));
 
-    expect(\App\Services\Finance\Receivables::open(F::firstInstallment($this->scenario, $invoice))->cents)->toBe(30_000 - 10_000 - 5_000 + 1_000 + 4_000);
+    expect(App\Services\Finance\Receivables::open(F::firstInstallment($this->scenario, $invoice))->cents)->toBe(30_000 - 10_000 - 5_000 + 1_000 + 4_000);
     ($this->page)(route('finance.index', ['fila' => 'aberto']))->assertOk()->assertSeeText($invoice->number);
     ($this->page)(route('finance.index', ['fila' => 'recebidos']))->assertOk()->assertSeeText($invoice->number);
     ($this->page)(route('finance.index', ['fila' => 'eventos']))->assertOk();
@@ -114,9 +116,12 @@ it('o comprador paga a parcela pelo simulador', function (): void {
         ->assertSee('não é nota fiscal')
         ->set('method', 'boleto')
         ->call('pay', $installment->id)
-        ->assertRedirect(), $this->buyer['membership']);
+        ->assertSee('Gerando a cobrança no gateway'), $this->buyer['membership']);
 
     $payment = $this->scenario->system(fn (): Payment => Payment::query()->firstOrFail());
+    ($this->as)(fn () => Livewire::test(PortalInvoiceShow::class, ['invoice' => $invoice->id])
+        ->assertSee('Abrir o pagamento (Boleto)')
+        ->assertSee(route('payments.simulator', $payment->id, false)), $this->buyer['membership']);
     ($this->page)(route('payments.simulator', $payment->id), $this->buyer['membership'])->assertOk()->assertSeeText('R$ 300,00');
     ($this->as)(fn () => Livewire::test(PaymentSimulator::class, ['payment' => $payment->id])->call('simulate', true)->assertSee('Pagamento simulado'), $this->buyer['membership']);
 

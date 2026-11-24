@@ -31,30 +31,28 @@ final class InvoiceShow extends Component
 
     public string $failure = '';
 
+    public string $message = '';
+
     public function mount(string $invoice, BuyerInvoices $invoices): void
     {
         $this->invoiceId = $invoices->find($invoices->actor(), $invoice)->id;
     }
 
-    public function pay(string $installmentId, PayInstallment $pay): mixed
+    /** Gera a cobrança; o link aparece na parcela assim que o gateway responde. */
+    public function pay(string $installmentId, PayInstallment $pay): void
     {
         $this->failure = '';
+        $this->message = '';
 
         try {
             $payment = $pay->handle($installmentId, PaymentMethod::tryFrom($this->method) ?? PaymentMethod::Pix);
         } catch (BusinessRuleViolation $e) {
             $this->failure = $e->getMessage();
 
-            return null;
+            return;
         }
 
-        if ($payment->checkout_url === null) {
-            $this->failure = 'O gateway de pagamento não respondeu agora. A cobrança foi registrada e o link aparece aqui assim que ele responder.';
-
-            return null;
-        }
-
-        return $this->redirect($payment->checkout_url);
+        $this->message = $payment->checkout_url !== null ? 'Cobrança pronta: abra o pagamento na parcela.' : 'Gerando a cobrança no gateway. O link aparece na parcela em instantes.';
     }
 
     public function render(BuyerInvoices $invoices, Access $access): View
