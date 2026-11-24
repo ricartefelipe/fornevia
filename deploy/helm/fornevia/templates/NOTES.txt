@@ -1,0 +1,6 @@
+Fornevia {{ .Chart.AppVersion }} instalado em {{ .Release.Namespace }}.
+
+- Migrations: Job {{ include "fornevia.fullname" . }}-migrate-{{ .Release.Revision }} (antes de cada atualização).
+- Endereço: {{ .Values.config.APP_URL }}
+- Saúde: GET /health/ready com o Host de APP_URL.
+- Operação: docs/runbooks/kubernetes.md

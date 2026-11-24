@@ -29,3 +29,21 @@ it('mantém o timeout dos supervisores abaixo do retry_after da conexão redis',
 it('protege o painel do Horizon mesmo no ambiente local', function (): void {
     $this->get('/horizon')->assertRedirect(route('login'));
 });
+
+it('permite dividir os workers de produção entre réplicas do Horizon', function (): void {
+    $production = fn (): array => (require config_path('horizon.php'))['environments']['production'];
+
+    expect($production()['operacao']['maxProcesses'])->toBe(10)
+        ->and($production()['integracoes']['maxProcesses'])->toBe(4);
+
+    $_ENV['HORIZON_OPERACAO_MAX_PROCESSES'] = $_SERVER['HORIZON_OPERACAO_MAX_PROCESSES'] = '5';
+    $_ENV['HORIZON_INTEGRACOES_MAX_PROCESSES'] = $_SERVER['HORIZON_INTEGRACOES_MAX_PROCESSES'] = '2';
+
+    try {
+        expect($production()['operacao']['maxProcesses'])->toBe(5)
+            ->and($production()['integracoes']['maxProcesses'])->toBe(2);
+    } finally {
+        unset($_ENV['HORIZON_OPERACAO_MAX_PROCESSES'], $_SERVER['HORIZON_OPERACAO_MAX_PROCESSES'],
+            $_ENV['HORIZON_INTEGRACOES_MAX_PROCESSES'], $_SERVER['HORIZON_INTEGRACOES_MAX_PROCESSES']);
+    }
+});

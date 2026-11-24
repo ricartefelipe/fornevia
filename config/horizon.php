@@ -87,8 +87,10 @@ return [
 
     'environments' => [
         'production' => [
-            'operacao' => ['maxProcesses' => 10, 'balanceMaxShift' => 1, 'balanceCooldown' => 3],
-            'integracoes' => ['maxProcesses' => 4],
+            // Workers por instância do Horizon; com várias réplicas (chart Helm),
+            // cada pod roda a sua parte.
+            'operacao' => ['maxProcesses' => (int) env('HORIZON_OPERACAO_MAX_PROCESSES', 10), 'balanceMaxShift' => 1, 'balanceCooldown' => 3],
+            'integracoes' => ['maxProcesses' => (int) env('HORIZON_INTEGRACOES_MAX_PROCESSES', 4)],
         ],
         'local' => [
             'operacao' => ['maxProcesses' => 2],

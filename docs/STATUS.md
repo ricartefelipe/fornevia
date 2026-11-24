@@ -10,7 +10,7 @@ Os 90 requisitos de [REQUISITOS.md](REQUISITOS.md) estão implementados e
 cobertos por testes automatizados; a relação entre requisitos, incrementos,
 decisões e testes está em [RASTREABILIDADE.md](RASTREABILIDADE.md).
 
-Limitações conhecidas (atualizadas na versão 1.1.0):
+Limitações conhecidas (atualizadas na versão 1.2.0):
 
 - Faturas comerciais, sem emissão de nota fiscal eletrônica.
 - Integração com o Asaas, inclusive a consulta de estornos usada pela
@@ -20,8 +20,9 @@ Limitações conhecidas (atualizadas na versão 1.1.0):
 - API v1 sem criação de pedidos: depende de definir o comprador
   responsável e a aplicação das regras de aprovação interna a pedidos
   vindos do ERP do distribuidor.
-- Implantação de referência em um único host; alta disponibilidade e TLS
-  ficam com a infraestrutura à frente do serviço web.
+- Alta disponibilidade em Kubernetes pelo chart Helm, verificada em k3s
+  local de um nó; não houve teste em cluster gerenciado com vários nós. A
+  redundância do PostgreSQL e do Redis e o TLS ficam com o provedor.
 - Aprovação humana nas proteções de branch não exigida (mantenedor único);
   os checks automatizados são obrigatórios.
 
@@ -29,6 +30,10 @@ Resolvido na versão 1.1.0: carteira do representante em todas as telas da
 equipe; escrita na API (comprador, estoque, cancelamento de pedido);
 importação de catálogo com preço e custo; conferência automática dos
 reembolsos em verificação; métricas por distribuidor opcionais.
+
+Resolvido na versão 1.2.0: implantação com alta disponibilidade em
+Kubernetes (chart Helm verificado com perda de pod e atualização sem
+falhas); nova identidade visual da interface.
 
 ## Incremento 1 — Fundação da plataforma (`feature/fundacao-plataforma`)
 

@@ -5,6 +5,37 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.2.0] - 2026-11-24
+
+### Adicionado
+
+- Chart Helm para Kubernetes (`deploy/helm/fornevia`) com alta
+  disponibilidade: réplicas e autoescala do PHP-FPM e do nginx, Horizon e
+  relay da outbox com duas réplicas, migrations em Job antes de cada
+  atualização, PodDisruptionBudget, distribuição entre nós e contêineres
+  sem root com raiz somente leitura.
+- Teste do chart em cluster local (`scripts/k8s-smoke.sh`), com perda de pod
+  e atualização sob requisições contínuas, e runbook de operação em
+  Kubernetes.
+- Processos por instância configuráveis: `FPM_MAX_CHILDREN` no PHP-FPM
+  (padrão 20) e `HORIZON_OPERACAO_MAX_PROCESSES` e
+  `HORIZON_INTEGRACOES_MAX_PROCESSES` no Horizon (padrão 10 e 4), para
+  dividir a capacidade entre réplicas.
+
+### Alterado
+
+- Nova identidade visual: violeta institucional com destaques em magenta,
+  fonte Inter empacotada na aplicação, barra lateral em degradê com ícones,
+  cabeçalho com avatar e sino de notificações, cartões, botões, campos,
+  tabelas e selos revisados, painel com indicadores, tela de entrada em duas
+  colunas e atalhos no início do portal.
+
+### Corrigido
+
+- Travas de sobreposição das tarefas agendadas com prazo de 10 ou 30
+  minutos, em vez das 24 horas padrão: o encerramento do agendador no meio
+  de uma tarefa não a suspende mais por um dia.
+
 ## [1.1.0] - 2026-11-24
 
 ### Adicionado
@@ -245,7 +276,8 @@ métricas e implantação de referência.
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
 
-[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v1.1.0...develop
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v1.2.0...develop
+[1.2.0]: https://github.com/ricartefelipe/fornevia/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ricartefelipe/fornevia/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ricartefelipe/fornevia/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ricartefelipe/fornevia/compare/v0.5.0...v1.0.0

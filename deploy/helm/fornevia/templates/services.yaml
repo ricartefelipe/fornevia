@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fornevia.fullname" . }}-app
+  labels: {{- include "fornevia.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "fornevia.selector" (dict "root" . "component" "app") | nindent 4 }}
+  ports:
+    - {name: fastcgi, port: 9000, targetPort: fastcgi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fornevia.fullname" . }}-web
+  labels: {{- include "fornevia.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "fornevia.selector" (dict "root" . "component" "web") | nindent 4 }}
+  ports:
+    - {name: http, port: 80, targetPort: http}
