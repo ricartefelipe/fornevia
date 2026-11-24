@@ -82,10 +82,6 @@ class OrderItem extends Model
         ];
     }
 
-    /**
-     * Quantidade encomendada (registrada na unidade base) expressa na
-     * unidade de venda, arredondada para cima nas casas de Quantity.
-     */
     /** Quantidade ainda sem remessa: nem cancelada, nem expedida, nem em separação. */
     public function unallocated(): Quantity
     {
@@ -98,6 +94,10 @@ class OrderItem extends Model
         return $this->quantity_delivered->minus($this->quantity_returned)->minus($this->quantity_return_open);
     }
 
+    /**
+     * Quantidade encomendada (registrada na unidade base) expressa na
+     * unidade de venda, arredondada para cima nas casas de Quantity.
+     */
     public function backorderedInSalesUnit(): Quantity
     {
         if ($this->conversion_factor->isZero()) {
