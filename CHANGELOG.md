@@ -5,6 +5,20 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.0.0] - 2026-11-24
+
+Primeira versão estável. Reúne as versões 0.1.0 a 0.5.0: plataforma
+multitenant com RLS forçado, identidade e contextos, compradores, catálogo
+e preços, estoque, crédito e pedidos, aprovação de compras e orçamento,
+cotações, outbox e notificações, expedição e devoluções, contas a receber e
+gateway de pagamento, integrações (API, webhooks e CSV), auditoria,
+métricas e implantação de referência.
+
+### Adicionado
+
+- Matriz de rastreabilidade dos requisitos (`docs/RASTREABILIDADE.md`) e
+  situação geral da versão com as limitações conhecidas em `docs/STATUS.md`.
+
 ## [0.5.0] - 2026-11-24
 
 ### Adicionado
@@ -198,7 +212,8 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - Margem mínima interna fora do estado enviado ao navegador de perfis
   somente de consulta.
 
-[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v0.5.0...develop
+[Não lançado]: https://github.com/ricartefelipe/fornevia/compare/v1.0.0...develop
+[1.0.0]: https://github.com/ricartefelipe/fornevia/compare/v0.5.0...v1.0.0
 [0.5.0]: https://github.com/ricartefelipe/fornevia/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ricartefelipe/fornevia/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ricartefelipe/fornevia/compare/v0.2.0...v0.3.0
