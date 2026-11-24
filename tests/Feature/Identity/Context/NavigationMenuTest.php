@@ -15,7 +15,7 @@ use Tests\Support\Builders\TenantScenario;
 | Menu: itens visíveis conforme o tipo de contexto (equipe ou comprador) e
 | as permissões do papel ativo. Rotas ainda não registradas não aparecem.
 |
-| Rotas de módulos ainda não implementados (financeiro, auditoria,
+| Rotas de módulos ainda não implementados (financeiro,
 | assinatura, cotações e usuários do portal) são registradas aqui para exercitar
 | o filtro por permissão; os módulos já implementados usam as rotas reais.
 */
@@ -25,7 +25,6 @@ beforeEach(function (): void {
 
     foreach ([
         'finance.index' => '/teste/menu/financeiro',
-        'audit.index' => '/teste/menu/auditoria',
         'subscription.show' => '/teste/menu/assinatura',
         'portal.quotes' => '/teste/menu/portal/cotacoes',
         'portal.users' => '/teste/menu/portal/usuarios',
