@@ -376,7 +376,13 @@ jobs:
           $C config --quiet
           $C up -d --no-build postgres redis
           $C run --rm migrate
-          $C up -d --no-build --wait app web horizon outbox scheduler
+          $C up -d --no-build --wait app web horizon
+          $C up -d --no-build outbox scheduler
+          sleep 5
+          running=$($C ps --status running --services)
+          for service in outbox scheduler; do
+            echo "$running" | grep -qx "$service" || { $C logs "$service"; exit 1; }
+          done
           curl -fsS -H 'Host: localhost:18080' http://127.0.0.1:18080/health/ready
           curl -fsS -o /dev/null -H 'Host: localhost:18080' http://127.0.0.1:18080/login
           $C down -v
