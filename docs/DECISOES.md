@@ -883,7 +883,14 @@ distribuidor mantém o isolamento entre tenants também no recebimento.
 - As regras são as mesmas das telas: a API chama as Actions do módulo.
   Para as gravações que exigem o contexto de sistema (estoque, crédito,
   pedidos), o cliente da API eleva para o sistema do próprio tenant, como o
-  usuário da equipe, e continua identificado como autor na auditoria.
+  usuário da equipe, e continua identificado como autor na auditoria e nos
+  movimentos de estoque (`stock_movements.actor_api_client_id`). Como na
+  equipe, as permissões do cliente não valem durante a elevação.
+- O conteúdo comparado pela idempotência é normalizado (CNPJ só com
+  caracteres, códigos em maiúsculas, quantidades com 3 casas, ids em
+  minúsculas); depósito e SKU são conferidos dentro da operação, para que a
+  repetição devolva a resposta guardada mesmo após mudança no cadastro. Só o
+  corpo JSON é lido; item repetido no cancelamento é recusado.
 - Criação de pedidos pela API fica fora desta decisão: exige definir quem é
   o comprador responsável e como as regras de aprovação interna da empresa
   se aplicam a um pedido vindo do ERP do distribuidor.

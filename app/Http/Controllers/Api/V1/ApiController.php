@@ -56,27 +56,38 @@ final class ApiController
 
     public function createBuyer(Request $request): JsonResponse
     {
-        return self::written($this->writes->createBuyer($request->header('Idempotency-Key'), $request->all()), 201);
+        return self::written($this->writes->createBuyer($request->header('Idempotency-Key'), self::body($request)), 201);
     }
 
     public function receiveStock(Request $request): JsonResponse
     {
-        return self::written($this->writes->receiveStock($request->header('Idempotency-Key'), $request->all()), 201);
+        return self::written($this->writes->receiveStock($request->header('Idempotency-Key'), self::body($request)), 201);
     }
 
     public function adjustStock(Request $request): JsonResponse
     {
-        return self::written($this->writes->adjustStock($request->header('Idempotency-Key'), $request->all()), 201);
+        return self::written($this->writes->adjustStock($request->header('Idempotency-Key'), self::body($request)), 201);
     }
 
     public function cancelOrder(Request $request, string $order): JsonResponse
     {
-        return self::written($this->writes->cancelOrder($request->header('Idempotency-Key'), $order, $request->all()), 200);
+        return self::written($this->writes->cancelOrder($request->header('Idempotency-Key'), $order, self::body($request)), 200);
     }
 
     /** Repetição com a mesma chave devolve a resposta original, marcada como repetida. */
     private static function written(IdempotentResult $result, int $status): JsonResponse
     {
         return new JsonResponse(['data' => $result->response], $status, ['Idempotent-Replayed' => $result->replayed ? 'true' : 'false']);
+    }
+
+    /**
+     * Só o corpo JSON: parâmetros da URL não entram na escrita.
+     *
+     * @return array<string, mixed>
+     */
+    private static function body(Request $request): array
+    {
+        /** @var array<string, mixed> */
+        return $request->json()->all();
     }
 }

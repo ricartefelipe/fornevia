@@ -111,3 +111,76 @@ it('registra o cliente da API como autor do cancelamento na auditoria', function
     $audit = $this->scenario->system(static fn () => App\Models\Audit\AuditLog::query()->where('subject_id', $order->id)->where('action', 'like', 'order.%cancel%')->latest('created_at')->first());
     expect($audit)->not->toBeNull()->and($audit->actor_api_client_id)->not->toBeNull()->and($audit->actor_user_id)->toBeNull();
 });
+
+it('trata como a mesma operação o conteúdo equivalente e devolve a resposta guardada mesmo após mudanças no cadastro', function (): void {
+    $token = ($this->token)(['buyers.manage', 'inventory.manage', 'orders.manage', 'orders.view']);
+    $document = BrazilianDocuments::cnpj();
+    $sku = $this->scenario->sku->code;
+
+    ($this->write)($token, '/buyers', ['legal_name' => 'Alfa Ltda', 'trade_name' => 'Alfa', 'document' => $document], 'comprador-1')->assertCreated();
+    ($this->write)($token, '/buyers', ['legal_name' => 'Alfa Ltda', 'trade_name' => 'Alfa', 'document' => App\Domain\Shared\Cnpj::format($document)], 'comprador-1')
+        ->assertCreated()->assertHeader('Idempotent-Replayed', 'true');
+
+    ($this->write)($token, '/stock/receipts', ['warehouse_code' => 'CD1', 'sku_code' => $sku, 'quantity' => '5'], 'entrada-01')->assertCreated();
+    // O depósito muda de código depois: a repetição ainda devolve a resposta guardada.
+    $this->scenario->system(fn () => App\Models\Inventory\Warehouse::query()->whereKey($this->scenario->warehouse->id)->update(['code' => 'CD9']));
+    ($this->write)($token, '/stock/receipts', ['warehouse_code' => 'cd1', 'sku_code' => strtolower($sku), 'quantity' => '5.0'], 'entrada-01')
+        ->assertCreated()->assertHeader('Idempotent-Replayed', 'true');
+    expect(($this->onHand)())->toBe('15.000');
+
+    $order = Fx::place($this->scenario, $this->scenario->buyerWithCart(quantity: '2'));
+    ($this->write)($token, "/orders/{$order->id}/cancellation", ['reason' => 'Pedido duplicado'], 'cancela-200')->assertOk();
+    ($this->write)($token, '/orders/'.strtoupper($order->id).'/cancellation', ['reason' => '  Pedido duplicado  '], 'cancela-200')
+        ->assertOk()->assertHeader('Idempotent-Replayed', 'true');
+});
+
+it('recusa item repetido no cancelamento e aceita motivo com espaços nas pontas', function (): void {
+    $token = ($this->token)(['orders.manage', 'orders.view']);
+    $order = Fx::place($this->scenario, $this->scenario->buyerWithCart(quantity: '4'));
+    $item = $this->scenario->system(static fn (): OrderItem => OrderItem::query()->where('order_id', $order->id)->sole());
+
+    ($this->write)($token, "/orders/{$order->id}/cancellation", ['reason' => 'Ajuste de quantidade', 'items' => [
+        ['id' => $item->id, 'quantity' => '1'], ['id' => strtoupper($item->id), 'quantity' => '2'],
+    ]], 'cancela-300')->assertUnprocessable()->assertJsonStructure(['error' => ['fields' => ['items.1']]]);
+
+    ($this->write)($token, "/orders/{$order->id}/cancellation", ['reason' => str_repeat('a', 498).'   '], 'cancela-301')->assertOk();
+});
+
+it('usa só o corpo JSON na escrita', function (): void {
+    $token = ($this->token)(['inventory.manage', 'orders.manage', 'orders.view']);
+    $order = Fx::place($this->scenario, $this->scenario->buyerWithCart(quantity: '1'));
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token, 'Idempotency-Key' => 'entrada-url1'])
+        ->postJson('/api/v1/stock/receipts?trace=1', ['warehouse_code' => 'CD1', 'sku_code' => $this->scenario->sku->code, 'quantity' => '1'])->assertCreated();
+    $this->withHeaders(['Authorization' => 'Bearer '.$token, 'Idempotency-Key' => 'cancela-url1'])
+        ->postJson("/api/v1/orders/{$order->id}/cancellation?reason=Duplicado%20na%20URL", [])->assertUnprocessable();
+});
+
+it('identifica o cliente da API como autor do movimento de estoque', function (): void {
+    $token = ($this->token)(['inventory.manage']);
+
+    ($this->write)($token, '/stock/receipts', ['warehouse_code' => 'CD1', 'sku_code' => $this->scenario->sku->code, 'quantity' => '2'], 'entrada-autor')->assertCreated();
+
+    $movement = $this->scenario->system(static fn () => App\Models\Inventory\StockMovement::query()->where('quantity', '2.000')->sole());
+    expect($movement->actor_api_client_id)->not->toBeNull()->and($movement->actor_user_id)->toBeNull();
+});
+
+it('não aplica as permissões do cliente da API durante a elevação ao sistema', function (): void {
+    $client = $this->scenario->tenant->actingAs($this->owner, static fn () => app(ManageApiClients::class)->create('ERP', ['orders.view'], 30)[0]);
+    $tenantId = $this->scenario->tenant->organization->id;
+
+    [$inIntegration, $inSystem] = app(App\Support\Tenancy\TenantDatabase::class)->run(
+        App\Support\Tenancy\ExecutionContext::integration($tenantId, $client->id),
+        static function () use ($client): array {
+            $access = app(App\Support\Auth\Access::class);
+            $access->bindIntegration($client->id, ['orders.view']);
+
+            return [
+                $access->can(App\Enums\Identity\Permission::OrdersView),
+                app(App\Support\Tenancy\TenantDatabase::class)->asSystem(static fn (): bool => $access->can(App\Enums\Identity\Permission::OrdersView)),
+            ];
+        },
+    );
+
+    expect($inIntegration)->toBeTrue()->and($inSystem)->toBeFalse();
+});

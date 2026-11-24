@@ -16,6 +16,7 @@ use App\Domain\Shared\Quantity;
 use App\Enums\Identity\Permission;
 use App\Models\Catalog\Sku;
 use App\Models\Inventory\Warehouse;
+use App\Models\Ordering\Order;
 use App\Support\Auth\Access;
 use App\Support\Http\UntrustedId;
 use App\Support\Idempotency\IdempotencyGuard;
@@ -58,7 +59,10 @@ final readonly class ApiWrites
         $fields = self::fields($input, ['legal_name' => true, 'trade_name' => true, 'document' => true, 'state_registration' => false, 'email' => false, 'phone' => false], $documentErrors);
         assert($document !== null);
 
-        return $this->idempotency->run('api.buyers.create', self::key($key), $fields, function () use ($fields, $document): array {
+        // Conteúdo normalizado: o mesmo CNPJ com ou sem pontuação é a mesma operação.
+        $payload = [...$fields, 'document' => $document->digits];
+
+        return $this->idempotency->run('api.buyers.create', self::key($key), $payload, function () use ($fields, $document): array {
             $company = app(SaveBuyerCompany::class)->handle(null, new BuyerCompanyData(
                 legalName: (string) $fields['legal_name'],
                 tradeName: (string) $fields['trade_name'],
@@ -79,9 +83,11 @@ final readonly class ApiWrites
     {
         $this->access->authorize(Permission::InventoryManage);
         $fields = self::fields($input, ['warehouse_code' => true, 'sku_code' => true, 'quantity' => true, 'note' => false]);
-        [$warehouse, $sku, $quantity] = self::stockTarget($fields, 'quantity');
 
-        return $this->idempotency->run('api.stock.receive', self::key($key), $fields, function () use ($warehouse, $sku, $quantity, $fields): array {
+        // Cadastro conferido dentro da operação: uma repetição devolve a
+        // resposta guardada mesmo que o depósito ou o SKU tenham mudado depois.
+        return $this->idempotency->run('api.stock.receive', self::key($key), self::stockPayload($fields, 'quantity'), function () use ($fields): array {
+            [$warehouse, $sku, $quantity] = self::stockTarget($fields, 'quantity');
             $balance = app(ReceiveStock::class)->handle($warehouse, $sku, $quantity, $fields['note'] ?? null);
 
             return ['resource_type' => 'stock_level', 'resource_id' => (string) Str::uuid7(), 'response' => self::balance($balance, $warehouse, $sku)];
@@ -95,9 +101,9 @@ final readonly class ApiWrites
     {
         $this->access->authorize(Permission::InventoryManage);
         $fields = self::fields($input, ['warehouse_code' => true, 'sku_code' => true, 'delta' => true, 'reason' => true]);
-        [$warehouse, $sku, $delta] = self::stockTarget($fields, 'delta', signed: true);
 
-        return $this->idempotency->run('api.stock.adjust', self::key($key), $fields, function () use ($warehouse, $sku, $delta, $fields): array {
+        return $this->idempotency->run('api.stock.adjust', self::key($key), self::stockPayload($fields, 'delta'), function () use ($fields): array {
+            [$warehouse, $sku, $delta] = self::stockTarget($fields, 'delta', signed: true);
             $balance = app(AdjustStock::class)->handle($warehouse, $sku, $delta, (string) $fields['reason']);
 
             return ['resource_type' => 'stock_level', 'resource_id' => (string) Str::uuid7(), 'response' => self::balance($balance, $warehouse, $sku)];
@@ -117,7 +123,7 @@ final readonly class ApiWrites
         $items = $input['items'] ?? null;
         $errors = [];
 
-        if (! is_string($reason) || mb_strlen(trim($reason)) < 5 || mb_strlen($reason) > 500) {
+        if (! is_string($reason) || mb_strlen(trim($reason)) < 5 || mb_strlen(trim($reason)) > 500) {
             $errors['reason'] = ['Informe o motivo do cancelamento (5 a 500 caracteres).'];
         }
 
@@ -144,6 +150,12 @@ final readonly class ApiWrites
                         continue;
                     }
 
+                    if (isset($quantities[strtolower($id)])) {
+                        $errors["items.{$i}"] = ['Item repetido: informe cada item uma única vez.'];
+
+                        continue;
+                    }
+
                     $quantities[strtolower($id)] = $quantity;
                 }
             }
@@ -153,8 +165,13 @@ final readonly class ApiWrites
             throw ValidationException::withMessages($errors);
         }
 
-        $payload = ['order_id' => $orderId, 'reason' => trim((string) $reason), 'items' => $items];
-        $order = UntrustedId::uuid($orderId, \App\Models\Ordering\Order::class);
+        $order = UntrustedId::uuid($orderId, Order::class);
+        // Conteúdo normalizado: maiúsculas no id e "1" ou "1.0" são a mesma operação.
+        $payload = [
+            'order_id' => strtolower($order),
+            'reason' => trim((string) $reason),
+            'items' => $quantities === null ? null : array_map(static fn (Quantity $q): string => $q->toDatabase(), $quantities),
+        ];
 
         return $this->idempotency->run('api.orders.cancel', self::key($key), $payload, function () use ($order, $quantities, $reason): array {
             $outcome = app(CancelStaffOrderItems::class)->handle($order, $quantities, trim((string) $reason));
@@ -211,13 +228,37 @@ final readonly class ApiWrites
     }
 
     /**
+     * Conteúdo normalizado da operação de estoque (códigos em maiúsculas,
+     * quantidade com 3 casas quando válida).
+     *
+     * @param  array<string, string|null>  $fields
+     * @return array<string, string|null>
+     */
+    private static function stockPayload(array $fields, string $quantityField): array
+    {
+        try {
+            $quantity = Quantity::of((string) $fields[$quantityField])->toDatabase();
+        } catch (InvalidArgumentException|BusinessRuleViolation) {
+            $quantity = $fields[$quantityField];
+        }
+
+        return [
+            ...$fields,
+            'warehouse_code' => mb_strtoupper((string) $fields['warehouse_code']),
+            'sku_code' => mb_strtoupper((string) $fields['sku_code']),
+            $quantityField => $quantity,
+        ];
+    }
+
+    /**
      * @param  array<string, string|null>  $fields
      * @return array{0: Warehouse, 1: Sku, 2: Quantity}
      */
     private static function stockTarget(array $fields, string $quantityField, bool $signed = false): array
     {
-        $warehouse = Warehouse::query()->whereRaw('upper(code) = ?', [mb_strtoupper((string) $fields['warehouse_code'])])->first();
-        $sku = Sku::query()->whereRaw('upper(code) = ?', [mb_strtoupper((string) $fields['sku_code'])])->first();
+        // Códigos guardados em maiúsculas: a busca usa o índice único.
+        $warehouse = Warehouse::query()->where('code', mb_strtoupper((string) $fields['warehouse_code']))->first();
+        $sku = Sku::query()->where('code', mb_strtoupper((string) $fields['sku_code']))->first();
         $errors = [];
 
         try {
