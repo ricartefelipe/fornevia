@@ -111,10 +111,18 @@ final readonly class ApiResources
             ->when(isset($filters['updated_since']), static fn ($q) => $q->where('updated_at', '>=', Iso8601::parse($filters['updated_since'])))
             ->orderBy('trade_name')->orderBy('id');
 
-        return self::page(ApiListing::paginate($buyers, $query), static fn (BuyerCompany $b): array => [
+        return self::page(ApiListing::paginate($buyers, $query), fn (BuyerCompany $b): array => $this->buyer($b));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function buyer(BuyerCompany $b): array
+    {
+        return [
             'id' => $b->id, 'legal_name' => $b->legal_name, 'trade_name' => $b->trade_name, 'document' => $b->document,
             'email' => $b->email, 'phone' => $b->phone, 'status' => $b->status->value,
-        ]);
+        ];
     }
 
     /**

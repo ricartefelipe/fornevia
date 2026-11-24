@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Api\ApiResources;
+use App\Actions\Api\ApiWrites;
+use App\Support\Idempotency\IdempotentResult;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,7 +17,7 @@ use Illuminate\Http\Request;
  */
 final class ApiController
 {
-    public function __construct(private readonly ApiResources $resources) {}
+    public function __construct(private readonly ApiResources $resources, private readonly ApiWrites $writes) {}
 
     public function orders(Request $request): JsonResponse
     {
@@ -50,5 +52,42 @@ final class ApiController
     public function shipmentEvent(Request $request, string $shipment): JsonResponse
     {
         return new JsonResponse(['data' => $this->resources->shipmentEvent($shipment, $request->all())], 201);
+    }
+
+    public function createBuyer(Request $request): JsonResponse
+    {
+        return self::written($this->writes->createBuyer($request->header('Idempotency-Key'), self::body($request)), 201);
+    }
+
+    public function receiveStock(Request $request): JsonResponse
+    {
+        return self::written($this->writes->receiveStock($request->header('Idempotency-Key'), self::body($request)), 201);
+    }
+
+    public function adjustStock(Request $request): JsonResponse
+    {
+        return self::written($this->writes->adjustStock($request->header('Idempotency-Key'), self::body($request)), 201);
+    }
+
+    public function cancelOrder(Request $request, string $order): JsonResponse
+    {
+        return self::written($this->writes->cancelOrder($request->header('Idempotency-Key'), $order, self::body($request)), 200);
+    }
+
+    /** Repetição com a mesma chave devolve a resposta original, marcada como repetida. */
+    private static function written(IdempotentResult $result, int $status): JsonResponse
+    {
+        return new JsonResponse(['data' => $result->response], $status, ['Idempotent-Replayed' => $result->replayed ? 'true' : 'false']);
+    }
+
+    /**
+     * Só o corpo JSON: parâmetros da URL não entram na escrita.
+     *
+     * @return array<string, mixed>
+     */
+    private static function body(Request $request): array
+    {
+        /** @var array<string, mixed> */
+        return $request->json()->all();
     }
 }

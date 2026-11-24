@@ -398,6 +398,7 @@ final readonly class StockLedger
             'transfer_id' => $transferId,
             'reason' => $reason,
             'actor_user_id' => $this->context->require()->userId,
+            'actor_api_client_id' => $this->context->require()->apiClientId,
             'correlation_id' => Context::get('correlation_id'),
             'created_at' => now(),
         ]);
