@@ -7,6 +7,7 @@ namespace App\Livewire\Staff\Returns;
 use App\Actions\Fulfillment\Staff\DecideReturn;
 use App\Actions\Fulfillment\Staff\ReceiveReturn;
 use App\Domain\Shared\BusinessRuleViolation;
+use App\Enums\Fulfillment\ReturnStatus;
 use App\Enums\Identity\Permission;
 use App\Models\Fulfillment\ReturnRequest;
 use App\Models\Inventory\Warehouse;
@@ -67,6 +68,8 @@ final class ReturnShow extends Component
     public function receive(ReceiveReturn $receive): void
     {
         $this->attempt(fn () => $receive->receive($this->returnId, $this->received), 'Recebimento registrado.');
+        // A inspeção começa pelo que acabou de chegar.
+        $this->approved = [];
     }
 
     public function inspect(ReceiveReturn $receive): void
@@ -82,7 +85,10 @@ final class ReturnShow extends Component
 
         foreach ($return->items as $item) {
             $this->received[$item->id] ??= $item->quantity->format();
-            $this->approved[$item->id] ??= $item->quantity_received->format();
+
+            if ($return->status === ReturnStatus::Received) {
+                $this->approved[$item->id] ??= $item->quantity_received->format();
+            }
         }
 
         return view('livewire.staff.returns.return-show', [

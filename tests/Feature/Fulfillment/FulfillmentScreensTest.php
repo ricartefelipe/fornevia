@@ -112,7 +112,11 @@ it('analisa, recebe e inspeciona a devolução pela tela', function (): void {
         ->call('inspect')
         ->assertSee('Inspeção registrada'));
 
-    expect($this->scenario->system(fn (): ReturnStatus => ReturnRequest::query()->findOrFail($return->id)->status))->toBe(ReturnStatus::Closed);
+    // Na mesma tela: a inspeção começa pelo recebido e aprova tudo por padrão.
+    $stored = $this->scenario->system(fn (): ReturnRequest => ReturnRequest::query()->findOrFail($return->id));
+    expect($stored->status)->toBe(ReturnStatus::Closed)
+        ->and($stored->refund_cents->cents)->toBe(20_000)
+        ->and(S::level($this->scenario)['on_hand'])->toBe('8.000');
     ($this->page)(route('returns.index', ['fila' => 'encerradas']))->assertOk()->assertSeeText($return->number);
 });
 
