@@ -40,6 +40,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property \App\Domain\Shared\Money $line_total_cents
  * @property array<string, mixed> $price_source
  * @property Quantity $quantity_reserved
+ * @property Quantity $quantity_picking quantidade em remessas em separação (unidade de venda)
+ * @property Quantity $quantity_return_open quantidade em devoluções abertas (unidade de venda)
  * @property Quantity $quantity_backordered
  * @property Quantity $quantity_cancelled
  * @property Quantity $quantity_shipped
@@ -74,8 +76,22 @@ class OrderItem extends Model
             'quantity_shipped' => AsQuantity::class,
             'quantity_delivered' => AsQuantity::class,
             'quantity_returned' => AsQuantity::class,
+            'quantity_picking' => AsQuantity::class,
+            'quantity_return_open' => AsQuantity::class,
             'line_number' => 'integer',
         ];
+    }
+
+    /** Quantidade ainda sem remessa: nem cancelada, nem expedida, nem em separação. */
+    public function unallocated(): Quantity
+    {
+        return $this->quantity->minus($this->quantity_cancelled)->minus($this->quantity_shipped)->minus($this->quantity_picking);
+    }
+
+    /** Quantidade que ainda pode ser devolvida: entregue, sem devolução nem devolução aberta. */
+    public function returnable(): Quantity
+    {
+        return $this->quantity_delivered->minus($this->quantity_returned)->minus($this->quantity_return_open);
     }
 
     /**

@@ -18,6 +18,8 @@ use App\Models\Ordering\OrderItem;
 use App\Services\Approvals\BudgetLedger;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Credit\CreditLedger;
+use App\Services\Fulfillment\OrderFulfillment;
+use App\Services\Fulfillment\PickingAllocations;
 use App\Services\Inventory\StockLedger;
 use App\Services\Ordering\OrderConfirmation;
 use App\Services\Quotes\QuoteLocks;
@@ -53,6 +55,8 @@ final readonly class CancelOrderItems
         private AuditRecorder $audit,
         private QuoteLocks $quoteLocks,
         private QuoteStockHolds $quoteHolds,
+        private OrderFulfillment $fulfillment,
+        private PickingAllocations $picking,
         private Clock $clock,
     ) {}
 
@@ -117,7 +121,7 @@ final readonly class CancelOrderItems
             $fromReservation = $base->minus($fromBackorder);
 
             $released = $fromReservation->isPositive()
-                ? $this->stock->releaseForOrderItem($item->id, $fromReservation, $reason, 'order', $locked->id)
+                ? $this->stock->releaseForOrderItem($item->id, $fromReservation, $reason, 'order', $locked->id, $this->picking->byWarehouse($item))
                 : Quantity::zero();
 
             $item->forceFill([
@@ -143,6 +147,7 @@ final readonly class CancelOrderItems
         // do crédito (ADR-006); no cancelamento total, todo o consumo restante.
         $this->budgets->reverse($locked, $fullyCancelled ? null : $cancelledValue);
 
+        $this->fulfillment->refresh($locked);
         $locked->forceFill([
             'commercial_status' => $fullyCancelled ? CommercialStatus::Cancelled : CommercialStatus::PartiallyCancelled,
             'cancelled_at' => $fullyCancelled ? $this->clock->now() : $locked->cancelled_at,
@@ -214,7 +219,7 @@ final readonly class CancelOrderItems
 
         if ($quantities === null) {
             foreach ($items as $item) {
-                $open = $item->quantity->minus($item->quantity_cancelled)->minus($item->quantity_shipped);
+                $open = $item->unallocated();
 
                 if ($open->isPositive()) {
                     $requests[] = ['item' => $item, 'quantity' => $open];
@@ -223,10 +228,10 @@ final readonly class CancelOrderItems
         } else {
             foreach ($quantities as $itemId => $quantity) {
                 $item = $items->get(UntrustedId::uuid($itemId, OrderItem::class)) ?? throw new OrderNotCancellable('Item não pertence ao pedido.');
-                $open = $item->quantity->minus($item->quantity_cancelled)->minus($item->quantity_shipped);
+                $open = $item->unallocated();
 
                 if (! $quantity->isPositive() || $quantity->greaterThan($open)) {
-                    throw new OrderNotCancellable("Quantidade a cancelar do item {$item->sku_code} excede o saldo não expedido.", [
+                    throw new OrderNotCancellable("Quantidade a cancelar do item {$item->sku_code} excede o saldo não expedido nem em separação.", [
                         'order_item_id' => $item->id, 'cancellable' => $open->toDatabase(),
                     ]);
                 }

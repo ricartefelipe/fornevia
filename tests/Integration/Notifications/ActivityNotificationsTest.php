@@ -206,3 +206,29 @@ it('não avisa o delegado de quem já decidiu o nível', function (): void {
 
     expect($ids)->toEqualCanonicalizing([$bia->id, $biaDelegate->id]);
 });
+
+it('avisa quem fez o pedido sobre expedição, entrega e ocorrência e a equipe sobre devoluções', function (): void {
+    $order = Fx::place($this->scenario, $this->buyer);
+    $warehouse = $this->scenario->tenant->addStaff(SystemRole::Warehouse);
+    $shipment = Tests\Integration\Fulfillment\FulfillmentFlow::shipAll($this->scenario, $warehouse, $order, '3');
+    Tests\Integration\Fulfillment\FulfillmentFlow::event($this->scenario, $warehouse, $shipment, App\Enums\Fulfillment\ShipmentEventKind::Exception, 'oc-1', description: 'Destinatário ausente');
+    Tests\Integration\Fulfillment\FulfillmentFlow::event($this->scenario, $warehouse, $shipment, App\Enums\Fulfillment\ShipmentEventKind::Delivered, 'oc-2');
+    ($this->drain)();
+
+    $path = "/portal/pedidos/{$order->id}";
+    expect(($this->inbox)($this->buyer['membership']))->toBe([['shipment.shipped', $path], ['shipment.exception', $path], ['shipment.delivered', $path]]);
+
+    $item = Tests\Integration\Fulfillment\FulfillmentFlow::item($this->scenario, $order);
+    $return = $this->scenario->tenant->actingAs($this->buyer['membership'], fn () => app(App\Actions\Fulfillment\Portal\RequestReturn::class)
+        ->handle($order->id, [$item->id => '1'], 'damaged', 'Caixa chegou amassada', (string) Illuminate\Support\Str::uuid7()));
+    ($this->drain)();
+
+    expect(($this->inbox)($warehouse))->toBe([['return.requested', "/devolucoes/{$return->id}"]])
+        ->and(($this->inbox)($this->rep))->not->toContain(['return.requested', "/devolucoes/{$return->id}"]);
+
+    $this->scenario->tenant->actingAs($warehouse, fn () => app(App\Actions\Fulfillment\Staff\DecideReturn::class)->authorize($return->id, $this->scenario->warehouse->id, false, null));
+    $this->scenario->tenant->actingAs($warehouse, fn () => app(App\Actions\Fulfillment\Staff\ReceiveReturn::class)->receive($return->id, []));
+    ($this->drain)();
+
+    expect(collect(($this->inbox)($this->buyer['membership']))->pluck(0)->slice(-2)->values()->all())->toBe(['return.decided', 'return.closed']);
+});

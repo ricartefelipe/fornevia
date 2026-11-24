@@ -53,16 +53,16 @@ it('monta o menu da equipe conforme as permissões do papel', function (SystemRo
 })->with([
     'proprietário' => [SystemRole::Owner, [
         'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index',
-        'finance.index', 'audit.index', 'team.index', 'branches.index', 'subscription.show',
+        'fulfillment.index', 'returns.index', 'finance.index', 'audit.index', 'team.index', 'branches.index', 'subscription.show',
     ]],
     'administrador' => [SystemRole::Admin, [
         'dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index',
-        'finance.index', 'audit.index', 'team.index', 'branches.index',
+        'fulfillment.index', 'returns.index', 'finance.index', 'audit.index', 'team.index', 'branches.index',
     ]],
     'representante comercial' => [SystemRole::SalesRep, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index']],
-    'estoque e expedição' => [SystemRole::Warehouse, ['dashboard', 'catalog.products', 'orders.index', 'inventory.index']],
-    'financeiro e crédito' => [SystemRole::Finance, ['dashboard', 'buyers.index', 'orders.index', 'credit.index', 'finance.index', 'audit.index']],
-    'consulta' => [SystemRole::Viewer, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index', 'finance.index']],
+    'estoque e expedição' => [SystemRole::Warehouse, ['dashboard', 'catalog.products', 'orders.index', 'inventory.index', 'fulfillment.index', 'returns.index']],
+    'financeiro e crédito' => [SystemRole::Finance, ['dashboard', 'buyers.index', 'orders.index', 'credit.index', 'returns.index', 'finance.index', 'audit.index']],
+    'consulta' => [SystemRole::Viewer, ['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'credit.index', 'fulfillment.index', 'returns.index', 'finance.index']],
 ]);
 
 it('monta o menu do portal conforme as permissões do papel do comprador', function (SystemRole $role, array $expected): void {
@@ -72,11 +72,11 @@ it('monta o menu do portal conforme as permissões do papel do comprador', funct
 })->with([
     'administrador da empresa' => [SystemRole::BuyerAdmin, [
         'portal.home', 'portal.catalog', 'portal.cart', 'portal.quick-order', 'portal.lists', 'portal.quotes',
-        'portal.approvals', 'portal.approval-rules', 'portal.delegations', 'portal.orders', 'portal.budgets', 'portal.users',
+        'portal.approvals', 'portal.approval-rules', 'portal.delegations', 'portal.orders', 'portal.returns', 'portal.budgets', 'portal.users',
     ]],
-    'comprador' => [SystemRole::Purchaser, ['portal.home', 'portal.catalog', 'portal.cart', 'portal.quick-order', 'portal.lists', 'portal.quotes', 'portal.orders']],
-    'solicitante' => [SystemRole::Requester, ['portal.home', 'portal.catalog', 'portal.cart', 'portal.quick-order', 'portal.lists', 'portal.quotes', 'portal.orders']],
-    'aprovador' => [SystemRole::Approver, ['portal.home', 'portal.catalog', 'portal.approvals', 'portal.delegations', 'portal.orders']],
+    'comprador' => [SystemRole::Purchaser, ['portal.home', 'portal.catalog', 'portal.cart', 'portal.quick-order', 'portal.lists', 'portal.quotes', 'portal.orders', 'portal.returns']],
+    'solicitante' => [SystemRole::Requester, ['portal.home', 'portal.catalog', 'portal.cart', 'portal.quick-order', 'portal.lists', 'portal.quotes', 'portal.orders', 'portal.returns']],
+    'aprovador' => [SystemRole::Approver, ['portal.home', 'portal.catalog', 'portal.approvals', 'portal.delegations', 'portal.orders', 'portal.returns']],
 ]);
 
 it('reflete o ajuste de permissões feito pelo tenant em um papel', function (): void {
@@ -89,7 +89,7 @@ it('reflete o ajuste de permissões feito pelo tenant em um papel', function ():
         ])->save();
     });
 
-    expect(($this->menuFor)($membership))->toBe(['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index']);
+    expect(($this->menuFor)($membership))->toBe(['dashboard', 'buyers.index', 'catalog.products', 'pricing.lists', 'quotes.index', 'orders.index', 'inventory.index', 'fulfillment.index', 'returns.index']);
 });
 
 it('não exibe itens de navegação sem contexto ativo', function (): void {

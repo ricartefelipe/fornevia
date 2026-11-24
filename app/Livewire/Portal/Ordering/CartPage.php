@@ -17,12 +17,17 @@ use App\Data\Ordering\Portal\CheckoutChoices;
 use App\Data\Quotes\RequestQuoteData;
 use App\Domain\Approvals\ApprovalContext;
 use App\Domain\Approvals\BudgetPosition;
+use App\Domain\Fulfillment\FreightQuote;
+use App\Domain\Ordering\DocumentTotals;
 use App\Domain\Ordering\Exceptions\CartAlreadyConverted;
 use App\Domain\Ordering\Exceptions\InvalidCartItem;
 use App\Domain\Shared\BusinessRuleViolation;
 use App\Enums\Identity\Permission;
+use App\Models\Buyers\BuyerAddress;
+use App\Models\Buyers\BuyerCompany;
 use App\Services\Approvals\ApprovalRuleResolver;
 use App\Services\Approvals\BudgetLedger;
+use App\Services\Fulfillment\FreightQuoter;
 use App\Support\Auth\Access;
 use App\Support\Clock\Clock;
 use App\Support\Idempotency\IdempotencyKeyReused;
@@ -265,10 +270,12 @@ final class CartPage extends Component
     public function render(CurrentCart $current, CheckoutOptions $options, Access $access): View
     {
         $cart = $current->handle();
+        [$totals, $freight] = $this->withFreight($cart);
 
-        // Carrinho e total desta exibição: a confirmação só vale para eles.
+        // Carrinho e total desta exibição (com o frete do endereço escolhido):
+        // a confirmação só vale para eles.
         $this->displayedCartId = $cart->cartId;
-        $this->displayedTotalCents = $cart->isReady() ? $cart->totals?->total->cents : null;
+        $this->displayedTotalCents = $cart->isReady() ? $totals?->total->cents : null;
 
         foreach ($cart->lines as $line) {
             $this->quantities[$line->cartItemId] ??= $line->quantity->format();
@@ -279,10 +286,12 @@ final class CartPage extends Component
 
         return view('livewire.portal.ordering.cart-page', [
             'cart' => $cart,
+            'totals' => $totals,
+            'freight' => $freight,
             'choices' => $choices,
             'canPlace' => $access->can(Permission::PortalOrdersPlace),
             'canQuote' => $access->can(Permission::PortalQuotes),
-            'approval' => $cart->isReady() ? $this->approvalPreview($cart, $choices, $costCenterId, $access) : null,
+            'approval' => $cart->isReady() && $totals !== null ? $this->approvalPreview($cart, $totals, $choices, $costCenterId, $access) : null,
             'budget' => $costCenterId !== null ? $this->budgetPosition($costCenterId) : null,
         ]);
     }
@@ -293,12 +302,12 @@ final class CartPage extends Component
      *
      * @return array{rule: string, levels: int}|null
      */
-    private function approvalPreview(CartView $cart, CheckoutChoices $choices, ?string $costCenterId, Access $access): ?array
+    private function approvalPreview(CartView $cart, DocumentTotals $totals, CheckoutChoices $choices, ?string $costCenterId, Access $access): ?array
     {
         $membership = $access->membershipOrNull();
         $companyId = $access->buyerCompanyId();
 
-        if ($cart->totals === null || $membership === null || $companyId === null) {
+        if ($membership === null || $companyId === null) {
             return null;
         }
 
@@ -313,7 +322,7 @@ final class CartPage extends Component
             ->all();
 
         $rule = app(ApprovalRuleResolver::class)->resolve($companyId, new ApprovalContext(
-            total: $cart->totals->total,
+            total: $totals->total,
             costCenterId: $costCenterId,
             buyerUnitId: $this->unitId !== '' && $choices->hasUnit($this->unitId) ? strtolower($this->unitId) : null,
             categoryIds: array_values($categoryIds),
@@ -321,6 +330,34 @@ final class CartPage extends Component
         ));
 
         return $rule === null ? null : ['rule' => $rule->name, 'levels' => $rule->levels->count()];
+    }
+
+    /**
+     * Totais com o frete do distribuidor para o endereço escolhido (o mesmo
+     * cálculo do checkout, ADR-027).
+     *
+     * @return array{0: DocumentTotals|null, 1: FreightQuote|null}
+     */
+    private function withFreight(CartView $cart): array
+    {
+        $companyId = app(Access::class)->buyerCompanyId();
+
+        if ($cart->totals === null || $companyId === null) {
+            return [$cart->totals, null];
+        }
+
+        $buyer = BuyerCompany::query()->find($companyId);
+        $state = $this->shippingAddressId !== '' && Str::isUuid($this->shippingAddressId)
+            ? BuyerAddress::query()->whereKey($this->shippingAddressId)->where('is_active', true)->value('state')
+            : null;
+
+        if ($buyer === null) {
+            return [$cart->totals, null];
+        }
+
+        $freight = app(FreightQuoter::class)->quote($buyer, is_string($state) ? $state : null, $cart->totals->itemsNet());
+
+        return [$cart->totals->withFreight($freight->amount), $freight];
     }
 
     /**

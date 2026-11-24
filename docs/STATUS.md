@@ -386,3 +386,53 @@ outbox); a disponibilidade exibida sem reserva é só uma consulta.
 
 Limitações registradas: sem push ou SMS; o e-mail usa o modelo padrão do
 framework; sem agrupamento de avisos repetidos.
+
+## Incremento 8 — Expedição, entrega, devoluções e frete (`feature/expedicao-devolucoes`)
+
+### Implementado
+
+- Remessas por pedido e depósito: separação limitada ao que falta separar e
+  à reserva do depósito, conferência por item, expedição que consome a
+  reserva (físico e reservado juntos) com transportadora e rastreamento, e
+  cancelamento da separação (RF-090, RN-073).
+- Entrega e ocorrências por eventos únicos por identificador externo, com
+  situação que só avança; situação de atendimento do pedido calculada pelos
+  itens (RN-090, RN-091).
+- Reserva do saldo sob encomenda quando o estoque chega (RN-072).
+- Devoluções: pedido no portal sobre o entregue, autorização ou recusa,
+  recebimento e inspeção, com retorno ao disponível só do aprovado e valor
+  a devolver registrado (RF-091).
+- Frete do distribuidor por regra da UF, com isenção por subtotal, ou por
+  condição negociada, calculado no carrinho e no checkout e recalculado na
+  reavaliação da aprovação (RF-092).
+- Telas da equipe (expedição, remessa, devoluções, frete) e do portal
+  (entregas no pedido, devoluções); avisos de expedição, entrega,
+  ocorrência e devolução.
+- Defesa no banco: somas por item por CHECK, triggers da remessa, tabelas
+  somente leitura no contexto de comprador.
+
+### Verificado
+
+| Verificação | Resultado |
+|---|---|
+| Testes de expedição, devolução, frete, notificações, telas e concorrência | 43 testes aprovados; os 6 de regressão da revisão falham sem a correção correspondente |
+| Concorrência | 2 cenários com processos separados; sem o lock do pedido na remessa, a expedição dupla é detectada |
+| Migrations (fresh, rollback, migrate) com o papel de manutenção | sem erro |
+| PHPStan nível 8 e Pint | sem erros |
+| Suíte completa na CI do PR #15, commit `db6ba1d` | 2.230 testes e 10.878 asserções aprovados; cobertura de linhas total 94,8%, núcleo 97,57%, caminhos críticos 100%; migrations, imagem, segredos e frontend aprovados |
+
+### Defeitos encontrados pela revisão (corrigidos)
+
+- Cancelamento de itens podia liberar a reserva de que uma remessa em
+  separação dependia, impedindo a expedição.
+- Inspeção pré-preenchida com zero aprovado na mesma tela do recebimento.
+- Devolução pedida por colega invisível para quem fez o pedido.
+- Expedição sem reserva com erro interno em vez de mensagem.
+- Devolução fechada sem recebimento sem aviso ao comprador.
+- Frete não recalculado quando a reavaliação reprecifica os itens.
+
+Limitações registradas: eventos de transportadora entram pela tela da
+equipe (o recebimento por webhook fica para o incremento de integrações);
+o valor a devolver é registrado para o financeiro, sem estorno automático
+(incremento financeiro); o SonarCloud aponta `require` no registro de
+cenários de concorrência, onde o valor de retorno do arquivo é necessário.
