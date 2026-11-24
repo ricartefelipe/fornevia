@@ -574,3 +574,28 @@ commit, uma vez por notificação criada, para e-mail confirmado e pessoa
 ativa, salvo preferência desligada no contexto (`notification_settings`).
 A central fica em `/notificacoes` (equipe) e `/portal/notificacoes`
 (portal), com a contagem de não lidas no cabeçalho.
+
+## 13. Expedição, entrega, devoluções e frete
+
+Remessas, eventos e devoluções seguem a ADR-027:
+
+| Etapa | Quem | Garantia |
+|---|---|---|
+| Separação | `fulfillment.manage` | quantidade até o que falta separar (pedido − cancelado − expedido − em separação) e até a reserva ativa do item no depósito, descontadas as outras separações do mesmo depósito; número `EXP-` por distribuidor |
+| Conferência | `fulfillment.manage` | quantidade conferida por item, de zero até a separada; só o conferido é expedido |
+| Expedição | `fulfillment.manage` | sob o lock do pedido e da remessa, consome as reservas do depósito (`shipment` baixa físico e reservado), soma o expedido e grava transportadora e rastreamento; a remessa expedida não volta a ser expedida |
+| Entrega e ocorrências | `fulfillment.manage` ou transportadora | evento único por identificador externo; a situação só avança de expedida para entregue; evento repetido ou fora de ordem fica no histórico sem efeito |
+| Encomenda | `fulfillment.manage` | o saldo sob encomenda é reservado na medida do disponível quando o estoque chega |
+| Devolução | comprador com `portal.orders.place`, equipe com `returns.manage` | pedido sobre o entregue sem devolução aberta; autorização com depósito e inspeção, ou recusa; o recebido conta como devolvido; só o aprovado na inspeção volta ao disponível (`return_receipt`); valor a devolver registrado |
+| Frete | `pricing.manage` | condição negociada da empresa ou regra ativa de maior prioridade para a UF de entrega, com isenção por subtotal; calculado no servidor no carrinho e no checkout; mantido na reavaliação da aprovação |
+
+No banco, os CHECKs dos itens do pedido garantem cancelado + expedido + em
+separação ≤ pedido, entregue ≤ expedido e devolvido + em devolução ≤
+entregue; triggers impedem regressão da remessa e alteração de itens fora
+da separação. Remessas, eventos, devoluções e frete são somente leitura no
+contexto de comprador. A ordem de locks é pedido → remessa ou devolução →
+itens → saldos → reservas → contador.
+
+Avisos (ADR-026): quem fez o pedido recebe expedição, entrega e
+ocorrências; quem opera devoluções recebe cada nova devolução; o
+solicitante recebe a análise e a conclusão com o valor a devolver.

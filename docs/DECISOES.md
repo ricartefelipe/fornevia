@@ -651,3 +651,53 @@ caminho normal; a entrega continua pelo menos uma vez, e a idempotência
 fica no consumidor. Calcular destinatários no consumo evita notificar quem
 perdeu a permissão, e a tabela de notificações do próprio sistema mantém o
 isolamento por tenant e por pessoa.
+
+---
+
+## ADR-027 — Remessas que consomem a reserva, entrega por eventos idempotentes, devolução com inspeção e frete explícito
+
+**Status:** aceita
+
+**Decisão.**
+- A remessa pertence a um pedido confirmado e a um depósito. Nasce em
+  separação, com itens e quantidades; a conferência registra a quantidade
+  conferida de cada item; a expedição grava transportadora e rastreamento.
+- Na expedição, sob o lock do pedido e dos saldos (ADR-006), a quantidade
+  conferida consome as reservas ativas do item naquele depósito
+  (movimento `shipment`, que baixa físico e reservado juntos). Quantidade
+  sob encomenda sem reserva precisa ser reservada antes, pelo caminho
+  normal da reserva. A remessa expedida não volta a ser expedida (situação
+  e trigger) e o pedido passa a parcialmente expedido ou expedido.
+- A soma das remessas não canceladas de um item nunca passa do pedido
+  menos o cancelado (trigger), e o cancelamento de itens só alcança o que
+  ainda não está em remessa.
+- Entrega e ocorrências chegam como eventos da remessa, com identificador
+  externo único por remessa: evento repetido é ignorado. A situação só
+  avança (expedida → entregue); evento mais antigo que o último aplicado
+  fica no histórico sem mudar a situação. A entrega soma a quantidade
+  entregue de cada item.
+- Devolução é pedida pelo comprador sobre o que foi entregue (descontado o
+  que já está em devolução aberta), autorizada ou recusada pela equipe,
+  recebida no depósito e, quando a inspeção é exigida, só volta ao
+  disponível depois de aprovada (movimento `return_receipt`). Item
+  reprovado não volta ao estoque. O valor a devolver fica registrado para o
+  financeiro.
+- Frete é explícito no pedido (`freight_cents`), calculado no checkout por
+  regra do distribuidor (por UF do endereço de entrega, com valor fixo e
+  isenção a partir de um subtotal) ou por condição negociada da empresa
+  compradora (isento ou valor fixo), e exibido como frete do distribuidor,
+  nunca como cotação de transportadora. Pedido de cotação usa o frete da
+  proposta (zero quando não negociado).
+- Tabelas de expedição e devolução são somente leitura no contexto de
+  comprador (ADR-024); o pedido de devolução do comprador é gravado no
+  contexto de sistema do mesmo usuário.
+
+**Motivo.** RN-073 exige que a expedição consuma a reserva e reduza o
+físico atomicamente, sem duplicidade; consumir a reserva no ledger mantém
+um único saldo verdadeiro (ADR-005). RN-090 é garantida no banco pelos
+CHECKs por item e pelas somas das remessas. Eventos de transportadora
+chegam repetidos e fora de ordem (RN-091): identificador único e avanço
+monotônico da situação evitam regressões. A inspeção antes do retorno ao
+disponível (RF-091) impede vender item avariado. O frete calculado no
+servidor e rotulado como do distribuidor atende RF-092 sem prometer preço
+de transportadora.

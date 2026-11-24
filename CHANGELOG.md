@@ -15,12 +15,27 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   comercial, aprovação interna e pedidos, para quem precisa agir, nunca
   para quem causou o evento; central de notificações na equipe e no
   portal, com contagem no cabeçalho e preferência de e-mail por contexto.
+- Expedição: separação por depósito limitada à reserva, conferência,
+  expedição parcial com transportadora e rastreamento consumindo a reserva,
+  entrega e ocorrências por eventos idempotentes e reserva do saldo sob
+  encomenda; telas da equipe e entregas no pedido do portal.
+- Devoluções: pedido pelo comprador sobre o entregue, autorização ou recusa,
+  recebimento e inspeção, com retorno ao estoque só do aprovado e valor a
+  devolver registrado.
+- Frete do distribuidor por regra da UF, com isenção por subtotal, ou por
+  condição negociada da empresa, calculado no carrinho e no checkout.
 
 ### Segurança
 
 - Notificações visíveis só à própria pessoa, criadas apenas no contexto de
   sistema, com link sempre interno; preferência de e-mail gravável só para
   a própria associação.
+- Remessas, eventos de transporte, devoluções e frete somente leitura no
+  contexto de comprador; somas por item garantidas por CHECK no banco.
+
+### Alterado
+
+- O cancelamento de itens do pedido não alcança o que está em separação.
 
 ## [0.2.0] - 2026-11-23
 
