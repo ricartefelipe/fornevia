@@ -729,13 +729,26 @@ de transportadora.
   sob o lock do pagamento antes de qualquer chamada ao gateway. A soma dos
   pendentes e efetivados nunca passa do pago, por regra e por CHECK
   (RN-101). Efetivado, o valor volta a ser devido na parcela.
-- O gateway é escolhido por distribuidor: simulador local ou Asaas, com a
-  chave cifrada e o hash do token do webhook. A cobrança é gravada antes de
-  chamar o gateway, com o próprio id como referência externa. O Asaas é
-  consultado pela referência antes de criar e de novo quando a criação
-  esgota o tempo: timeout depois de criada não gera outra cobrança (RF-101).
-  Gateway indisponível deixa a cobrança pendente, que a conciliação
-  agendada cria ou aplica depois.
+- O gateway é escolhido por distribuidor: Asaas ou, só fora de produção, o
+  simulador local. A chave fica cifrada e o token do webhook, só como hash.
+  Cada pagamento continua no gateway que o criou: reembolso, cancelamento e
+  conciliação usam esse gateway, e o token vale mesmo com outro ativo.
+- A cobrança pendente é gravada na transação da requisição, com o próprio id
+  como referência externa. A chamada ao gateway roda num job depois do
+  commit, sem segurar locks. O Asaas é consultado pela referência antes de
+  criar e de novo quando a criação esgota o tempo: timeout depois de criada
+  não gera outra cobrança (RF-101). Gateway indisponível deixa o pagamento
+  pendente com o motivo, e a conciliação cria a cobrança ou aplica a
+  situação depois.
+- Uma cobrança pendente por parcela, do saldo em aberto e na forma escolhida.
+  Mudou o saldo ou a forma, ela é cancelada aqui e no gateway. Vencida
+  continua pendente, porque ainda pode ser paga. Juros e multa recebidos
+  entram como ajuste da parcela. O que for pago além do saldo, ou numa
+  parcela já quitada, fica como valor não aplicado, reembolsável sem reabrir
+  a parcela.
+- O reembolso pelo gateway também roda em job depois do commit. Recusado,
+  a reserva é desfeita; sem resposta, fica em verificação com a reserva
+  mantida, até a equipe concluir depois de conferir no painel do gateway.
 - Cartão é pago na página do gateway; nenhum dado de cartão chega ao
   Fornevia (RS-100).
 - Eventos recebidos (webhook do Asaas, autenticado pelo token do
