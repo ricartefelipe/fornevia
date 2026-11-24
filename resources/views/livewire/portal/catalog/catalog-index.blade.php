@@ -45,9 +45,9 @@
                             <div class="flex gap-4">
                                 @if ($product->thumbnail)
                                     <img src="{{ route('portal.media.download', $product->thumbnail->id) }}" alt="" width="80" height="80" loading="lazy"
-                                        class="h-20 w-20 shrink-0 rounded-md border border-slate-200 object-cover">
+                                        class="h-20 w-20 shrink-0 rounded-xl border border-slate-200 object-cover">
                                 @else
-                                    <div class="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-center text-xs text-slate-500" aria-hidden="true">Sem imagem</div>
+                                    <div class="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-brand-50 to-brand-100 text-brand-400 ring-1 ring-brand-100" aria-hidden="true"><x-ui.icon name="photo" class="size-8" /></div>
                                 @endif
                                 <div class="min-w-0">
                                     <h2 id="produto-{{ $product->id }}" class="font-semibold text-slate-900">

@@ -10,22 +10,27 @@
 <body class="h-full">
     <a href="#conteudo" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:rounded focus:bg-white focus:px-3 focus:py-2">Ir para o conteúdo</a>
     <div class="flex min-h-full">
-        <aside class="hidden w-2/5 flex-col justify-between bg-brand-900 p-12 text-brand-50 lg:flex">
-            <div>
-                <p class="text-2xl font-bold tracking-tight">Fornevia</p>
-                <p class="mt-2 text-sm text-brand-200">Vendas B2B para distribuidores e atacadistas</p>
+        <aside class="fv-hero relative hidden w-[44%] flex-col justify-between overflow-hidden p-12 text-brand-50 lg:flex">
+            @include('layouts.partials.brand', ['subtitle' => 'Vendas B2B para distribuidores e atacadistas'])
+            <div class="relative">
+                <p class="max-w-md text-3xl font-semibold leading-tight tracking-tight text-white">Toda a venda B2B do distribuidor em um só lugar.</p>
+                <ul class="mt-8 space-y-4 text-sm text-brand-100">
+                    <li class="flex gap-3"><x-ui.icon name="tag" class="size-5 shrink-0 text-accent-500" /> Catálogo e preços próprios para cada cliente empresarial.</li>
+                    <li class="flex gap-3"><x-ui.icon name="badge-check" class="size-5 shrink-0 text-accent-500" /> Cotações negociadas, aprovações por alçada e pedidos com reserva de estoque.</li>
+                    <li class="flex gap-3"><x-ui.icon name="card" class="size-5 shrink-0 text-accent-500" /> Crédito comercial, expedição, devoluções e recebimentos no mesmo fluxo.</li>
+                </ul>
             </div>
-            <ul class="space-y-3 text-sm text-brand-100">
-                <li>Catálogo e preços próprios para cada cliente empresarial.</li>
-                <li>Cotações negociadas, aprovações por alçada e pedidos com reserva de estoque.</li>
-                <li>Crédito comercial, expedição, devoluções e recebimentos no mesmo lugar.</li>
-            </ul>
+            <p class="relative text-xs text-brand-200/70">Cada distribuidor com seus dados isolados e protegidos.</p>
         </aside>
-        <main id="conteudo" class="flex flex-1 items-center justify-center px-6 py-12">
+        <main id="conteudo" class="flex flex-1 items-center justify-center bg-linear-to-b from-white to-brand-50/60 px-6 py-12">
             <div class="w-full max-w-md">
-                <p class="mb-8 text-xl font-bold text-brand-800 lg:hidden">Fornevia</p>
+                <div class="mb-8 lg:hidden">
+                    <span class="inline-flex items-center gap-2 text-xl font-semibold text-brand-800">
+                        <span class="flex size-8 items-center justify-center rounded-lg bg-linear-to-br from-brand-500 to-accent-500 text-base font-bold text-white" aria-hidden="true">F</span> Fornevia
+                    </span>
+                </div>
                 <x-ui.flash />
-                <div class="mt-4">{{ $slot }}</div>
+                <div class="mt-4 rounded-3xl border border-slate-200/80 bg-white p-8 shadow-xl shadow-brand-900/5">{{ $slot }}</div>
             </div>
         </main>
     </div>
