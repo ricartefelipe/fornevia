@@ -10,6 +10,10 @@ if [ -z "${APP_KEY:-}" ]; then
     exit 1
 fi
 
+# storage/framework pode ser um tmpfs vazio (sistema de arquivos somente
+# leitura, compose.prod.yaml): recria a estrutura esperada pelo Laravel.
+mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache
+
 php artisan optimize --no-interaction >/dev/null
 
 exec "$@"
