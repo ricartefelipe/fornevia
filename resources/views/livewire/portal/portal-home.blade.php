@@ -1,6 +1,29 @@
 <div>
     <x-ui.page-header :title="$company->trade_name" :description="'Compras com as condições negociadas com '.$membership->tenant->trade_name.'.'" />
 
+    @inject('menu', 'App\Support\Navigation\Menu')
+    @php($shortcuts = collect($menu->items())->keyBy('route'))
+    @php($tiles = [
+        ['portal.catalog', 'squares', 'Catálogo', 'Produtos e preços negociados'],
+        ['portal.quick-order', 'bolt', 'Pedido rápido', 'Pelo código do SKU'],
+        ['portal.cart', 'cart', 'Carrinho', 'Revise e confirme o pedido'],
+        ['portal.orders', 'bag', 'Pedidos', 'Acompanhe entregas e faturas'],
+    ])
+    <nav aria-label="Atalhos" class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        @foreach ($tiles as [$route, $icon, $label, $hint])
+            @if ($shortcuts->has($route))
+                <a href="{{ route($route) }}" class="fv-card group flex items-center gap-4 p-5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-lg hover:shadow-brand-900/5">
+                    <span class="fv-kpi-icon"><x-ui.icon :name="$icon" /></span>
+                    <span class="min-w-0 flex-1">
+                        <span class="block font-semibold text-slate-900">{{ $label }}</span>
+                        <span class="block text-sm text-slate-500">{{ $hint }}</span>
+                    </span>
+                    <x-ui.icon name="arrow-right" class="size-5 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-500" />
+                </a>
+            @endif
+        @endforeach
+    </nav>
+
     <div class="grid gap-4 sm:grid-cols-2">
         <section class="fv-card p-5" aria-labelledby="portal-company">
             <h2 id="portal-company" class="text-sm font-semibold text-slate-700">Sua empresa</h2>
