@@ -79,6 +79,15 @@ kubectl rollout status deployment/redis --timeout=120s
 echo "==> Instalação do chart"
 helm install "$RELEASE" "$CHART" -f "$CHART/ci/local-values.yaml" --set image.app.tag="$TAG",image.web.tag="$TAG" \
     --wait --timeout 10m
+# Com HPA, o Deployment nasce sem réplicas fixas: espera o mínimo de 2.
+for component in app web; do
+    for _ in $(seq 1 90); do
+        [ "$(kubectl get "deploy/${RELEASE}-fornevia-$component" -o jsonpath='{.status.readyReplicas}')" -ge 2 ] 2>/dev/null && break
+        sleep 2
+    done
+    [ "$(kubectl get "deploy/${RELEASE}-fornevia-$component" -o jsonpath='{.status.readyReplicas}')" -ge 2 ] \
+        || { echo "$component sem 2 réplicas prontas." >&2; exit 1; }
+done
 kubectl get pods -o wide
 kubectl run prober --image="$REDIS_IMAGE" --restart=Never --command -- sleep 3600 >/dev/null
 kubectl wait --for=condition=Ready pod/prober --timeout=60s >/dev/null

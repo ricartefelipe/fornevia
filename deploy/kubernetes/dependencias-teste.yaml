@@ -39,7 +39,8 @@ spec:
             - {name: data, mountPath: /var/lib/postgresql}
       volumes:
         - name: init
-          configMap: {name: fornevia-teste-db-init}
+          # Executável, como no compose: o entrypoint roda o script em processo próprio.
+          configMap: {name: fornevia-teste-db-init, defaultMode: 0755}
         - name: data
           emptyDir: {}
 ---
