@@ -5,6 +5,17 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Chart Helm para Kubernetes (`deploy/helm/fornevia`) com alta
+  disponibilidade: réplicas e autoescala do PHP-FPM e do nginx, Horizon e
+  relay da outbox com duas réplicas, migrations em Job antes de cada
+  atualização, PodDisruptionBudget, distribuição entre nós e contêineres
+  sem root com raiz somente leitura.
+- Teste do chart em cluster local (`scripts/k8s-smoke.sh`), com perda de pod
+  e atualização sob requisições contínuas, e runbook de operação em
+  Kubernetes.
+
 ## [1.1.0] - 2026-11-24
 
 ### Adicionado

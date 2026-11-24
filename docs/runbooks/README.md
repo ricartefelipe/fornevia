@@ -1,7 +1,8 @@
 # Runbooks de operação
 
-Procedimentos para operar o Fornevia em produção com `compose.prod.yaml`.
-Comandos assumem o alias:
+Procedimentos para operar o Fornevia em produção com `compose.prod.yaml`
+(um único host) ou com o chart Helm em Kubernetes (alta disponibilidade).
+Comandos do compose assumem o alias:
 
 ```bash
 alias fv='docker compose -f compose.prod.yaml --env-file .env.production'
@@ -16,6 +17,7 @@ alias fv='docker compose -f compose.prod.yaml --env-file .env.production'
 | [Gateway de pagamento](gateway-pagamentos.md) | Asaas indisponível, cobrança ausente, reembolso em verificação |
 | [Alertas e métricas](alertas.md) | configurar a coleta e responder a cada alerta |
 | [Dados de demonstração](dados-demonstracao.md) | ambiente de homologação ou apresentação |
+| [Kubernetes com Helm](kubernetes.md) | implantação com alta disponibilidade, atualização sem indisponibilidade, volta de versão |
 
 Princípios:
 
