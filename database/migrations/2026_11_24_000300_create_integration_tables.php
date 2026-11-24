@@ -57,15 +57,15 @@ return new class extends Migration
             $table->timestampTz('expires_at')->nullable()->index();
             $table->timestampsTz();
         });
-        // RLS sem FORCE: a aplicação só vê os tokens do próprio tenant, fora do
-        // contexto de comprador; a autenticação, que acontece antes de haver
-        // contexto, usa a função abaixo (do dono da tabela), que devolve só o
-        // necessário para conferir o token pelo id.
-        DB::statement('alter table personal_access_tokens enable row level security');
-        DB::statement('create policy tenant_isolation on personal_access_tokens as permissive for all
-            using (tenant_id = app_current_tenant()) with check (tenant_id = app_current_tenant())');
+        // RLS forçado como nas demais tabelas: a aplicação só vê os tokens do
+        // próprio tenant, fora do contexto de comprador. A autenticação, que
+        // acontece antes de haver contexto, usa a função abaixo (security
+        // definer, do papel de manutenção), que devolve só o necessário para
+        // conferir o token pelo id; só esse papel tem leitura sem tenant.
+        TenantSchema::enableRowLevelSecurity('personal_access_tokens');
         DB::statement("create policy internal_only on personal_access_tokens as restrictive for all to {$app}
             using (app_sees_all_buyers()) with check (app_sees_all_buyers())");
+        DB::statement('create policy token_lookup on personal_access_tokens as permissive for select to current_user using (true)');
         DB::unprepared(<<<'SQL'
             create or replace function api_token_find(p_id bigint)
                 returns table (id bigint, tenant_id uuid, tokenable_id uuid, token varchar, abilities text, expires_at timestamptz)
