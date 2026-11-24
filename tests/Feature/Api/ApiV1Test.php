@@ -103,3 +103,37 @@ it('limita as requisições por cliente', function (): void {
 
     ($this->api)('GET', '/orders')->assertStatus(429)->assertJsonPath('error.code', 'too_many_requests');
 });
+
+it('exige data e hora ISO 8601 com fuso, recusando textos relativos', function (string $value): void {
+    $shipment = S::shipAll($this->scenario, $this->scenario->tenant->addStaff(SystemRole::Warehouse), $this->order, '4');
+
+    ($this->api)('POST', "/shipments/{$shipment->id}/events", ['external_id' => 'TRK-9', 'kind' => 'in_transit', 'occurred_at' => $value])
+        ->assertUnprocessable()->assertJsonStructure(['error' => ['fields' => ['occurred_at']]]);
+    ($this->api)('GET', '/orders?updated_since='.urlencode($value))->assertUnprocessable();
+})->with(['now', 'yesterday', '+1 hour', '2026-11-24 10:00', '2026-11-24T10:00:00', '2026-02-30T10:00:00Z', '2026-11-24T25:00:00Z']);
+
+it('aceita data e hora ISO 8601 com fuso no filtro de alteração', function (): void {
+    ($this->api)('GET', '/orders?updated_since='.urlencode('2000-01-01T00:00:00-03:00'))->assertOk()->assertJsonPath('data.0.number', $this->order->number);
+    ($this->api)('GET', '/orders?updated_since=2099-01-01T00:00:00Z')->assertOk()->assertJsonCount(0, 'data');
+});
+
+it('registra o último uso no máximo uma vez por minuto, mesmo em resposta de erro', function (): void {
+    $lastUsed = fn (): array => $this->scenario->system(fn (): array => [
+        (string) Illuminate\Support\Facades\DB::table('api_clients')->value('last_used_at'),
+        (string) Illuminate\Support\Facades\DB::table('personal_access_tokens')->value('last_used_at'),
+    ]);
+    $start = now()->toImmutable();
+
+    app()->instance(Clock::class, new FrozenClock($start));
+    ($this->api)('GET', '/orders?cor=azul')->assertUnprocessable();
+    $first = $lastUsed();
+    expect($first[0])->not->toBe('')->and($first[1])->not->toBe('');
+
+    app()->instance(Clock::class, new FrozenClock($start->addSeconds(30)));
+    ($this->api)('GET', '/orders')->assertOk();
+    expect($lastUsed())->toBe($first);
+
+    app()->instance(Clock::class, new FrozenClock($start->addMinutes(2)));
+    ($this->api)('GET', '/orders')->assertOk();
+    expect($lastUsed()[0])->not->toBe($first[0])->and($lastUsed()[1])->not->toBe($first[1]);
+});

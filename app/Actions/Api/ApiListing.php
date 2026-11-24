@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Api;
 
+use App\Support\Integrations\Iso8601;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
@@ -81,7 +82,7 @@ final class ApiListing
     {
         return match (true) {
             $rule === 'uuid' => \Illuminate\Support\Str::isUuid($value),
-            $rule === 'datetime' => strtotime($value) !== false && preg_match('/^\d{4}-\d{2}-\d{2}/', $value) === 1,
+            $rule === 'datetime' => Iso8601::parse($value) !== null,
             $rule === 'string' => true,
             str_starts_with($rule, 'enum:') => in_array($value, explode('|', substr($rule, 5)), true),
             default => false,

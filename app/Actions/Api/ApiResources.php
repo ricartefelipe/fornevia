@@ -18,7 +18,7 @@ use App\Models\Ordering\Order;
 use App\Models\Ordering\OrderItem;
 use App\Support\Auth\Access;
 use App\Support\Http\UntrustedId;
-use Carbon\CarbonImmutable;
+use App\Support\Integrations\Iso8601;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\ValidationException;
 
@@ -49,7 +49,7 @@ final readonly class ApiResources
         $orders = Order::query()
             ->when(isset($filters['commercial_status']), static fn ($q) => $q->where('commercial_status', $filters['commercial_status']))
             ->when(isset($filters['buyer_company_id']), static fn ($q) => $q->where('buyer_company_id', $filters['buyer_company_id']))
-            ->when(isset($filters['updated_since']), static fn ($q) => $q->where('updated_at', '>=', CarbonImmutable::parse($filters['updated_since'])))
+            ->when(isset($filters['updated_since']), static fn ($q) => $q->where('updated_at', '>=', Iso8601::parse($filters['updated_since'])))
             ->orderBy('created_at')->orderBy('id');
 
         return self::page(ApiListing::paginate($orders, $query), fn (Order $order): array => $this->order($order, false));
@@ -107,7 +107,7 @@ final readonly class ApiResources
 
         $buyers = BuyerCompany::query()
             ->when(isset($filters['document']), static fn ($q) => $q->where('document', preg_replace('/\D/', '', $filters['document'])))
-            ->when(isset($filters['updated_since']), static fn ($q) => $q->where('updated_at', '>=', CarbonImmutable::parse($filters['updated_since'])))
+            ->when(isset($filters['updated_since']), static fn ($q) => $q->where('updated_at', '>=', Iso8601::parse($filters['updated_since'])))
             ->orderBy('trade_name')->orderBy('id');
 
         return self::page(ApiListing::paginate($buyers, $query), static fn (BuyerCompany $b): array => [
@@ -208,20 +208,22 @@ final readonly class ApiResources
             $errors['kind'] = ['Use in_transit, out_for_delivery, delivered ou exception.'];
         }
 
-        if (! is_string($occurred) || strtotime($occurred) === false) {
-            $errors['occurred_at'] = ['Informe a data e hora do evento em ISO 8601.'];
+        $occurredAt = Iso8601::parse($occurred);
+
+        if ($occurredAt === null) {
+            $errors['occurred_at'] = ['Informe a data e hora do evento em ISO 8601, com fuso (ex.: 2026-11-24T10:30:00-03:00).'];
         }
 
         if ($description !== null && (! is_string($description) || mb_strlen($description) > 500)) {
             $errors['description'] = ['A descrição deve ter até 500 caracteres.'];
         }
 
-        if ($errors !== [] || $kind === null || ! is_string($externalId) || ! is_string($occurred)) {
+        if ($errors !== [] || $kind === null || ! is_string($externalId) || $occurredAt === null) {
             throw ValidationException::withMessages($errors);
         }
 
         Shipment::query()->findOrFail(UntrustedId::uuid($shipmentId, Shipment::class));
-        $event = $this->events->handle($shipmentId, $kind, CarbonImmutable::parse($occurred)->utc(), is_string($description) ? $description : null, trim($externalId), ShipmentEventSource::Carrier);
+        $event = $this->events->handle($shipmentId, $kind, $occurredAt, is_string($description) ? $description : null, trim($externalId), ShipmentEventSource::Carrier);
 
         return [
             'id' => $event->id, 'shipment_id' => $event->shipment_id, 'external_id' => $event->external_id, 'kind' => $event->kind->value,

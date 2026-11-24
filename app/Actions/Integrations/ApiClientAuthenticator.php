@@ -64,8 +64,20 @@ final readonly class ApiClientAuthenticator
         }
 
         RateLimiter::hit('api:'.$clientId, 60);
+        $context = ExecutionContext::integration($tenantId, $clientId);
 
-        return $this->db->run(ExecutionContext::integration($tenantId, $clientId), function () use ($clientId, $abilities, $id, $now, $tenantId, $next): Response {
+        // Último uso numa transação curta e própria, no máximo uma vez por
+        // minuto: requisições simultâneas do mesmo cliente não esperam o lock
+        // das linhas do token e do cliente, e uma resposta de erro não o desfaz.
+        $this->db->run($context, static function () use ($id, $clientId, $now): void {
+            $stale = $now->subMinute();
+            DB::table('personal_access_tokens')->where('id', (int) $id)
+                ->where(static fn ($q) => $q->whereNull('last_used_at')->orWhere('last_used_at', '<', $stale))->update(['last_used_at' => $now]);
+            DB::table('api_clients')->where('id', $clientId)->whereNull('revoked_at')
+                ->where(static fn ($q) => $q->whereNull('last_used_at')->orWhere('last_used_at', '<', $stale))->update(['last_used_at' => $now]);
+        });
+
+        return $this->db->run($context, function () use ($clientId, $abilities, $tenantId, $next): Response {
             $client = ApiClient::query()->whereNull('revoked_at')->find($clientId) ?? throw new AuthenticationException;
             $granted = ApiAbilities::filter($client->permissions);
             $permissions = in_array('*', $abilities, true) ? $granted : array_values(array_intersect($granted, $abilities));
@@ -73,8 +85,6 @@ final readonly class ApiClientAuthenticator
             $this->access->bindIntegration($client->id, $permissions);
             Context::add('tenant_id', $tenantId);
             Context::add('api_client_id', $client->id);
-            DB::table('personal_access_tokens')->where('id', (int) $id)->update(['last_used_at' => $now]);
-            $client->forceFill(['last_used_at' => $now])->save();
 
             return $next();
         });

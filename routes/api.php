@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Route;
 /*
 | API v1 (RF-110). Autenticação por token de cliente de API (Sanctum, com
 | abilities e tenant); a requisição roda no contexto de integração do
-| tenant. Contrato em docs/openapi.yaml.
+| tenant. Contrato em docs/openapi.json.
 */
 
 Route::prefix('v1')->name('api.v1.')->middleware(AuthenticateApiClient::class)->group(function (): void {

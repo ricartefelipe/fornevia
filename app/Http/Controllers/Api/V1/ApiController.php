@@ -9,7 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * API v1 (RF-110; contrato em docs/openapi.yaml). Controller fino: cada
+ * API v1 (RF-110; contrato em docs/openapi.json). Controller fino: cada
  * ação delega para ApiResources, que autoriza pela permissão do cliente de
  * API e valida filtros e paginação.
  */
