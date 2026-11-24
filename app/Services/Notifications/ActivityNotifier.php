@@ -7,6 +7,8 @@ namespace App\Services\Notifications;
 use App\Domain\Shared\Money;
 use App\Enums\Identity\Permission;
 use App\Enums\Ordering\CommercialStatus;
+use App\Models\Fulfillment\ReturnRequest;
+use App\Models\Fulfillment\Shipment;
 use App\Models\Identity\Membership;
 use App\Models\Ordering\Order;
 use App\Models\Quotes\Quote;
@@ -48,12 +50,19 @@ final readonly class ActivityNotifier implements OutboxConsumer
             'order.submitted_for_approval', 'order.approval_level_approved', 'order.approvals_invalidated',
             'order.approval_step_reassigned', 'order.approval_rejected', 'order.confirmation_pending',
             'order.confirmed', 'order.cancelled',
+            'shipment.shipped', 'shipment.delivered', 'shipment.exception',
+            'return.requested', 'return.decided', 'return.closed',
         ];
     }
 
     public function handle(OutboxMessage $message): void
     {
-        $delivery = str_starts_with($message->type, 'quote.') ? $this->quote($message) : $this->order($message);
+        $delivery = match (true) {
+            str_starts_with($message->type, 'quote.') => $this->quote($message),
+            str_starts_with($message->type, 'shipment.') => $this->shipment($message),
+            str_starts_with($message->type, 'return.') => $this->returnRequest($message),
+            default => $this->order($message),
+        };
 
         if ($delivery !== null) {
             $this->center->deliver($message, $delivery[0], $delivery[1]);
@@ -188,6 +197,63 @@ final readonly class ActivityNotifier implements OutboxConsumer
             'order.cancelled' => [
                 new NotificationContent($message->type, "Pedido {$number} cancelado", 'O pedido foi cancelado.', $orderPath, 'Ver o pedido'),
                 $placer(),
+            ],
+            default => null,
+        };
+    }
+
+    /**
+     * @return array{NotificationContent, Collection<int, Membership>}|null
+     */
+    private function shipment(OutboxMessage $message): ?array
+    {
+        $shipment = Shipment::query()->with('order')->find($message->string('shipment_id'));
+
+        if ($shipment === null) {
+            return null;
+        }
+
+        $order = $shipment->order;
+        $path = route('portal.orders.show', $order->id, false);
+        $placer = $this->recipients->memberships([$order->placed_by_membership_id]);
+        $tracking = $shipment->tracking_code !== null ? ", rastreamento {$shipment->tracking_code}" : '';
+
+        return match ($message->type) {
+            'shipment.shipped' => [new NotificationContent($message->type, "Pedido {$order->number} expedido", "A remessa {$shipment->number} saiu pela {$shipment->carrier}{$tracking}.", $path, 'Acompanhar a entrega'), $placer],
+            'shipment.delivered' => [new NotificationContent($message->type, "Pedido {$order->number}: remessa entregue", "A remessa {$shipment->number} foi entregue.", $path, 'Ver o pedido'), $placer],
+            'shipment.exception' => [new NotificationContent($message->type, "Ocorrência na entrega do pedido {$order->number}", mb_substr($message->string('description') ?? 'A transportadora registrou uma ocorrência.', 0, 400), $path, 'Ver o pedido'), $placer],
+            default => null,
+        };
+    }
+
+    /**
+     * @return array{NotificationContent, Collection<int, Membership>}|null
+     */
+    private function returnRequest(OutboxMessage $message): ?array
+    {
+        $return = ReturnRequest::query()->with('order')->find($message->string('return_id'));
+
+        if ($return === null) {
+            return null;
+        }
+
+        $portalPath = route('portal.returns.show', $return->id, false);
+        $requester = fn (): Collection => $this->recipients->memberships([$return->requested_by_membership_id]);
+
+        return match ($message->type) {
+            'return.requested' => [
+                new NotificationContent($message->type, "Nova devolução {$return->number}", "Pedido {$return->order->number}: {$return->reason_code->label()}.", route('returns.show', $return->id, false), 'Analisar'),
+                $this->recipients->staffWith(Permission::ReturnsManage)->filter(static fn (Membership $m): bool => $m->role->grants(Permission::ReturnsView))->values(),
+            ],
+            'return.decided' => [
+                ($message->payload['authorized'] ?? false) === true
+                    ? new NotificationContent($message->type, "Devolução {$return->number} autorizada", 'Envie os itens ao distribuidor.', $portalPath, 'Ver a devolução')
+                    : new NotificationContent($message->type, "Devolução {$return->number} recusada", (string) ($return->decision_comment ?? 'O distribuidor recusou a devolução.'), $portalPath, 'Ver a devolução'),
+                $requester(),
+            ],
+            'return.closed' => [
+                new NotificationContent($message->type, "Devolução {$return->number} concluída", 'Valor a devolver: '.$return->refund_cents->format().'.', $portalPath, 'Ver a devolução'),
+                $requester(),
             ],
             default => null,
         };
