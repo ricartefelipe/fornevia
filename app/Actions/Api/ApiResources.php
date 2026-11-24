@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Api;
 
 use App\Actions\Fulfillment\Staff\RecordShipmentEvent;
+use App\Domain\Shared\Cnpj;
 use App\Enums\Fulfillment\ShipmentEventKind;
 use App\Enums\Fulfillment\ShipmentEventSource;
 use App\Enums\Identity\Permission;
@@ -106,7 +107,7 @@ final readonly class ApiResources
         $filters = ApiListing::filters($query, ['document' => 'string', 'updated_since' => 'datetime']);
 
         $buyers = BuyerCompany::query()
-            ->when(isset($filters['document']), static fn ($q) => $q->where('document', preg_replace('/\D/', '', $filters['document'])))
+            ->when(isset($filters['document']), static fn ($q) => $q->where('document', Cnpj::normalize($filters['document'])))
             ->when(isset($filters['updated_since']), static fn ($q) => $q->where('updated_at', '>=', Iso8601::parse($filters['updated_since'])))
             ->orderBy('trade_name')->orderBy('id');
 

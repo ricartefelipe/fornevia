@@ -6,6 +6,7 @@ namespace App\Services\Finance\Gateways;
 
 use App\Domain\Finance\Exceptions\GatewayOutcomeUnknown;
 use App\Domain\Finance\Exceptions\GatewayUnavailable;
+use App\Domain\Shared\Cnpj;
 use App\Domain\Shared\Money;
 use App\Enums\Finance\PaymentGatewayKind;
 use App\Enums\Finance\PaymentMethod;
@@ -139,7 +140,7 @@ final readonly class AsaasGateway implements PaymentGateway
 
     private function customer(ChargeRequest $request): string
     {
-        $document = (string) preg_replace('/\D/', '', $request->payerDocument);
+        $document = Cnpj::normalize($request->payerDocument);
 
         try {
             $found = (array) $this->client()->get('/customers', ['cpfCnpj' => $document, 'limit' => 1])->throw()->json('data', []);

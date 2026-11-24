@@ -14,14 +14,17 @@ use App\Domain\Shared\Quantity;
 | implementação de referência escrita aqui, independente da de produção.
 */
 
-/** Dígito verificador do CNPJ pela regra da Receita Federal (módulo 11). */
+/**
+ * Dígito verificador do CNPJ pela regra da Receita Federal (módulo 11), com
+ * o valor de cada caractere igual ao código ASCII menos 48 (alfanumérico).
+ */
 function referenceCnpjDigit(string $base): string
 {
     $sum = 0;
     $weight = strlen($base) - 7;
 
-    foreach (str_split($base) as $digit) {
-        $sum += (int) $digit * $weight;
+    foreach (str_split($base) as $char) {
+        $sum += (ord($char) - 48) * $weight;
         $weight = $weight === 2 ? 9 : $weight - 1;
     }
 
@@ -95,12 +98,19 @@ it('compara e formata quantidades iguais e negativas', function (): void {
         ->and(Quantity::of('1234')->format())->toBe('1.234');
 });
 
-it('confere os dígitos do CNPJ como a implementação de referência', function (): void {
+it('confere os dígitos do CNPJ numérico e alfanumérico como a implementação de referência', function (): void {
     $seed = 12345;
+    $alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
-    for ($n = 0; $n < 300; $n++) {
-        $seed = ($seed * 1103515245 + 12345) % 2147483648;
-        $base = str_pad((string) ($seed % 100_000_000), 8, '0', STR_PAD_LEFT).str_pad((string) (($seed >> 8) % 10_000), 4, '0', STR_PAD_LEFT);
+    for ($n = 0; $n < 400; $n++) {
+        $base = '';
+
+        for ($i = 0; $i < 12; $i++) {
+            $seed = ($seed * 1103515245 + 12345) % 2147483648;
+            // Metade das bases só com números, metade alfanumérica.
+            $base .= $alphabet[($seed >> 16) % ($n % 2 === 0 ? 10 : 36)];
+        }
+
         $first = referenceCnpjDigit($base);
         $valid = $base.$first.referenceCnpjDigit($base.$first);
 
@@ -118,5 +128,11 @@ it('confere os dígitos do CNPJ como a implementação de referência', function
     }
 
     expect(Cnpj::fromString('11.222.333/0001-81')->digits)->toBe('11222333000181')
-        ->and(Cnpj::format('11222333000181'))->toBe('11.222.333/0001-81');
+        ->and(Cnpj::format('11222333000181'))->toBe('11.222.333/0001-81')
+        // Exemplo oficial da Receita Federal para o CNPJ alfanumérico.
+        ->and(Cnpj::fromString('12.abc.345/01de-35')->digits)->toBe('12ABC34501DE35')
+        ->and(Cnpj::format('12ABC34501DE35'))->toBe('12.ABC.345/01DE-35')
+        ->and(Cnpj::isValid('12ABC34501DE3A'))->toBeFalse()
+        ->and(Cnpj::searchKey('12.ABC.345'))->toBe('12ABC345')
+        ->and(Cnpj::searchKey('Mercado Bom Preço'))->toBeNull();
 });

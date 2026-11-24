@@ -13,6 +13,7 @@ use App\Data\Catalog\PrivateCatalogTarget;
 use App\Domain\Catalog\Exceptions\CatalogIdentifierInUse;
 use App\Domain\Catalog\Exceptions\InvalidCatalogData;
 use App\Domain\Shared\BusinessRuleViolation;
+use App\Domain\Shared\Cnpj;
 use App\Livewire\Staff\Catalog\Concerns\ChecksCatalogPermissions;
 use App\Models\Buyers\BuyerCompany;
 use App\Models\Buyers\CustomerGroup;
@@ -281,13 +282,13 @@ final class PrivateCatalogsIndex extends Component
         }
 
         $pattern = self::likePattern($term);
-        $digits = preg_replace('/\D/', '', $term);
+        $digits = (string) Cnpj::searchKey($term);
 
         return BuyerCompany::query()
             ->where(static function (Builder $q) use ($pattern, $digits): void {
                 $q->where('trade_name', 'ilike', $pattern)->orWhere('legal_name', 'ilike', $pattern);
 
-                if (is_string($digits) && strlen($digits) >= 4) {
+                if (strlen($digits) >= 4) {
                     $q->orWhere('document', 'like', '%'.$digits.'%');
                 }
             })
