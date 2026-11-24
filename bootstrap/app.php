@@ -26,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         then: static function (): void {
             Route::group([], base_path('routes/health.php'));
+            Route::group([], base_path('routes/webhooks.php'));
         },
     )
     ->withMiddleware(static function (Middleware $middleware): void {
