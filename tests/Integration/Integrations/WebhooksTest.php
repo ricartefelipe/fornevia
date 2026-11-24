@@ -39,6 +39,11 @@ it('recusa endereço interno, sem TLS, com credenciais ou eventos fora da lista'
     'rede privada' => ['https://10.0.0.5/hook'],
     'link-local (metadados de nuvem)' => ['https://169.254.169.254/latest/meta-data'],
     'IPv6 loopback' => ['https://[::1]/hook'],
+    'CGNAT' => ['https://100.100.100.200/hook'],
+    'faixa de testes de desempenho' => ['https://198.18.0.10/hook'],
+    'IPv4 mapeado em IPv6' => ['https://[::ffff:10.0.0.5]/hook'],
+    'NAT64 para rede privada' => ['https://[64:ff9b::a00:5]/hook'],
+    '6to4 para loopback' => ['https://[2002:7f00:1::1]/hook'],
     'sem TLS' => ['http://93.184.216.34/hook'],
     'com credenciais' => ['https://user:senha@93.184.216.34/hook'],
     'outro esquema' => ['ftp://93.184.216.34/hook'],
@@ -125,4 +130,54 @@ it('não entrega para endpoint inativo nem de outro distribuidor e troca o segre
 
     ($this->manage)(fn ($m) => $m->delete($endpoint->id));
     expect($this->scenario->system(fn () => WebhookEndpoint::query()->count()))->toBe(0);
+});
+
+it('aceita IPv6 público, inclusive NAT64 para IPv4 público', function (string $ip): void {
+    expect(App\Support\Integrations\WebhookUrlGuard::isPublic($ip))->toBeTrue();
+})->with(['2606:4700:4700::1111', '64:ff9b::5db8:d822', '93.184.216.34']);
+
+it('envia a entrega cuja primeira tentativa se perdeu depois do commit', function (): void {
+    Http::fake(['93.184.216.34/*' => Http::response('', 204)]);
+    [$endpoint] = ($this->manage)(fn ($m) => $m->create($this->url, ['order.confirmed']));
+    // Entrega gravada sem a primeira tentativa (job perdido na fila).
+    $id = $this->scenario->system(function () use ($endpoint): string {
+        $delivery = new WebhookDelivery;
+        $delivery->forceFill([
+            'webhook_endpoint_id' => $endpoint->id, 'outbox_message_id' => (string) Illuminate\Support\Str::uuid7(), 'event_type' => 'order.confirmed',
+            'payload' => ['id' => 'x', 'type' => 'order.confirmed', 'data' => []], 'status' => 'pending',
+        ])->save();
+
+        return $delivery->id;
+    });
+
+    $this->artisan('webhooks:retry')->expectsOutputToContain('despachadas: 0')->assertSuccessful();
+    app()->instance(Clock::class, new FrozenClock(now()->addMinutes(3)->toImmutable()));
+    $this->artisan('webhooks:retry')->expectsOutputToContain('despachadas: 1')->assertSuccessful();
+
+    expect($this->scenario->system(fn () => WebhookDelivery::query()->findOrFail($id)->status))->toBe('delivered');
+});
+
+it('conta segredo ilegível como falha da tentativa, com nova espera', function (): void {
+    Http::fake(['*' => Http::response('', 204)]);
+    [$endpoint] = ($this->manage)(fn ($m) => $m->create($this->url, ['order.confirmed']));
+    $this->scenario->system(fn () => WebhookEndpoint::query()->whereKey($endpoint->id)->update(['secret_encrypted' => 'cifrado-com-outra-chave']));
+
+    $delivery = ($this->manage)(fn ($m) => $m->ping($endpoint->id));
+    $stored = $this->scenario->system(fn () => WebhookDelivery::query()->findOrFail($delivery->id));
+
+    expect($stored->status)->toBe('pending')->and($stored->attempts)->toBe(1)
+        ->and($stored->last_error)->toContain('Segredo do endpoint ilegível')
+        ->and($this->scenario->system(fn () => WebhookEndpoint::query()->findOrFail($endpoint->id)->consecutive_failures))->toBe(1);
+    Http::assertNothingSent();
+});
+
+it('desativa endpoint cujo endereço deixou de ser aceito, mas não o reativa', function (): void {
+    [$endpoint] = ($this->manage)(fn ($m) => $m->create($this->url, ['order.confirmed']));
+    // O endereço passou a apontar para a rede interna depois do cadastro.
+    $this->scenario->system(fn () => WebhookEndpoint::query()->whereKey($endpoint->id)->update(['url' => 'https://10.0.0.5/hook']));
+
+    ($this->manage)(fn ($m) => $m->update($endpoint->id, 'https://10.0.0.5/hook', ['order.confirmed'], false));
+    expect($this->scenario->system(fn () => WebhookEndpoint::query()->findOrFail($endpoint->id)->is_active))->toBeFalse()
+        ->and(fn () => ($this->manage)(fn ($m) => $m->update($endpoint->id, 'https://10.0.0.5/hook', ['order.confirmed'], true)))
+        ->toThrow(InvalidIntegration::class, 'rede interna');
 });

@@ -9,9 +9,11 @@ use App\Models\Integrations\WebhookDelivery;
 use App\Models\Integrations\WebhookEndpoint;
 use App\Support\Clock\Clock;
 use App\Support\Integrations\WebhookUrlGuard;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
+use JsonException;
 use Throwable;
 
 /**
@@ -36,9 +38,19 @@ final readonly class WebhookSender
             return ['ok' => false, 'status' => null, 'error' => $e->getMessage()];
         }
 
-        $body = json_encode($delivery->payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        // Segredo ilegível (chave da aplicação trocada) ou corpo inválido contam
+        // como falha da tentativa, com espera e desativação, sem repetir para sempre.
+        try {
+            $body = json_encode($delivery->payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $secret = Crypt::decryptString($endpoint->secret_encrypted);
+        } catch (DecryptException) {
+            return ['ok' => false, 'status' => null, 'error' => 'Segredo do endpoint ilegível; troque o segredo.'];
+        } catch (JsonException $e) {
+            return ['ok' => false, 'status' => null, 'error' => 'Evento não pôde ser codificado: '.mb_substr($e->getMessage(), 0, 200)];
+        }
+
         $timestamp = (string) $this->clock->now()->getTimestamp();
-        $signature = hash_hmac('sha256', $timestamp.'.'.$body, Crypt::decryptString($endpoint->secret_encrypted));
+        $signature = hash_hmac('sha256', $timestamp.'.'.$body, $secret);
 
         try {
             $response = Http::withHeaders([

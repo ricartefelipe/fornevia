@@ -55,12 +55,18 @@ final readonly class ManageWebhookEndpoints
     {
         $this->access->authorize(Permission::IntegrationsManage);
         $url = trim($url);
-        WebhookUrlGuard::resolve($url);
         $events = self::events($events);
 
         return DB::transaction(function () use ($endpointId, $url, $events, $active): WebhookEndpoint {
-            $endpoint = $this->find($endpointId);
+            $endpoint = WebhookEndpoint::query()->lockForUpdate()->findOrFail(UntrustedId::uuid($endpointId, WebhookEndpoint::class));
             $reactivated = $active && ! $endpoint->is_active;
+
+            // O endereço é conferido quando muda ou quando o endpoint volta a
+            // enviar; desativar funciona mesmo com o endereço inválido.
+            if ($url !== $endpoint->url || $reactivated) {
+                WebhookUrlGuard::resolve($url);
+            }
+
             $endpoint->forceFill([
                 'url' => $url, 'events' => $events, 'is_active' => $active,
                 'consecutive_failures' => $reactivated ? 0 : $endpoint->consecutive_failures,

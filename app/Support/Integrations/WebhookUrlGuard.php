@@ -43,13 +43,49 @@ final class WebhookUrlGuard
 
         if (! (bool) config('integrations.webhooks.allow_private_networks', false)) {
             foreach ($ips as $ip) {
-                if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+                if (! self::isPublic($ip)) {
                     throw new InvalidIntegration('O endereço do webhook aponta para uma rede interna, o que não é permitido.', ['field' => 'url']);
                 }
             }
         }
 
         return ['host' => $hostIp, 'port' => $port, 'ip' => $ips[0]];
+    }
+
+    /**
+     * Endereço global (RFC 6890): fora de rede privada, loopback,
+     * link-local, CGNAT (100.64.0.0/10), testes de desempenho e demais
+     * faixas reservadas. IPv6 que embute um IPv4 (mapeado ::ffff:0:0/96,
+     * NAT64 64:ff9b::/96 e 6to4 2002::/16) vale pelo IPv4 embutido.
+     */
+    public static function isPublic(string $ip): bool
+    {
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_GLOBAL_RANGE) === false) {
+            return false;
+        }
+
+        $binary = inet_pton($ip);
+
+        if ($binary === false) {
+            return false;
+        }
+
+        if (strlen($binary) === 16) {
+            $embedded = match (true) {
+                str_starts_with($binary, str_repeat("\0", 10)."\xff\xff") => substr($binary, 12, 4),
+                str_starts_with($binary, "\x00\x64\xff\x9b".str_repeat("\0", 8)) => substr($binary, 12, 4),
+                str_starts_with($binary, "\x20\x02") => substr($binary, 2, 4),
+                default => null,
+            };
+
+            if ($embedded !== null) {
+                $ipv4 = inet_ntop($embedded);
+
+                return $ipv4 !== false && self::isPublic($ipv4);
+            }
+        }
+
+        return true;
     }
 
     /**
