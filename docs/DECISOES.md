@@ -831,3 +831,36 @@ distribuidor mantém o isolamento entre tenants também no recebimento.
   entrega; eventos podem chegar mais de uma vez e fora de ordem.
 - A importação de catálogo cria produto pelo nome quando não existe e
   reaproveita o existente; preço e custo não entram pelo CSV.
+
+## ADR-030 — Testes de navegador com servidor separado e mutação do domínio na CI
+
+**Status:** aceita
+
+**Decisão.**
+- Testes de navegador (Dusk) exercitam os fluxos com JavaScript real:
+  login, retomada de contexto, Livewire e Alpine. O teste prepara os dados
+  com commit no banco `fornevia_browser` (limpo por TRUNCATE antes de cada
+  teste) e o navegador acessa um servidor da aplicação em processo próprio,
+  como em produção. Na CI, o Chrome e o ChromeDriver do runner; no ambiente
+  local, o Selenium do perfil `browser`.
+- O pacote Dusk não registra rotas nem comandos na aplicação: o login é
+  feito pelo formulário, sem atalho de autenticação exposto.
+- Testes de mutação do Pest rodam sobre `App\Domain` e o leitor de CSV das
+  integrações, com nota mínima de 90% calculada sobre o código coberto pelos
+  testes unitários (`--covered-only`): constantes, como os mapas de
+  transição, não aparecem na cobertura de linhas, mas são exercitadas.
+
+**Alternativas consideradas.**
+- `RefreshDatabase` ou transação envolvendo o teste de navegador: o
+  servidor, em outra conexão, não veria os dados.
+- `loginAs` do Dusk: exige rotas de autenticação que não devem existir fora
+  dos testes.
+- Mutação sobre toda a aplicação: tempo de CI alto e mutantes equivalentes
+  em código de infraestrutura; o domínio concentra as regras.
+
+**Consequências.**
+- Cada PR roda os fluxos principais num navegador real e falha se uma
+  mutação no domínio coberto deixar de ser detectada.
+- Mutantes equivalentes (conversões de tipo redundantes, fechamento de
+  recurso) permanecem e limitam a nota máxima possível.
+

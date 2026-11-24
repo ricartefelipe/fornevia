@@ -89,7 +89,15 @@ docker compose run --rm app composer audit
 docker compose --profile tools run --rm node sh -c \
   "npm audit --json > build/npm-audit.json; node scripts/npm-audit-gate.mjs build/npm-audit.json"
 docker compose run --rm app vendor/bin/pest
+docker compose run --rm app composer test:mutation
+docker compose --profile browser up -d selenium && sh scripts/browser-tests.sh
 ```
+
+Testes de navegador (`tests/Browser`, Dusk) rodam contra um servidor da
+aplicação sobre o banco `fornevia_browser`, com Chrome real; capturas de
+falha ficam em `tests/Browser/screenshots`. Testes de mutação cobrem
+`App\Domain` e o CSV de integrações, com nota mínima de 90% no código
+coberto pelos testes unitários.
 
 Alertas de dependências npm sem correção publicada só são aceitos por
 exceção registrada em `.github/npm-audit-exceptions.json`, com justificativa
