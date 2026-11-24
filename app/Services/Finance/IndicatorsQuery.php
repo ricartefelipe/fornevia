@@ -15,7 +15,8 @@ use Illuminate\Support\Facades\DB;
  * Indicadores do período (RF-102), calculados com as fórmulas de
  * App\Domain\Finance\Indicators e documentadas em docs/ARQUITETURA.md:
  *
- * - ticket médio: pedidos confirmados no período (data de confirmação);
+ * - ticket médio: pedidos confirmados no período (data de confirmação), sem
+ *   os cancelados por inteiro, pela receita líquida do não cancelado;
  * - conversão: versões de proposta enviadas no período e, delas, aceitas;
  * - margem: itens dos pedidos confirmados no período com custo registrado
  *   (receita líquida da quantidade não cancelada);
@@ -35,10 +36,14 @@ final readonly class IndicatorsQuery
         $tz = (string) config('app.business_timezone');
         $start = $from->setTimezone($tz)->startOfDay()->utc();
         $end = $until->setTimezone($tz)->endOfDay()->utc();
-        $confirmed = [CommercialStatus::Confirmed->value, CommercialStatus::PartiallyCancelled->value, CommercialStatus::Cancelled->value];
+        // Pedidos confirmados no período que não foram cancelados por inteiro,
+        // pela receita líquida do que não foi cancelado (itens e frete).
+        $confirmed = [CommercialStatus::Confirmed->value, CommercialStatus::PartiallyCancelled->value];
 
-        $orders = (object) (array) DB::table('orders')->whereNotNull('confirmed_at')->whereBetween('confirmed_at', [$start, $end])->whereIn('commercial_status', $confirmed)
-            ->selectRaw('count(*) as orders, coalesce(sum(total_cents), 0) as revenue')->first();
+        $orders = (object) (array) DB::query()->fromSub(DB::table('orders')
+            ->whereNotNull('confirmed_at')->whereBetween('confirmed_at', [$start, $end])->whereIn('commercial_status', $confirmed)
+            ->selectRaw('orders.freight_cents + coalesce((select sum(round(i.unit_net_price_cents * (i.quantity - i.quantity_cancelled))) from order_items i where i.order_id = orders.id), 0) as net'), 'o')
+            ->selectRaw('count(*) as orders, coalesce(sum(net), 0) as revenue')->first();
 
         $proposals = (object) (array) DB::table('quote_versions')->whereNotNull('sent_at')->whereBetween('sent_at', [$start, $end])
             ->selectRaw("count(*) as sent, count(*) filter (where status = 'accepted') as accepted")->first();
@@ -49,6 +54,7 @@ final readonly class IndicatorsQuery
             ->whereNotNull('order_item_costs.unit_cost_cents')
             ->whereNotNull('orders.confirmed_at')
             ->whereBetween('orders.confirmed_at', [$start, $end])
+            ->whereIn('orders.commercial_status', $confirmed)
             ->selectRaw('coalesce(sum(round(order_items.unit_net_price_cents * (order_items.quantity - order_items.quantity_cancelled))), 0) as revenue,
                          coalesce(sum(round(order_item_costs.unit_cost_cents * (order_items.quantity - order_items.quantity_cancelled))), 0) as cost')
             ->first();
