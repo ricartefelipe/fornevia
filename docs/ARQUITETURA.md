@@ -137,6 +137,34 @@ administradores da plataforma ou e-mails em `HORIZON_ALLOWED_EMAILS`.
   (`RedactSensitiveData`).
 - `X-Request-Id` aceito em formato restrito ou gerado (UUIDv7).
 - `/health/live` e `/health/ready` sem sessão nem cookies.
+- `/metrics` no formato Prometheus (texto 0.0.4), só com
+  `Authorization: Bearer <METRICS_TOKEN>`; sem token configurado, o
+  endpoint responde 404. Limite de 60 coletas por minuto. Os rótulos não
+  trazem dados de tenant.
+
+| Série | Tipo | Origem |
+|---|---|---|
+| `fornevia_http_requests_total{kind,status}` | contador | toda requisição, por tipo (`web`, `livewire`, `api`, `webhooks`, `health`) e classe de status (`2xx`…`5xx`) |
+| `fornevia_http_request_duration_seconds{kind}` | histograma | duração das mesmas requisições (limites em `observability.latency_buckets`) |
+| `fornevia_db_conflicts_total{reason}` | contador | exceção reportada cuja cadeia contém um conflito do PostgreSQL: `deadlock` (40P01), `serialization` (40001), `lock_not_available` (55P03), inclusive a `DeadlockException` de transações aninhadas |
+| `fornevia_jobs_failed_total{queue}` | contador | evento `JobFailed` |
+| `fornevia_queue_size{queue}` | medida | tamanho das filas de `observability.queues` |
+| `fornevia_outbox_pending`, `fornevia_outbox_oldest_pending_age_seconds`, `fornevia_outbox_dead` | medidas | situação da outbox (`outbox:status`) |
+| `fornevia_failed_jobs` | medida | jobs guardados em `failed_jobs` |
+| `fornevia_metrics_collection_errors` | medida | medidas que não puderam ser lidas na coleta |
+
+Contadores ficam no Redis (conexão `metrics`, tempo limite de 0,25 s) e
+somam todos os processos; falha ao gravar uma métrica gera aviso no log e
+suspende as gravações do processo por 30 s, sem afetar a operação. O
+middleware de métricas envolve toda a pilha global, então respostas de
+manutenção, corpo grande e host recusado também entram na conta. Todo
+limite do histograma é exportado, inclusive os vazios. O coletor usa o host
+de `APP_URL` ou um dos hosts internos de `METRICS_SCRAPE_HOSTS`.
+
+Auditoria: tela `/auditoria` (`audit.view`), somente leitura, com filtros
+por ação ou grupo de ações, autor, registro afetado e período no fuso
+comercial; as opções de ação e autor ficam em cache por 5 minutos. Os registros são somente inclusão no banco e isolados por
+tenant.
 
 ## 7. Identidade, contextos e permissões
 
