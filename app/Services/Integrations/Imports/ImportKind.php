@@ -19,8 +19,11 @@ interface ImportKind
 
     public function permission(): Permission;
 
-    /** @return list<string> */
+    /** @return list<string> colunas obrigatórias */
     public function columns(): array;
+
+    /** @return list<string> colunas aceitas quando presentes no arquivo */
+    public function optionalColumns(): array;
 
     /**
      * @param  array<int, array<string, string>>  $rows

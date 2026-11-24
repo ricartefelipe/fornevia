@@ -5,6 +5,12 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Importação de catálogo com preço (na tabela informada ou na padrão ativa)
+  e custo opcionais, conferindo as permissões de preço e de custo de quem
+  importa.
+
 ### Alterado
 
 - Carteira do representante comercial aplicada a todas as telas da equipe:

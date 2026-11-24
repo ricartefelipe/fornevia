@@ -14,7 +14,9 @@
         <form wire:submit="preview" class="fv-card mb-6 grid max-w-2xl gap-4 p-5" novalidate aria-labelledby="import-form-title">
             <h2 id="import-form-title" class="text-base font-semibold text-slate-900">Nova importação</h2>
             <x-ui.select label="O que importar" name="kind" :options="$kindOptions" wire:model.live="kind" />
-            <p class="text-sm text-slate-600">Colunas: <span class="font-mono">{{ implode(';', $columns[$kind] ?? []) }}</span></p>
+            <p class="text-sm text-slate-600">Colunas: <span class="font-mono">{{ implode(';', $columns[$kind] ?? []) }}</span>
+                @if (($optionalColumns[$kind] ?? []) !== [])<br>Opcionais: <span class="font-mono">{{ implode(';', $optionalColumns[$kind]) }}</span>@endif
+            </p>
             <x-ui.select label="Ao confirmar" name="policy" :options="$policyOptions" wire:model="policy" />
             <div>
                 <label for="import-file" class="block text-sm font-medium text-slate-700">Arquivo CSV</label>
