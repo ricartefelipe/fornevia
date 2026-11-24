@@ -5,7 +5,7 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
-## [0.3.0] - 2026-11-24
+## [0.3.0] - 2026-11-23
 
 ### Adicionado
 
